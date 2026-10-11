@@ -59,6 +59,82 @@ async def test_invalid_pipeline_stage_is_rejected(db):
         )
 
 
+def test_lead_capture_schema_normalizes_contact_and_rejects_unknown_source():
+    lead = LeadCreate(
+        name="  Taylor Prospect  ",
+        email="  TAYLOR@example.com  ",
+        phone=" +1 (555) 010-2030 ",
+        goal="  Improve mobility  ",
+        source="instagram",
+    )
+
+    assert lead.name == "Taylor Prospect"
+    assert lead.email == "taylor@example.com"
+    assert lead.phone == "+15550102030"
+    assert lead.goal == "Improve mobility"
+    assert lead.source.value == "instagram"
+
+    with pytest.raises(ValidationError):
+        LeadCreate(name="Taylor", source="spreadsheet_guess")
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contact_is_rejected_within_tenant_but_allowed_across_tenants(db):
+    first_org = Organization(name="First Lead Gym", org_code="FIRST-LEAD")
+    second_org = Organization(name="Second Lead Gym", org_code="SECOND-LEAD")
+    actor = User(email="duplicate-owner@example.com", hashed_password="not-used")
+    db.add_all([first_org, second_org, actor])
+    await db.flush()
+
+    first = await leads_service.create_lead(
+        db,
+        org_id=first_org.id,
+        actor_id=actor.id,
+        data=LeadCreate(
+            name="First Prospect",
+            email="prospect@example.com",
+            phone="+1 555 010 2030",
+            source="phone",
+        ),
+    )
+
+    with pytest.raises(HTTPException) as email_error:
+        await leads_service.create_lead(
+            db,
+            org_id=first_org.id,
+            actor_id=actor.id,
+            data=LeadCreate(name="Duplicate Email", email="PROSPECT@example.com"),
+        )
+    assert email_error.value.status_code == 409
+
+    with pytest.raises(HTTPException) as phone_error:
+        await leads_service.create_lead(
+            db,
+            org_id=first_org.id,
+            actor_id=actor.id,
+            data=LeadCreate(name="Duplicate Phone", phone="(555) 010-2030"),
+        )
+    assert phone_error.value.status_code == 409
+
+    other_tenant_lead = await leads_service.create_lead(
+        db,
+        org_id=second_org.id,
+        actor_id=actor.id,
+        data=LeadCreate(name="Other Tenant", email="prospect@example.com"),
+    )
+    assert other_tenant_lead.organization_id == second_org.id
+
+    updated = await leads_service.update_lead(
+        db,
+        org_id=first_org.id,
+        actor_id=actor.id,
+        lead_id=first.id,
+        data=LeadUpdate(source="walk_in", phone="+1 (555) 010-2040"),
+    )
+    assert updated.source == "walk_in"
+    assert updated.phone == "+15550102040"
+
+
 @pytest.mark.asyncio
 async def test_stage_history_transitions_legacy_and_rollback(db):
     from app.services.audit_service import record_audit

@@ -241,6 +241,23 @@ class Channel(str, Enum):
     OTHER = "other"
 
 
+class LeadSource(str, Enum):
+    """How a prospect entered the sales pipeline."""
+
+    STAFF_ENTERED = "staff_entered"
+    WEB_FORM = "web_form"
+    PHONE = "phone"
+    WALK_IN = "walk_in"
+    REFERRAL = "referral"
+    WHATSAPP = "whatsapp"
+    SMS = "sms"
+    INSTAGRAM = "instagram"
+    FACEBOOK = "facebook"
+    LINE = "line"
+    WECHAT = "wechat"
+    OTHER = "other"
+
+
 class ConversationStatus(str, Enum):
     """Shared-inbox thread state."""
 

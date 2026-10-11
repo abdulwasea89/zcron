@@ -19,7 +19,7 @@ from app.models.idempotency_key import IdempotencyKey
 from app.models.inactivity_ladder import InactivityLadderProgress, InactivityLadderRung
 from app.models.inbox import InboxConversation, InboxMessage
 from app.models.invoice import Invoice
-from app.models.lead import Lead
+from app.models.lead import Lead, LeadBooking
 from app.models.member_trainer import MemberTrainer
 from app.models.membership import OrganizationMember
 from app.models.notification import Notification
@@ -61,6 +61,7 @@ __all__ = [
     "InboxMessage",
     "Invoice",
     "Lead",
+    "LeadBooking",
     "MemberTrainer",
     "MemberChallengeProgress",
     "MemberStreak",
