@@ -5,7 +5,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { Alert, Button, EmptyState, Input, Spinner } from "@/components/ui";
 import { useModuleGate } from "@/hooks/useModuleGate";
 import { api, ApiError } from "@/lib/api";
-import { StageHistory } from "./StageHistory";
 
 type Lead = {
   id: string;
@@ -41,9 +40,6 @@ export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<"board" | "list">("board");
-  const [stageFilter, setStageFilter] = useState("");
-  const [historyVersion, setHistoryVersion] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -59,15 +55,15 @@ export default function LeadsPage() {
       if (active) setProfile(profileOf(active));
     } catch (e) {
       setError((e as ApiError).message);
+      setLeads([]);
     }
   }, []);
 
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
   const filtered = useMemo(() => (leads ?? []).filter((lead) =>
-    (!stageFilter || lead.stage === stageFilter) &&
     `${lead.name} ${lead.email ?? ""} ${lead.phone ?? ""}`.toLowerCase().includes(query.toLowerCase().trim())
-  ), [leads, query, stageFilter]);
+  ), [leads, query]);
   const selected = (leads ?? []).find((lead) => lead.id === selectedId) ?? null;
 
   function selectLead(lead: Lead) {
@@ -100,13 +96,12 @@ export default function LeadsPage() {
     finally { setBusy(false); }
   }
 
-  async function changeStage(leadId: string, stage: string) {
+  async function changeStage(stage: string) {
+    if (!selected) return;
     setBusy(true); setError("");
     try {
-      const updated = await api.patch<Lead>(`/leads/${leadId}`, { stage }, { "Idempotency-Key": crypto.randomUUID() });
-      setLeads((rows) => rows?.map((lead) => lead.id === updated.id ? updated : lead) ?? null);
-      setHistoryVersion((version) => version + 1);
-      setNotice(`Moved ${updated.name} to ${STAGE_LABEL[stage]}.`);
+      await api.patch(`/leads/${selected.id}`, { stage }, { "Idempotency-Key": crypto.randomUUID() });
+      await load(selected.id);
     } catch (e) { setError((e as ApiError).message); }
     finally { setBusy(false); }
   }
@@ -118,34 +113,6 @@ export default function LeadsPage() {
       <PageHeader title="Leads" subtitle="Keep every prospect’s goals and next step in one place. Add leads manually today; channel capture can connect later."
         action={<Button onClick={() => { setShowCreate((value) => !value); setError(""); }}>Add lead</Button>} />
       {error && <Alert tone="danger">{error}</Alert>}
-      {leads === null && error && <Button onClick={() => void load()}>Retry loading leads</Button>}
-      <div className="mb-5 flex flex-wrap items-end gap-3">
-        <div role="group" aria-label="Lead view" className="flex gap-2">
-          <Button aria-pressed={view === "board"} variant={view === "board" ? "primary" : "secondary"} onClick={() => setView("board")}>Board</Button>
-          <Button aria-pressed={view === "list"} variant={view === "list" ? "primary" : "secondary"} onClick={() => setView("list")}>List</Button>
-        </div>
-        <label className="grid gap-1 text-sm">Search leads<Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, email, phone" /></label>
-        <label className="grid gap-1 text-sm">Filter by stage<select className="min-h-11 rounded-lg border border-input bg-background px-3" value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}><option value="">All stages</option>{STAGES.map((stage) => <option key={stage} value={stage}>{STAGE_LABEL[stage]}</option>)}</select></label>
-        <span className="text-sm text-muted-foreground" role="status">{filtered.length} leads{busy ? " · Saving…" : ""}</span>
-      </div>
-      {view === "board" && <section aria-label="Lead pipeline" className="mb-6 overflow-x-auto rounded-xl border border-border p-3">
-        {leads === null ? <Spinner /> : <div className="grid min-w-[1560px] grid-cols-6 gap-3">
-          {STAGES.map((stage) => {
-            const cards = filtered.filter((lead) => lead.stage === stage);
-            return <section key={stage} aria-label={STAGE_LABEL[stage]} className="rounded-lg bg-muted/40 p-3">
-              <h2 className="mb-3 flex justify-between font-semibold">{STAGE_LABEL[stage]} <span>{cards.length}</span></h2>
-              {cards.length === 0 && <p className="py-5 text-sm text-muted-foreground">No leads in this stage.</p>}
-              <div className="space-y-3">{cards.map((lead) => <article key={lead.id} className={`rounded-lg border bg-card p-3 ${selectedId === lead.id ? "border-foreground" : "border-border"}`}>
-                <button type="button" disabled={busy} onClick={() => selectLead(lead)} className="min-h-11 w-full text-left font-medium underline-offset-4 hover:underline">{lead.name}</button>
-                <p className="break-words text-sm">{lead.email || lead.phone || "No contact details"}</p>
-                <p className="mt-2 text-xs text-muted-foreground">Source: {lead.source.replaceAll("_", " ")}</p>
-                <p className="my-2 text-sm">{lead.goal || "Goal not captured"}</p>
-                <label className="grid gap-1 text-xs">Move {lead.name} to stage<select className="min-h-11 w-full rounded border border-input bg-background px-2 text-sm" value={lead.stage} disabled={busy} onChange={(event) => void changeStage(lead.id, event.target.value)}>{STAGES.map((target) => <option key={target} value={target}>{STAGE_LABEL[target]}</option>)}</select></label>
-              </article>)}</div>
-            </section>;
-          })}
-        </div>}
-      </section>}
       {notice && <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
       {showCreate && <form onSubmit={create} className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div className="mb-4"><h2 className="text-base font-semibold">New lead</h2><p className="mt-1 text-sm text-muted-foreground">Start with a name and the best way to reach them.</p></div>
@@ -158,8 +125,8 @@ export default function LeadsPage() {
         <div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Create lead"}</Button></div>
       </form>}
 
-      <div className={`grid min-h-[560px] gap-5 ${view === "list" ? "lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.5fr)]" : ""}`}>
-        <section hidden={view !== "list"} className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="grid min-h-[560px] gap-5 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.5fr)]">
+        <section className="overflow-hidden rounded-2xl border border-border bg-card">
           <div className="border-b border-border p-4"><div className="flex items-center justify-between"><h2 className="font-semibold">Prospects</h2><span className="text-xs text-muted-foreground">{filtered.length}</span></div><Input aria-label="Search leads" className="mt-3" placeholder="Search name, email, phone" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
           <div className="max-h-[620px] overflow-y-auto">
             {leads === null ? <div className="p-6"><Spinner /></div> : filtered.length === 0 ? <EmptyState title={query ? "No matching leads" : "No leads yet"} hint={query ? "Try another name or contact detail." : "Capture your first prospect to start a profile."} /> : filtered.map((lead) => <button key={lead.id} disabled={busy} onClick={() => selectLead(lead)} className={`block w-full border-b border-border px-4 py-4 text-left transition hover:bg-muted/50 ${selected?.id === lead.id ? "bg-muted/60" : ""}`}>
@@ -174,14 +141,13 @@ export default function LeadsPage() {
           {!selected ? <div className="flex h-full min-h-80 items-center justify-center"><EmptyState title="Choose a lead" hint="Select a prospect to view and update their profile." /></div> : <>
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
               <div><div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Lead profile</div><h2 className="mt-1 text-2xl font-semibold">{selected.name}</h2><p className="mt-1 text-sm text-muted-foreground">Added {new Date(selected.created_at).toLocaleDateString()} · Source: {selected.source.replaceAll("_", " ")}</p></div>
-              <label className="grid gap-1 text-xs font-medium text-muted-foreground">Pipeline stage<select className="h-10 min-w-40 rounded-lg border border-input bg-background px-3 text-sm text-foreground" value={selected.stage} disabled={busy} onChange={(e) => void changeStage(selected.id, e.target.value)}>{STAGES.map((stage) => <option key={stage} value={stage}>{STAGE_LABEL[stage]}</option>)}</select></label>
+              <label className="grid gap-1 text-xs font-medium text-muted-foreground">Pipeline stage<select className="h-10 min-w-40 rounded-lg border border-input bg-background px-3 text-sm text-foreground" value={selected.stage} disabled={busy} onChange={(e) => void changeStage(e.target.value)}>{STAGES.map((stage) => <option key={stage} value={stage}>{STAGE_LABEL[stage]}</option>)}</select></label>
             </div>
             <form onSubmit={saveProfile} className="space-y-5"><fieldset disabled={busy} className="space-y-5">
               <div><h3 className="text-sm font-semibold">Contact details</h3><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm">Name<Input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} required maxLength={160} /></label><label className="grid gap-1.5 text-sm">Email<Input type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Phone<Input type="tel" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></label></div></div>
               <div><h3 className="text-sm font-semibold">What matters to them</h3><p className="mt-1 text-xs text-muted-foreground">Record only what the prospect shares or your team confirms. Each saved profile detail is marked staff-entered.</p><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm">Fitness goal<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.goal} maxLength={2000} placeholder="Build strength, improve mobility…" onChange={(e) => setProfile({ ...profile, goal: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Budget<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.budget} maxLength={200} placeholder="Comfortable monthly range" onChange={(e) => setProfile({ ...profile, budget: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Preferred times<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.preferred_times} maxLength={500} placeholder="Weekday evenings, Saturday mornings…" onChange={(e) => setProfile({ ...profile, preferred_times: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Preferences<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.preferences} maxLength={2000} placeholder="Class style, trainer preferences, other notes…" onChange={(e) => setProfile({ ...profile, preferences: e.target.value })} /></label></div></div>
               <div className="flex justify-end border-t border-border pt-4"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save profile"}</Button></div>
             </fieldset></form>
-            <StageHistory key={`${selected.id}-${historyVersion}`} leadId={selected.id} />
           </>}
         </section>
       </div>
