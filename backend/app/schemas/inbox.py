@@ -71,5 +71,8 @@ class DraftOut(BaseModel):
 
 
 class InboxStats(BaseModel):
+    open: int
     unassigned: int
+    mine: int
+    resolved: int
     unread: int

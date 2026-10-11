@@ -803,7 +803,10 @@ export interface InboxThread extends InboxConversation {
 }
 
 export interface InboxStats {
+  open: number;
   unassigned: number;
+  mine: number;
+  resolved: number;
   unread: number;
 }
 

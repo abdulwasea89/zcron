@@ -49,7 +49,7 @@ async def stats(
     ctx: TenantContext = Depends(require_capability(Capability.VIEW_INBOX)),
     session: AsyncSession = Depends(get_session),
 ):
-    return await inbox.unread_total(session, org_id=ctx.org_id)
+    return await inbox.inbox_stats(session, org_id=ctx.org_id, user_id=ctx.user_id)
 
 
 @router.post("/conversations/ingest", response_model=ConversationDetail, status_code=201)

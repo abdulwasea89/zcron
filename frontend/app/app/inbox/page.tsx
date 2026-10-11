@@ -53,7 +53,9 @@ function channelOf(channel: string) {
 }
 
 function relTime(iso: string): string {
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso + "Z").getTime()) / 1000));
+  const date = new Date(/(?:Z|[+-]\d{2}:\d{2})$/.test(iso) ? iso : `${iso}Z`);
+  if (Number.isNaN(date.getTime())) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
   if (s < 60) return "now";
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;
@@ -61,11 +63,12 @@ function relTime(iso: string): string {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   if (d < 7) return `${d}d`;
-  return new Date(iso + "Z").toLocaleDateString([], { month: "short", day: "numeric" });
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 function clockTime(iso: string): string {
-  return new Date(iso + "Z").toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const date = new Date(/(?:Z|[+-]\d{2}:\d{2})$/.test(iso) ? iso : `${iso}Z`);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function ChannelIcon({ channel, className }: { channel: string; className?: string }) {
@@ -83,26 +86,47 @@ export default function InboxPage() {
   const [filter, setFilter] = useState<Filter>("open");
   const [query, setQuery] = useState("");
   const [conversations, setConversations] = useState<InboxConversation[] | null>(null);
+  const [listLoading, setListLoading] = useState(true);
+  const [listFailed, setListFailed] = useState(false);
   const [stats, setStats] = useState<InboxStats | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [thread, setThread] = useState<InboxThread | null>(null);
-  const [reply, setReply] = useState("");
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const threadPanelRef = useRef<HTMLElement>(null);
+  const queueRef = useRef<HTMLElement>(null);
+  const listRequestRef = useRef(0);
+  const threadRequestRef = useRef(0);
   const myId = me?.user_id ?? null;
+  const reply = activeId ? drafts[activeId] ?? "" : "";
 
   const loadList = useCallback(async () => {
+    const requestId = ++listRequestRef.current;
+    setListLoading(true);
+    setListFailed(false);
+    if (filter === "mine" && !myId) {
+      setConversations([]);
+      setListLoading(false);
+      return;
+    }
     const params = new URLSearchParams();
     if (filter === "unassigned") params.set("unassigned", "true");
-    else if (filter === "mine" && myId) params.set("assigned_to", myId);
+    else if (filter === "mine") params.set("assigned_to", myId!);
     else if (filter === "resolved") params.set("status", "resolved");
     if (query.trim()) params.set("q", query.trim());
     try {
-      setConversations(await api.get<InboxConversation[]>(`/inbox/conversations?${params}`));
+      const rows = await api.get<InboxConversation[]>(`/inbox/conversations?${params}`);
+      if (requestId === listRequestRef.current) setConversations(rows);
     } catch (e) {
-      setError((e as ApiError).message);
-      setConversations([]);
+      if (requestId === listRequestRef.current) {
+        setError((e as ApiError).message);
+        setListFailed(true);
+      }
+    } finally {
+      if (requestId === listRequestRef.current) setListLoading(false);
     }
   }, [filter, query, myId]);
 
@@ -122,24 +146,40 @@ export default function InboxPage() {
   // empty query / filter switch).
   useEffect(() => {
     const id = setTimeout(() => void loadList(), query.trim() ? 250 : 0);
-    return () => clearTimeout(id);
+    return () => {
+      clearTimeout(id);
+      listRequestRef.current += 1;
+    };
   }, [loadList, query]);
 
-  const openThread = useCallback(async (id: string) => {
-    setActiveId(id);
+  const openThread = useCallback(async (id: string, preserve = false) => {
+    const requestId = ++threadRequestRef.current;
+    if (!preserve) {
+      setActiveId(id);
+      setThread(null);
+      setThreadLoading(true);
+      if (window.innerWidth < 1024) {
+        requestAnimationFrame(() => threadPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      }
+    }
     setError("");
     try {
-      setThread(await api.get<InboxThread>(`/inbox/conversations/${id}`));
+      const updated = await api.get<InboxThread>(`/inbox/conversations/${id}`);
+      if (requestId !== threadRequestRef.current) return;
+      setThread(updated);
+      void loadList();
+      void loadStats();
     } catch (e) {
-      setError((e as ApiError).message);
-      setThread(null);
+      if (requestId === threadRequestRef.current) setError((e as ApiError).message);
+    } finally {
+      if (requestId === threadRequestRef.current) setThreadLoading(false);
     }
-  }, []);
+  }, [loadList, loadStats]);
 
   useRealtimeEvent(["inbox.changed"], () => {
     void loadList();
     void loadStats();
-    if (activeId) void openThread(activeId);
+    if (activeId) void openThread(activeId, true);
   });
 
   useEffect(() => {
@@ -147,16 +187,19 @@ export default function InboxPage() {
   }, [thread?.messages.length]);
 
   const act = useCallback(
-    async (id: string, path: string, body?: unknown) => {
+    async (id: string, path: string, body?: unknown): Promise<InboxThread | null> => {
       setBusy(id);
       setError("");
       try {
-        const updated = await api.post<InboxThread>(`/inbox/conversations/${id}/${path}`, body);
-        setThread(updated);
+        const headers = path === "reply" ? { "Idempotency-Key": crypto.randomUUID() } : undefined;
+        const updated = await api.post<InboxThread>(`/inbox/conversations/${id}/${path}`, body, headers);
+        setThread((current) => current?.id === id ? updated : current);
         void loadList();
         void loadStats();
+        return updated;
       } catch (e) {
         setError((e as ApiError).message);
+        return null;
       } finally {
         setBusy(null);
       }
@@ -165,20 +208,22 @@ export default function InboxPage() {
   );
 
   async function sendReply() {
-    if (!thread || !reply.trim()) return;
+    if (!thread || !reply.trim() || busy) return;
     const id = thread.id;
-    const body = reply;
-    setReply("");
-    await act(id, "reply", { body });
+    const body = reply.trim();
+    if (await act(id, "reply", { body })) {
+      setDrafts((current) => ({ ...current, [id]: "" }));
+    }
   }
 
   async function draft() {
-    if (!thread) return;
-    setBusy(thread.id);
+    if (!thread || busy) return;
+    const id = thread.id;
+    setBusy(id);
     setError("");
     try {
-      const res = await api.post<{ body: string }>(`/inbox/conversations/${thread.id}/draft`);
-      setReply(res.body);
+      const res = await api.post<{ body: string }>(`/inbox/conversations/${id}/draft`);
+      setDrafts((current) => ({ ...current, [id]: res.body }));
     } catch (e) {
       setError((e as ApiError).message);
     } finally {
@@ -188,10 +233,10 @@ export default function InboxPage() {
 
   const tabs = useMemo(
     () => [
-      { value: "open" as Filter, label: "Open", count: stats?.unread || undefined },
-      { value: "unassigned" as Filter, label: "Unassigned", count: stats?.unassigned || undefined },
-      { value: "mine" as Filter, label: "Mine" },
-      { value: "resolved" as Filter, label: "Resolved" },
+      { value: "open" as Filter, label: "Open", count: stats?.open },
+      { value: "unassigned" as Filter, label: "Unassigned", count: stats?.unassigned },
+      { value: "mine" as Filter, label: "Mine", count: stats?.mine },
+      { value: "resolved" as Filter, label: "Resolved", count: stats?.resolved },
     ],
     [stats],
   );
@@ -211,10 +256,56 @@ export default function InboxPage() {
       c.contact_handle.toLowerCase().includes(q)
     );
   });
+  const initialLoading = conversations === null && listLoading;
+  const empty = !listLoading && !listFailed && conversations !== null && visible.length === 0 && !activeId;
+  const emptyTitle = query.trim() ? "No matching conversations" : {
+    open: "All caught up",
+    unassigned: "Nothing needs assigning",
+    mine: "Nothing assigned to you",
+    resolved: "No resolved conversations",
+  }[filter];
+  const emptyHint = query.trim()
+    ? "Try another name or contact detail, or clear the search."
+    : {
+      open: "New messages will appear here as they arrive.",
+      unassigned: "Every active conversation has an owner.",
+      mine: "Conversations assigned to you will appear here.",
+      resolved: "Resolved conversations will stay here for reference.",
+    }[filter];
+
+  function changeFilter(next: Filter) {
+    if (next === filter) return;
+    listRequestRef.current += 1;
+    threadRequestRef.current += 1;
+    setFilter(next);
+    setConversations(null);
+    setThread(null);
+    setActiveId(null);
+    setError("");
+  }
+
+  function changeQuery(next: string) {
+    listRequestRef.current += 1;
+    setQuery(next);
+  }
+
+  function backToQueue() {
+    threadRequestRef.current += 1;
+    setActiveId(null);
+    setThread(null);
+    requestAnimationFrame(() => queueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
 
   return (
     <>
-      <PageHeader title="Inbox" subtitle="Every member conversation, one shared queue" action={<LiveIndicator className="text-xs" />} />
+      <PageHeader
+        title="Inbox"
+        subtitle="Every member conversation, one shared queue"
+        action={<div className="flex items-center gap-3 pt-1">
+          {Boolean(stats?.unread) && <span className="text-xs font-medium text-foreground">{stats?.unread} unread</span>}
+          <LiveIndicator className="text-xs" />
+        </div>}
+      />
 
       {error && (
         <div className="mb-3">
@@ -225,34 +316,51 @@ export default function InboxPage() {
       <ListToolbar
         tabs={tabs}
         value={filter}
-        onChange={setFilter}
+        onChange={changeFilter}
         search={query}
-        onSearch={setQuery}
+        onSearch={changeQuery}
         searchPlaceholder="Search conversations…"
       />
 
-      <div className="mt-3 grid min-h-[520px] border-t border-border lg:h-[calc(100vh-15rem)] lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+      {(initialLoading || empty || (listFailed && conversations === null)) ? (
+        <section className="mt-5 flex min-h-[440px] flex-col items-center justify-center border-t border-border px-6 py-16 text-center" aria-live="polite">
+          {initialLoading ? <Spinner label="Loading conversations…" /> : <>
+            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 text-brand">
+              <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 5h16v11H9l-5 4V5Z" /><path d="M8 9h8M8 12h5" />
+              </svg>
+            </div>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">{listFailed ? "Couldn’t load conversations" : emptyTitle}</h2>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+              {listFailed ? "Check your connection and try again." : emptyHint}
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {query.trim() && <Button variant="secondary" onClick={() => changeQuery("")}>Clear search</Button>}
+              {filter !== "open" && <Button variant="secondary" onClick={() => changeFilter("open")}>View open</Button>}
+              {(filter === "open" || listFailed) && <Button variant="secondary" onClick={() => void loadList()}>Refresh inbox</Button>}
+            </div>
+          </>}
+        </section>
+      ) : <div className="mt-3 grid min-h-[520px] border-t border-border lg:h-[calc(100vh-15rem)] lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
         {/* Queue */}
-        <section aria-label="Conversation queue" className="flex min-w-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
+        <section ref={queueRef} aria-label="Conversation queue" className={`${activeId ? "hidden lg:flex" : "flex"} min-w-0 flex-col border-b border-border lg:border-b-0 lg:border-r`}>
           <div className="flex items-center justify-between px-4 py-3">
             <h2 className="text-sm font-semibold text-foreground">Conversations</h2>
-            {conversations && <span className="text-xs tabular-nums text-muted-foreground">{visible.length}</span>}
+            <span className="text-xs tabular-nums text-muted-foreground">{listLoading ? "Updating…" : `${visible.length} shown`}</span>
           </div>
           <div className="min-h-[280px] flex-1 overflow-y-auto lg:min-h-0">
             {conversations === null ? (
               <div className="p-5"><Spinner label="Loading conversations…" /></div>
             ) : visible.length === 0 ? (
-              <EmptyState
-                title={query.trim() ? "No matches" : "Inbox zero"}
-                hint={query.trim() ? `No conversations match “${query.trim()}”.` : "No conversations in this view."}
-              />
+              <p className="px-4 py-8 text-center text-sm text-muted-foreground">{listLoading ? "Searching…" : "No conversations in this view."}</p>
             ) : (
               <ul className="divide-y divide-border/70">
                 {visible.map((c) => (
                   <li key={c.id}>
                     <button
                       type="button"
-                      onClick={() => openThread(c.id)}
+                      onClick={() => void openThread(c.id)}
+                      aria-current={c.id === activeId ? "true" : undefined}
                       className={`flex w-full cursor-pointer items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-foreground/[0.04] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand ${
                         c.id === activeId ? "bg-foreground/[0.06]" : ""
                       }`}
@@ -290,18 +398,29 @@ export default function InboxPage() {
         </section>
 
         {/* Thread */}
-        <section aria-label="Conversation" className="flex min-w-0 flex-col">
+        <section ref={threadPanelRef} aria-label="Conversation" className={`${activeId ? "flex" : "hidden lg:flex"} min-w-0 flex-col`}>
           {!thread ? (
-            <div className="flex min-h-[280px] flex-1 items-center justify-center">
-              <EmptyState
-                title="Select a conversation"
-                hint="Pick a thread on the left to read and reply."
-              />
+            <div className="flex min-h-[280px] flex-1 flex-col items-center justify-center px-6 text-center">
+              {threadLoading ? <Spinner label="Loading conversation…" /> : activeId ? (
+                <>
+                  <p className="text-sm text-muted-foreground">This conversation couldn’t be opened.</p>
+                  <div className="mt-4 flex gap-2">
+                    <Button variant="secondary" onClick={backToQueue}>Back to inbox</Button>
+                    <Button onClick={() => void openThread(activeId)}>Retry</Button>
+                  </div>
+                </>
+              ) : (
+                <EmptyState
+                  title="Choose a conversation"
+                  hint="Select a message from the queue to read and reply."
+                />
+              )}
             </div>
           ) : (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
                 <div className="min-w-0">
+                  <button type="button" className="mb-3 min-h-9 text-xs font-medium text-muted-foreground lg:hidden" onClick={backToQueue}>← Back to inbox</button>
                   <div className="flex items-center gap-2">
                     <span className="truncate text-base font-semibold text-foreground">{who(thread)}</span>
                     <Badge tone="neutral" size="sm">
@@ -315,18 +434,19 @@ export default function InboxPage() {
                   <p className="mt-1 text-xs text-muted-foreground">{thread.contact_handle}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {thread.assigned_to === myId ? (
+                  {myId && thread.assigned_to === myId ? (
                     <Button variant="secondary" disabled={busy === thread.id} onClick={() => act(thread.id, "assign", { user_id: null })}>
                       Unassign
                     </Button>
                   ) : (
-                    <Button variant="secondary" disabled={busy === thread.id} onClick={() => act(thread.id, "assign", { user_id: myId })}>
+                    <Button variant="secondary" disabled={busy === thread.id || !myId} onClick={() => act(thread.id, "assign", { user_id: myId })}>
                       Assign to me
                     </Button>
                   )}
                   <select
                     aria-label="Conversation status"
                     value={thread.status}
+                    disabled={busy === thread.id}
                     onChange={(e) => act(thread.id, "status", { status: e.target.value })}
                     className="h-9 cursor-pointer rounded-md border border-foreground/20 bg-card px-2 text-xs text-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
                   >
@@ -372,7 +492,12 @@ export default function InboxPage() {
                 <div className="flex items-end gap-2">
                   <textarea
                     value={reply}
-                    onChange={(e) => setReply(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setDrafts((current) => ({ ...current, [thread.id]: value }));
+                    }}
+                    aria-label="Reply"
+                    disabled={busy === thread.id}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
@@ -395,7 +520,7 @@ export default function InboxPage() {
             </>
           )}
         </section>
-      </div>
+      </div>}
     </>
   );
 }

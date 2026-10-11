@@ -9,7 +9,7 @@ replies are stored and marked ``sent`` (a future sender dispatches them).
 from __future__ import annotations
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -416,25 +416,50 @@ async def get_thread(
     return data
 
 
-async def unread_total(session: AsyncSession, *, org_id: str) -> dict:
-    unassigned = (
+async def inbox_stats(session: AsyncSession, *, org_id: str, user_id: str) -> dict:
+    active = InboxConversation.status != ConversationStatus.RESOLVED
+    counts = (
         await session.execute(
-            select(func.count()).select_from(InboxConversation).where(
-                InboxConversation.organization_id == org_id,
-                InboxConversation.status != ConversationStatus.RESOLVED,
-                InboxConversation.assigned_to.is_(None),
-            )
+            select(
+                func.coalesce(func.sum(case((active, 1), else_=0)), 0),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (and_(active, InboxConversation.assigned_to.is_(None)), 1),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (and_(active, InboxConversation.assigned_to == user_id), 1),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((InboxConversation.status == ConversationStatus.RESOLVED, 1), else_=0)
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(case((active, InboxConversation.unread_count), else_=0)),
+                    0,
+                ),
+            ).where(InboxConversation.organization_id == org_id)
         )
-    ).scalar_one()
-    unread = (
-        await session.execute(
-            select(func.coalesce(func.sum(InboxConversation.unread_count), 0)).where(
-                InboxConversation.organization_id == org_id,
-                InboxConversation.status != ConversationStatus.RESOLVED,
-            )
-        )
-    ).scalar_one()
-    return {"unassigned": int(unassigned or 0), "unread": int(unread or 0)}
+    ).one()
+    return {
+        "open": int(counts[0] or 0),
+        "unassigned": int(counts[1] or 0),
+        "mine": int(counts[2] or 0),
+        "resolved": int(counts[3] or 0),
+        "unread": int(counts[4] or 0),
+    }
 
 
 async def draft_reply(

@@ -169,8 +169,13 @@ async def test_unassigned_filter_and_stats(client):
     assert len(r.json()) == 2
 
     r = await client.get("/api/v1/inbox/stats", headers=headers)
-    assert r.json()["unassigned"] == 2
-    assert r.json()["unread"] == 2
+    assert r.json() == {
+        "open": 2,
+        "unassigned": 2,
+        "mine": 0,
+        "resolved": 0,
+        "unread": 2,
+    }
 
 
 @pytest.mark.asyncio
