@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { PaymentTrendChart, type PaymentTrendPoint } from "@/components/PaymentTrendChart";
 import { Badge } from "@/components/ui";
 import { WorkspaceAction } from "@/components/WorkspaceAction";
 import { backend } from "@/lib/backend";
 import {
   fmtDate,
-  fmtDateTime,
   gymStatusLabel,
   gymStatusTone,
   money,
@@ -26,6 +26,8 @@ async function safe<T>(p: Promise<T>): Promise<T | null> {
 }
 
 type Tone = "neutral" | "success" | "danger" | "warning" | "info";
+
+const PRIMARY_ACTION_CLASS = "inline-flex min-h-9 items-center justify-center gap-2 border border-primary bg-primary px-3 text-xs font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
 type ChecklistFlag = Exclude<keyof SetupChecklist, "steps">;
 
@@ -91,31 +93,41 @@ const ICONS = {
 function ProgressBar({ value, tone = "brand" }: { value: number; tone?: "brand" | "success" }) {
   const pct = Math.max(0, Math.min(100, value));
   return (
-    <div role="progressbar" aria-label="Progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-1 w-full overflow-hidden rounded-full bg-foreground/[0.08]">
+    <div role="progressbar" aria-label="Progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-1 w-full overflow-hidden bg-foreground/[0.08]">
       <div
-        className={`h-full rounded-full ${tone === "success" ? "bg-success" : "bg-brand"}`}
+        className={`h-full ${tone === "success" ? "bg-success" : "bg-brand"}`}
         style={{ width: `${pct}%` }}
       />
     </div>
   );
 }
 
-function ActivityRow({ p, currency }: { p: PaymentOut; currency: string }) {
-  return (
-    <li className="overview-payment-row">
-      <div className="overview-payment-main">
-        <span className="overview-payment-mark"><Icon d={ICONS.revenue} className="h-4 w-4" /></span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{titleCase(p.method)}</p>
-          <p className="overview-payment-meta truncate">{titleCase(p.kind)} · {fmtDateTime(p.paid_at ?? p.created_at)}</p>
-        </div>
-      </div>
-      <div className="text-right">
-        <p className="text-sm font-medium tabular-nums">{money(p.amount, p.currency || currency)}</p>
-        <p className="overview-payment-meta">{p.refunded_amount > 0 ? `-${money(p.refunded_amount, p.currency || currency)} refunded` : titleCase(p.status)}</p>
-      </div>
-    </li>
-  );
+function calendarDay(value: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function paymentTrend(payments: PaymentOut[], timeZone: string): PaymentTrendPoint[] {
+  const today = calendarDay(new Date(), timeZone);
+  const days = Array.from({ length: 14 }, (_, index) => {
+    const date = new Date(`${today}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() - (13 - index));
+    const label = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
+    return { date: date.toISOString().slice(0, 10), label, axisLabel: index % 2 === 0 ? label : "", count: 0 };
+  });
+  const byDate = new Map(days.map((day) => [day.date, day]));
+  for (const payment of payments) {
+    if (payment.status !== "succeeded" && payment.status !== "partially_refunded") continue;
+    const day = byDate.get(calendarDay(new Date(payment.paid_at ?? payment.created_at), timeZone));
+    if (day) day.count += 1;
+  }
+  return days;
 }
 
 export default async function DashboardPage() {
@@ -208,12 +220,12 @@ export default async function DashboardPage() {
           { label: "Add a student", href: "/app/members", icon: ICONS.members },
         ]
       : [
-          { label: "Invite a member", href: "/app/members", icon: ICONS.members },
+        { label: "Invite a member", href: "/app/members?invite=1", icon: ICONS.members },
           { label: "Create a plan", href: "/app/plans", icon: ICONS.revenue },
           { label: "Log a cash payment", href: "/app/cash", icon: ICONS.invoice },
         ];
 
-  const recent = (payments ?? []).slice(0, 5);
+  const trend = payments ? paymentTrend(payments, org?.timezone || "UTC") : null;
 
   const memberCapPct =
     saas?.member_cap && saas.member_cap > 0
@@ -227,97 +239,158 @@ export default async function DashboardPage() {
       : statusTone(saas?.saas_status ?? "active");
 
   return (
-    <div className="overview">
-      <div className="overview-topline">
-        <div><span className="truncate">{org?.name ?? "Workspace"}</span><span aria-hidden="true">/</span><span className="text-foreground">Overview</span></div>
-        <div>{org && <Badge tone={gymStatusTone(org.gym_status)}>{gymStatusLabel(org.gym_status)}</Badge>}<Link href="/app/analytics">Analytics ↗</Link></div>
-      </div>
-      <PageHeader title={greeting} subtitle={today} />
-      {/* ── Subscription alerts ─────────────────────────────────────────── */}
+    <>
+      <PageHeader
+        title={greeting}
+        subtitle={today + " · " + (org?.name ?? "Workspace")}
+        action={quickActions[0] ? (
+          <WorkspaceAction href={quickActions[0].href} primary className={PRIMARY_ACTION_CLASS}>
+            <span aria-hidden="true" className="text-base leading-none">+</span>
+            {quickActions[0].label}
+          </WorkspaceAction>
+        ) : undefined}
+      />
+
       {saas?.saas_status === "past_due" && !saas.read_only && (
-        <div className="mb-4 rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger)]">
+        <div className="mb-5 border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-[13px] text-[var(--danger)]">
           <strong>Payment failed.</strong>{" "}
-          {saas.retry_count > 0 ? `Stripe retry #${saas.retry_count} failed. ` : ""}
-          Update your card in{" "}
-          <Link href="/app/billing" className="font-medium underline">Billing</Link> to avoid interruption.
+          {saas.retry_count > 0 ? "Stripe retry #" + saas.retry_count + " failed. " : ""}
+          Update your card in <Link className="font-semibold underline" href="/app/billing">Billing</Link> to avoid interruption.
         </div>
       )}
       {saas?.read_only && (
-        <div className="mb-4 rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger)]">
+        <div className="mb-5 border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-[13px] text-[var(--danger)]">
           <strong>Account is read-only.</strong> Update billing to restore full access.
         </div>
       )}
       {saas?.saas_status === "suspended" && (
-        <div className="mb-4 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-bg)] px-4 py-3 text-sm text-[var(--warning)]">
+        <div className="mb-5 border border-[var(--warning-border)] bg-[var(--warning-bg)] px-4 py-3 text-[13px] text-[var(--warning)]">
           <strong>Account suspended.</strong> Contact support to reactivate your workspace.
         </div>
       )}
 
-
-      <nav aria-label="Quick actions" className="overview-toolbar">
-        {quickActions.map((q, index) => <WorkspaceAction key={q.href} href={q.href} primary={index === 0}><Icon d={q.icon} className="h-4 w-4" />{q.label}</WorkspaceAction>)}
-      </nav>
-
-      <section aria-label="Workspace metrics" className="overview-metrics">
-        {stats.map((s) => (
-          <Link key={s.label} href={s.href} className="overview-metric">
-            <span className="overview-metric-label"><Icon d={s.icon} className="h-4 w-4 shrink-0" />{s.label}</span>
-            <p className="overview-metric-value">{s.value}</p>
-          </Link>
-        ))}
+      <section aria-labelledby="snapshot-title" className="mb-8">
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <h2 id="snapshot-title" className="text-[13px] font-semibold">At a glance</h2>
+          <Link href="/app/analytics" className="text-[12px] font-medium text-brand no-underline hover:underline">Explore analytics ↗</Link>
+        </div>
+        <div className="grid grid-cols-2 overflow-hidden border border-border bg-border gap-px md:grid-cols-4">
+          {stats.map((stat) => (
+            <Link key={stat.label} href={stat.href} className="group min-w-0 bg-background px-5 py-5 text-foreground no-underline transition-colors hover:bg-foreground/[0.025] focus-visible:relative focus-visible:outline-2 focus-visible:outline-brand">
+              <span className="block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</span>
+              <span className="mt-2 block truncate text-[clamp(20px,2.5vw,28px)] font-semibold tracking-tight tabular-nums">{stat.value}</span>
+            </Link>
+          ))}
+        </div>
       </section>
 
-      <section id="setup" className="overview-setup" aria-labelledby="setup-title">
-        <div className="overview-setup-main">
-          <Icon d={ICONS.checkin} className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="overview-setup-copy">
-            <h2 id="setup-title">{checklist === null ? "Setup status unavailable" : nextStep ? "Finish setting up your workspace" : "Your workspace is ready"}</h2>
-            <p>{checklist === null ? "Please try again later." : nextStep ? `${doneSteps} of ${totalSteps} complete · Next: ${nextStep.label}` : allSetCopy}</p>
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.8fr)]">
+        <section className="min-w-0 border border-border bg-background" aria-labelledby="payments-title">
+          <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
+            <div>
+              <h2 id="payments-title" className="text-[16px] font-semibold tracking-tight">Payment activity</h2>
+              <p className="mt-1 text-[12px] text-muted-foreground">Successful transactions over the last 14 days</p>
+            </div>
+            <Link href="/app/payments" className="shrink-0 text-[12px] font-medium text-brand no-underline hover:underline">View all ↗</Link>
           </div>
-          {nextStep && <WorkspaceAction href={STEP_HREF[nextStep.key] ?? "/app/settings"}>Continue setup <span aria-hidden="true">→</span></WorkspaceAction>}
-        </div>
-        {checklistItems.length > 0 && (
-          <details>
-            <summary>Setup checklist · {remaining === 0 ? "Complete" : `${remaining} remaining`}</summary>
-            <div className="my-3 max-w-xs"><ProgressBar value={setupPct} tone={remaining === 0 ? "success" : "brand"} /></div>
-            <ul className="overview-checklist">
-              {checklistItems.map((item) => (
-                <li key={item.key}>
-                  <span aria-label={item.done ? "Complete" : "Incomplete"} className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border text-[11px] ${item.done ? "border-transparent bg-success text-background" : "border-[var(--border-strong)]"}`}>{item.done && "✓"}</span>
-                  <span className={`overview-checklist-label ${item.done ? "text-muted-foreground" : ""}`}>{item.label}</span>
-                  {!item.done && <WorkspaceAction href={STEP_HREF[item.key] ?? "/app/settings"} label={`Open: ${item.label}`}>Open <span aria-hidden="true">↗</span></WorkspaceAction>}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </section>
-
-      <div className="overview-columns">
-        <section className="overview-section" aria-labelledby="payments-title">
-          <div className="overview-section-heading"><h2 id="payments-title">Recent payments</h2><Link href="/app/payments">View all ↗</Link></div>
-          <div className="overview-payment-head" aria-hidden="true"><span>Payment</span><span>Amount / status</span></div>
-          {payments === null ? <p className="overview-empty">Payments couldn’t be loaded. Please try again.</p> : recent.length === 0 ? <p className="overview-empty">No payments yet. Recorded payments will appear here.</p> : <ul>{recent.map((p) => <ActivityRow key={p.id} p={p} currency={currency} />)}</ul>}
+          <div className="min-w-0 overflow-hidden">
+            {trend === null ? (
+              <p className="px-5 py-8 text-[13px] text-muted-foreground">Payments could not be loaded.</p>
+            ) : (
+              <PaymentTrendChart data={trend} />
+            )}
+          </div>
         </section>
-        <div>
-          <section className="overview-section" aria-labelledby="attention-title">
-            <div className="overview-section-heading"><h2 id="attention-title">Needs attention</h2></div>
-            {!metrics ? <p className="overview-empty">Pending reviews couldn’t be loaded.</p> : attention.length === 0 ? (
-              <div className="overview-review"><Icon d={ICONS.checkin} className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="text-muted-foreground">All caught up. No pending reviews.</span></div>
-            ) : <ul>{attention.map((a) => <li key={a.label}><Link className="overview-review" href={a.href}><span>{a.label}</span><Badge tone={a.tone}>{a.value}</Badge><span aria-hidden="true">↗</span></Link></li>)}</ul>}
+
+        <aside className="min-w-0 space-y-6" aria-label="Actions and setup">
+          <section aria-labelledby="action-title">
+            <h2 id="action-title" className="mb-3 text-[16px] font-semibold tracking-tight">Next steps</h2>
+            <div className="overflow-hidden border border-border bg-background">
+              {attention.length > 0 && (
+                <ul className="m-0 list-none p-0">
+                  {attention.map((item) => (
+                    <li key={item.label} className="border-b border-border">
+                      <Link href={item.href} className="flex min-h-12 items-center justify-between gap-3 px-4 text-[12px] font-medium text-foreground no-underline transition-colors hover:bg-foreground/[0.025]">
+                        <span>{item.label}</span><Badge tone={item.tone}>{item.value}</Badge>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="px-4 py-4">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 className="text-[13px] font-semibold">Workspace setup</h3>
+                  {checklist !== null && <span className="text-[11px] tabular-nums text-muted-foreground">{doneSteps} of {totalSteps}</span>}
+                </div>
+                {checklist === null ? (
+                  <p className="text-[12px] text-muted-foreground">Setup status is temporarily unavailable.</p>
+                ) : nextStep ? (
+                  <>
+                    <p className="text-[12px] text-muted-foreground">Next: <span className="font-medium text-foreground">{nextStep.label}</span></p>
+                    <div className="my-3"><ProgressBar value={setupPct} /></div>
+                    <WorkspaceAction href={STEP_HREF[nextStep.key] ?? "/app/settings"} className="inline-flex min-h-8 items-center text-[12px] font-semibold text-brand no-underline hover:underline">Continue setup →</WorkspaceAction>
+                  </>
+                ) : (
+                  <p className="text-[12px] text-muted-foreground">{allSetCopy}</p>
+                )}
+                {checklistItems.length > 0 && (
+                  <details className="mt-3 border-t border-border pt-3 text-[12px]">
+                    <summary className="cursor-pointer text-muted-foreground">View checklist</summary>
+                    <ul className="mt-3 grid list-none gap-2.5 p-0">
+                      {checklistItems.map((item) => (
+                        <li key={item.key} className="flex items-center gap-2">
+                          <span className={item.done ? "text-success" : "text-muted-foreground"} aria-label={item.done ? "Complete" : "Incomplete"}>{item.done ? "✓" : "○"}</span>
+                          <span className="min-w-0 flex-1">{item.label}</span>
+                          {!item.done && <WorkspaceAction href={STEP_HREF[item.key] ?? "/app/settings"} label={"Open: " + item.label} className="text-brand no-underline hover:underline">Open</WorkspaceAction>}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            </div>
           </section>
-          <section className="overview-section" aria-labelledby="subscription-title">
-            <div className="overview-section-heading"><h2 id="subscription-title">Workspace plan</h2><Link href="/app/billing">Manage ↗</Link></div>
-            <dl className="overview-properties">
-              <dt>Plan</dt><dd>{saas ? titleCase(saas.saas_tier) : "Unavailable"}</dd>
-              <dt>Status</dt><dd>{saas ? <Badge tone={saasBadgeTone}>{titleCase(saas.saas_status)}</Badge> : "—"}</dd>
-              <dt>Members</dt><dd>{saas ? `${saas.current_member_count} / ${saas.member_cap ?? "Unlimited"}` : "—"}</dd>
-              <dt>Renews</dt><dd>{saas?.current_period_end ? fmtDate(saas.current_period_end) : "—"}</dd>
-            </dl>
-            {memberCapPct !== null && <ProgressBar value={memberCapPct} />}
-          </section>
-        </div>
+
+          <nav aria-label="Common tasks">
+            <h2 className="mb-3 text-[16px] font-semibold tracking-tight">Common tasks</h2>
+            <div className="overflow-hidden border border-border bg-background">
+              {quickActions.slice(1).map((action) => (
+                <WorkspaceAction key={action.href} href={action.href} className="flex min-h-11 items-center gap-3 border-b border-border px-4 text-[12px] font-medium text-foreground no-underline transition-colors last:border-0 hover:bg-foreground/[0.025]">
+                  <Icon d={action.icon} className="h-4 w-4 text-muted-foreground" />
+                  <span className="flex-1">{action.label}</span><span aria-hidden="true" className="text-muted-foreground">↗</span>
+                </WorkspaceAction>
+              ))}
+            </div>
+          </nav>
+        </aside>
       </div>
-    </div>
+
+      <section className="mt-8 border border-border" aria-labelledby="subscription-title">
+        <div className="flex items-center gap-3 border-b border-border px-5 py-4">
+          <h2 id="subscription-title" className="text-[13px] font-semibold">Workspace plan</h2>
+          {org && <Badge tone={gymStatusTone(org.gym_status)}>{gymStatusLabel(org.gym_status)}</Badge>}
+          <Link href="/app/billing" className="ml-auto shrink-0 text-[12px] font-medium text-brand no-underline hover:underline">Manage plan ↗</Link>
+        </div>
+        <dl className="grid grid-cols-2 gap-px bg-border text-[12px] lg:grid-cols-4">
+          <div className="min-w-0 bg-background px-5 py-4">
+            <dt className="text-muted-foreground">Plan</dt>
+            <dd className="mt-1 font-semibold">{saas ? titleCase(saas.saas_tier) : "Unavailable"}</dd>
+          </div>
+          <div className="min-w-0 bg-background px-5 py-4">
+            <dt className="text-muted-foreground">Status</dt>
+            <dd className="mt-1">{saas ? <Badge tone={saasBadgeTone}>{titleCase(saas.saas_status)}</Badge> : "—"}</dd>
+          </div>
+          <div className="min-w-0 bg-background px-5 py-4">
+            <dt className="text-muted-foreground">Members</dt>
+            <dd className="mt-1 font-semibold">{saas ? saas.current_member_count + " / " + (saas.member_cap ?? "Unlimited") : "—"}</dd>
+            {memberCapPct !== null && <div className="mt-2 max-w-32"><ProgressBar value={memberCapPct} /></div>}
+          </div>
+          <div className="min-w-0 bg-background px-5 py-4">
+            <dt className="text-muted-foreground">Renews</dt>
+            <dd className="mt-1 font-semibold">{saas?.current_period_end ? fmtDate(saas.current_period_end) : "—"}</dd>
+          </div>
+        </dl>
+      </section>
+    </>
   );
 }

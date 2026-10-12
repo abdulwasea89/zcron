@@ -81,6 +81,13 @@ export default function MembersPage() {
     window.history.replaceState(null, "", "/app/members");
   }
 
+  function setInviteOpen(open: boolean) {
+    setShowInvite(open);
+    if (!open && new URLSearchParams(window.location.search).get("invite") === "1") {
+      window.history.replaceState(null, "", "/app/members");
+    }
+  }
+
   // Delete member
   const [deletingMember, setDeletingMember] = useState<MemberDirectoryItem | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -118,8 +125,10 @@ export default function MembersPage() {
   useEffect(() => {
     queueMicrotask(() => void load());
     queueMicrotask(() => {
-      const id = new URLSearchParams(window.location.search).get("member");
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("member");
       if (id) setOpenMemberId(id);
+      if (params.get("invite") === "1") setShowInvite(true);
     });
   }, []);
 
@@ -161,7 +170,7 @@ export default function MembersPage() {
       const res = await api.post<InviteResult>("/members/invite", { email: inviteEmail });
       handleInviteResult(res, inviteEmail, "sent");
       setInviteEmail("");
-      setShowInvite(false);
+      setInviteOpen(false);
       load();
     } catch (e) {
       setError((e as ApiError).message);
@@ -228,7 +237,7 @@ export default function MembersPage() {
         title="Members"
         subtitle="Directory & status management"
         action={
-          <Button onClick={() => setShowInvite((s) => !s)} >
+          <Button onClick={() => setInviteOpen(!showInvite)} >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" /></svg>
             Invite member
           </Button>
@@ -283,7 +292,7 @@ export default function MembersPage() {
       {/* Inviting is a create task, so it lives in a sheet: the directory stays in
           view while you type the address. Header and footer stay put, only the
           body scrolls. */}
-      <Sheet open={showInvite} onOpenChange={setShowInvite}>
+      <Sheet open={showInvite} onOpenChange={setInviteOpen}>
         <SheetContent>
           <SheetHeader className="flex items-start justify-between gap-4">
             <div className="min-w-0">
