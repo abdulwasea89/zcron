@@ -27,7 +27,7 @@ async function safe<T>(p: Promise<T>): Promise<T | null> {
 
 type Tone = "neutral" | "success" | "danger" | "warning" | "info";
 
-const PRIMARY_ACTION_CLASS = "inline-flex min-h-9 items-center justify-center gap-2 border border-primary bg-primary px-3 text-xs font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
+const PRIMARY_ACTION_CLASS = "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-xs font-medium text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
 type ChecklistFlag = Exclude<keyof SetupChecklist, "steps">;
 
@@ -303,8 +303,7 @@ export default async function DashboardPage() {
         </section>
 
         <aside className="min-w-0 space-y-6" aria-label="Actions and setup">
-          <section aria-labelledby="action-title">
-            <h2 id="action-title" className="mb-3 text-[16px] font-semibold tracking-tight">Next steps</h2>
+          <section aria-label="Pending reviews and workspace setup">
             <div className="overflow-hidden border border-border bg-background">
               {attention.length > 0 && (
                 <ul className="m-0 list-none p-0">

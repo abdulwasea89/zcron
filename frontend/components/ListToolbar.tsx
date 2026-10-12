@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { KeyboardEventHandler, ReactNode, Ref } from "react";
 import { CategoryTabs, Input, type CategoryTab } from "@/components/ui";
 import { Glyph } from "@/components/Glyph";
 
@@ -18,6 +18,8 @@ export function ListToolbar<T extends string>({
   search,
   onSearch,
   searchPlaceholder,
+  searchRef,
+  onSearchKeyDown,
   children,
 }: {
   tabs: CategoryTab<T>[];
@@ -26,6 +28,8 @@ export function ListToolbar<T extends string>({
   search: string;
   onSearch: (value: string) => void;
   searchPlaceholder: string;
+  searchRef?: Ref<HTMLInputElement>;
+  onSearchKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   /** Extra filters, placed left of the search field. */
   children?: ReactNode;
 }) {
@@ -35,6 +39,8 @@ export function ListToolbar<T extends string>({
       <div className="flex items-center gap-2">
         {children}
         <Input
+          ref={searchRef}
+          onKeyDown={onSearchKeyDown}
           placeholder={searchPlaceholder}
           aria-label={searchPlaceholder}
           value={search}

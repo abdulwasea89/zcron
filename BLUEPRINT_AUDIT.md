@@ -29,16 +29,16 @@ Every material feature identified in both source PDFs and the current codebase i
 
 | Status | Part A: Blueprint (152) | Part B: code-only (18) | Part C: Strategy (106) | Traceability rows (276) |
 |---|---:|---:|---:|---:|
-| ✅ Built | 15 | 15 | 1 | **31** |
+| ✅ Built | 18 | 15 | 1 | **34** |
 | 🔧 Improvement | 4 | 0 | 0 | **4** |
 | ⚠️ Partial | 70 | 3 | 53 | **126** |
 | 🧨 Broken / stubbed | 1 | 0 | 0 | **1** |
-| ❌ Not built | 62 | 0 | 46 | **108** |
+| ❌ Not built | 59 | 0 | 46 | **105** |
 | ⏸️ Deferred | 0 | 0 | 6 | **6** |
 
 The surface columns are not mutually exclusive; a row can have API and web coverage, for example. Counts above classify each traceability row once by its overall status. Part C intentionally maps overlaps, so 276 traceability rows do not mean 276 unique product capabilities. Blueprint rows 80–152 expand cross-cutting architecture, UX, evidence, localisation, expansion, and Sales Pack details; those row numbers are audit indices, not numbering printed in the PDF.
 
-For the original prioritized rows in Parts A and B: P0 — 17 built, 1 improvement, 19 partial, 10 not built; P1 — 7 built, 2 improvements, 13 partial, 13 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
+For the original prioritized rows in Parts A and B: P0 — 19 built, 1 improvement, 19 partial, 8 not built; P1 — 8 built, 2 improvements, 13 partial, 12 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
 
 ### Source-to-row coverage recheck
 
@@ -84,9 +84,9 @@ The supplied Notion page did not load in the available browser during this audit
 | 2 | Lead profile: goal, budget, preferred times, preferences | P0 | ✓ | ✓ | — | — | ✅ Built | Tenant-scoped profile fields editable in `/app/leads`, with field provenance, searchable prospects, and pipeline stage tracking; does not include AI extraction or conversation linking |
 | 3 | Pipeline: New → Contacted → Trial booked → Visited → Joined / Lost | P0 | ✓ | ✓ | ✓ | — | ✅ Built | Board/list views, six stages, search/filter/counts, accessible stage controls, and paginated actor/timestamp history at `/app/leads` and `GET /leads/{id}/history`. Referral conversions share audited transitions; legacy unknown previous stages are labeled. Trial/visit automation remains separate. |
 | 4 | Instant first reply 24/7 | P0 | ✓ | — | — | — | ❌ Not built | No auto-reply, no FAQ knowledge base |
-| 5 | Trial and tour booking | P0 | ✓ | — | — | — | ❌ Not built | `plan.trial_days` is a SaaS free trial; `visitor.py:4` says "a trial" in prose only. Only class booking exists |
-| 6 | Follow-up sequences (day 0, 1, 3, 7) | P0 | ✓ | — | — | — | ❌ Not built | Member-side onboarding exists (row 31); lead-side does not |
-| 7 | Lost-reason tracking and lead scoring | P1 | ✓ | — | — | — | ❌ Not built | — |
+| 5 | Trial and tour booking | P0 | ✓ | ✓ | ✓ | — | ✅ Built | Lead booking panel at `frontend/app/app/leads`: available class slots for trials and custom tour times; tenant-scoped reservations, capacity enforcement, duplicate-active-booking prevention, and attended/no-show/cancel transitions (`GET /leads/trial-slots`, `POST /leads/{id}/bookings`, `PATCH /leads/{id}/bookings/{booking_id}`). No automated confirmation/reminders |
+| 6 | Follow-up sequences (day 0, 1, 3, 7) | P0 | ✓ | ✓ | ✓ | — | ✅ Built | Consent-gated day 0/1/3/7 email sequence, scheduled worker, per-step delivery tracking, staff due notifications, completion/skip controls, and outcome notes; copy is currently fixed |
+| 7 | Lost-reason tracking and lead scoring | P1 | ✓ | ✓ | ✓ | — | ✅ Built | Marking a lead Lost requires a controlled reason; `/app/leads` shows a 0–100 explainable profile-completeness score with per-factor breakdown, not a predictive conversion claim |
 | 8 | Speed-to-lead reporting; missed-call text-back | P1 | ✓ | — | — | — | ❌ Not built | — |
 | 9 | Corporate and group memberships; referral tracking | P1–P2 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Corporate contracts/invoices and team seat management exist (`models/company.py`, `company_contract.py`, `invoices_service.py`, `/app/companies`). Referral program supports member codes, signup attribution, qualification after successful payment, dual rewards, admin tracking/manual fulfillment, mobile share/status, and joined Lead attribution (`services/referrals_service.py`, `/app/referrals`, mobile dashboard). Rewards are recorded and manually delivered; no automatic wallet credit/discount. Not available for office B2B tenants or invite-only enrollment. |
 | 10 | Member profile: photo, ID (where legal), contact, emergency contact, goals, health notes | P0 | ✓ | ✓ | ✓ | — | ⚠️ Partial | `membership.py:40 photo_url`, `:41 emergency_contact`, `user.py:35 emergency_contact`. Missing: ID, goals, health notes, auto-generated summary |
@@ -171,7 +171,7 @@ The supplied Notion page did not load in the available browser during this audit
 | 89 | L2 Approve first: discounts, win-back offers, complaint replies, freezes, bulk campaigns — one-tap approval | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Real human-in-the-loop gate: `agent/tools/write.py` 8 approval-gated writes via `_proposal()` / `_rejected()`. No one-tap approval UI for the full set |
 | 90 | L3 Human only: refunds, price changes, medical topics, angry customers, cash mismatches — AI briefs a human | — | ✓ | — | — | — | ❌ Not built | Not distinguished from L2. No risk classification, no fail-closed timeout |
 | 91 | Owner trust ladder: move any action type between levels; promote to L1 after seeing results; AI-disclosure setting per country | — | ✓ | — | — | — | ❌ Not built | No L0–L3 tiers, no owner-controlled promotion dial, no AI-disclosure setting (`AI Act Art. 50`) |
-| 92 | Lead Concierge — instant reply, qualification, trial booking, follow-up | — | ✓ | — | — | — | ❌ Not built | No lead entity, no inbound auto-reply |
+| 92 | Lead Concierge — instant reply, qualification, trial booking, follow-up | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Lead pipeline, trial/tour booking, consent-gated follow-up emails, controlled lost reasons, and profile score exist; instant reply and automated qualification remain absent |
 | 93 | Renewal & Collections — expiry reminders, dunning, payment links, proof matching | — | ✓ | ✓ | — | — | ⚠️ Partial | Grace reminders (days 1/2/3), payment-proof pipeline, SaaS dunning ladder. Missing: payment links to members, member escalation ladder |
 | 94 | Retention Coach — onboarding, absence check-ins, milestones, save offers | — | ✓ | ✓ | — | — | ✅ Built | Onboarding journey + inactivity ladder + win-back + celebrations all built with routes and daily workers |
 | 95 | Front-Desk Copilot — check-in context, draft replies | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Check-in status card (row 18) + inbox AI draft (`inbox_service.py`). Missing: context summary at check-in beyond status flags |
@@ -273,7 +273,7 @@ The supplied Notion page did not load in the available browser during this audit
 
 ## Where the biggest holes are
 
-1. **Sales & leads (rows 1–8)** — lead profiles and pipeline are built and manual intake is partial; the remaining 5 of 8 features are not built. No channel integrations, trials, automated replies, or follow-up sequences.
+1. **Sales & leads (rows 1–8)** — lead profiles, pipeline, trial/tour booking, consent-gated follow-up emails, controlled lost reasons, and explainable profile scoring are implemented; manual intake remains partial. Provider capture, instant replies, qualification automation, and speed-to-lead reporting remain missing.
 2. **Evidence Vault (rows 109–118)** — 9 of 10 not built: no hash chain, no soft delete, no evidence packs, no WORM.
 3. **Compliance & legal (rows 67–73)** — 6 of 7 not built: no waivers, consent, data-subject requests or cooling-off.
 4. **Localisation (§6, rows 99–108)** — 7 of 10 not built: no i18n/RTL, no local payment rails, no privacy-law packs.
@@ -384,7 +384,7 @@ means the Strategy Report itself says not to build it before validation.
 
 | ID | Requirement | Pri | Relation | Status | Current evidence or exact gap |
 |---|---|---|---|---|---|
-| S074 | Trial-to-paid: capture, qualify, schedule, confirm, attend, follow up, verify purchase | P0 | Both: B1–B8 | Partial | Lead/pipeline and membership records exist; trial and channel automation do not |
+| S074 | Trial-to-paid: capture, qualify, schedule, confirm, attend, follow up, verify purchase | P0 | Both: B1–B8 | Partial | Trial/tour scheduling, attendance tracking, and consent-gated day 0/1/3/7 follow-up emails exist; instant capture, qualification, booking confirmations, and verified purchase loop remain absent |
 | S075 | Retention: detect baseline decline, review context, intervene, observe return | P0 | Both: B31–B37 | Partial | Detection and messages/tasks exist; case, provider replies, and verified incremental result do not |
 | S076 | Payment recovery: verified failure, permitted outreach/link, provider verification, closure | P0 | Both: B23/B25/B93 | Partial | Payment events and dunning pieces exist; member recovery workflow is incomplete |
 | S077 | Complaint resolution: classify, gather policy/context, assign, respond, track, request feedback | P1 | Both: B44/B97 | Partial | NPS/theme clustering and tasks exist; no complaint case lifecycle |

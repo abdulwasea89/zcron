@@ -232,7 +232,7 @@ function MenuRow({ icon, label, onClick }: { icon: string; label: string; onClic
   );
 }
 
-/** Workspace tile: a rounded square with the workspace initial, colored from a
+/** Workspace avatar: a circle with the workspace initial, colored from a
  *  fixed palette by name so each workspace reads distinctly (and the same one
  *  keeps its color everywhere). */
 const TILE_COLORS = [
@@ -254,7 +254,7 @@ function tileColor(name: string): string {
 function Tile({ name }: { name: string }) {
   return (
     <span
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white"
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
       style={{ background: tileColor(name) }}
     >
       {name.charAt(0).toUpperCase()}

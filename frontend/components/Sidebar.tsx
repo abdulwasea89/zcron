@@ -55,7 +55,9 @@ const NAV: NavItem[] = [
 function navFor(industry?: string): NavItem[] {
   const meta = getIndustry(industry);
   const overrides = NAV_LABEL_OVERRIDES[meta.key] ?? {};
-  return NAV.filter((item) => meta.modules.includes(NAV_MODULE_BY_HREF[item.href])).map(
+  // Secondary administration pages live in Settings > Workspace tools.
+  const settingsTools = new Set(["/app/staff", "/app/payroll", "/app/receipts"]);
+  return NAV.filter((item) => meta.modules.includes(NAV_MODULE_BY_HREF[item.href]) && !settingsTools.has(item.href)).map(
     (item) => ({ ...item, label: overrides[item.href] ?? item.label }),
   );
 }

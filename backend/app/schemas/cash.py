@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -26,6 +26,17 @@ class CashPaymentOut(BaseModel):
     method: str
     member_status: str
     receipt_pdf_url: str | None = None
+
+
+class CashHistoryOut(BaseModel):
+    id: str
+    member_name: str | None
+    plan_name: str | None
+    amount: float
+    currency: str
+    method: str
+    status: str
+    paid_at: datetime | None
 
 
 class CashMemberOut(BaseModel):

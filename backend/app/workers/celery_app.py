@@ -201,6 +201,16 @@ def campaigns_task() -> dict:
     return _run(_for_each_org(_per_org))
 
 
+@celery_app.task(name="leads.followups")
+def lead_followups_task() -> dict:
+    from app.workers.lead_followups import run_due_lead_followups
+
+    async def _per_org(session, org_id):
+        return await run_due_lead_followups(session, org_id=org_id)
+
+    return _run(_for_each_org(_per_org))
+
+
 # ----------------------------------------------------------------- schedule
 celery_app.conf.beat_schedule = {
     "reconcile-stuck-payments": {
@@ -250,5 +260,9 @@ celery_app.conf.beat_schedule = {
     "marketing-campaigns": {
         "task": "marketing.campaigns",
         "schedule": 300.0,  # every 5 minutes: fire due scheduled campaigns
+    },
+    "lead-followups": {
+        "task": "leads.followups",
+        "schedule": 300.0,  # every 5 minutes: notify staff about due lead touches
     },
 }

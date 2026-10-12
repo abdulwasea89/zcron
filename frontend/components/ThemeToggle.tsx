@@ -2,21 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
+import { THEME_OPTIONS } from "@/lib/themes";
 
 function cx(...parts: (string | false | undefined | null)[]): string {
   return parts.filter(Boolean).join(" ");
 }
-
-// One small swatch per theme so the choice reads at a glance.
-const OPTIONS = [
-  { value: "system", label: "System", swatch: "conic-gradient(from 90deg, #fafafa, #1a1a1a)" },
-  { value: "notion", label: "Notion", swatch: "linear-gradient(135deg, #ffffff 40%, #2383e2)" },
-  { value: "light", label: "Light", swatch: "#faf7f2" },
-  { value: "midnight", label: "Midnight", swatch: "oklch(0.16 0.012 165)" },
-  { value: "dark", label: "Dark", swatch: "oklch(0.17 0.006 90)" },
-  { value: "solarized", label: "Solarized", swatch: "#fdf6e3" },
-  { value: "oled", label: "OLED", swatch: "#000000" },
-] as const;
 
 function ThemeIcon() {
   return (
@@ -90,7 +80,7 @@ export function ThemeToggle() {
           <p className="mono-label px-3 pb-1 pt-2 text-[10px] text-[var(--muted-foreground)]">
             Theme
           </p>
-          {OPTIONS.map((opt) => {
+          {THEME_OPTIONS.map((opt) => {
             const active = mounted && theme === opt.value;
             return (
               <button

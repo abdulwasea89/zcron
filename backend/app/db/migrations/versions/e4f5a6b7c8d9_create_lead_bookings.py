@@ -38,6 +38,12 @@ def upgrade() -> None:
         sa.Column("attended_at", sa.DateTime(), nullable=True),
         sa.Column("cancelled_at", sa.DateTime(), nullable=True),
         sa.CheckConstraint("booking_type IN ('trial', 'tour')", name="ck_lead_booking_type"),
+        sa.CheckConstraint(
+            "(booking_type = 'trial' AND class_session_id IS NOT NULL) OR "
+            "(booking_type = 'tour' AND class_session_id IS NULL)",
+            name="ck_lead_booking_target",
+        ),
+        sa.CheckConstraint("ends_at IS NULL OR ends_at > starts_at", name="ck_lead_booking_time_range"),
         sa.CheckConstraint("status IN ('scheduled', 'attended', 'no_show', 'cancelled')", name="ck_lead_booking_status"),
         sa.ForeignKeyConstraint(["class_session_id"], ["class_sessions.id"]),
         sa.ForeignKeyConstraint(["created_by"], ["users.id"]),

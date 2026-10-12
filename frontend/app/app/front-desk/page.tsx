@@ -2,19 +2,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { ListToolbar } from "@/components/ListToolbar";
+import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Alert,
-  Avatar,
   Badge,
   Button,
-  Card,
-  CardHeader,
   EmptyState,
   Input,
   Spinner,
-  StatCard,
 } from "@/components/ui";
-import { LiveIndicator, useRealtimeEvent } from "@/components/Realtime";
+import { useRealtimeEvent } from "@/components/Realtime";
 import { useModuleGate } from "@/hooks/useModuleGate";
 import { api, ApiError } from "@/lib/api";
 import { money, titleCase } from "@/lib/format";
@@ -48,6 +47,9 @@ export default function FrontDeskPage() {
   const [lockers, setLockers] = useState<LockerOut[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [view, setView] = useState<"visitors" | "lockers">("visitors");
+  const [search, setSearch] = useState("");
+  const [showVisitorForm, setShowVisitorForm] = useState(false);
 
   // Add-visitor form
   const [name, setName] = useState("");
@@ -149,6 +151,7 @@ export default function FrontDeskPage() {
       setAmount("");
       setHost(null);
       setHostQuery("");
+      setShowVisitorForm(false);
       void loadVisitors();
       void loadSummary();
     } catch (e) {
@@ -220,10 +223,17 @@ export default function FrontDeskPage() {
   if (!ready) return <Spinner label="Loading front desk…" />;
 
   const showAmount = kind === "day_pass";
+  const filteredVisitors = visitors?.filter((v) =>
+    `${v.name} ${v.phone ?? ""} ${v.kind} ${v.host_name ?? ""}`.toLowerCase().includes(search.toLowerCase()),
+  );
+  const filteredLockers = lockers?.filter((l) =>
+    `${l.number} ${l.holder_label ?? ""}`.toLowerCase().includes(search.toLowerCase()),
+  );
 
   return (
     <>
-      <PageHeader title="Walk-ins" subtitle="Day passes, guest log and lockers" action={<LiveIndicator />} />
+      <PageHeader title="Walk-ins" subtitle="Log visitors, day passes and locker use."
+        action={<Button onClick={() => setShowVisitorForm(true)}>+ Log visitor</Button>} />
 
       {error && (
         <div className="mb-4">
@@ -231,21 +241,11 @@ export default function FrontDeskPage() {
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Visitors today" value={String(summary?.visitors_today ?? "—")} accent />
-        <StatCard label="Inside now" value={String(summary?.inside_now ?? "—")} />
-        <StatCard label="Day-pass revenue" value={summary ? money(summary.day_pass_revenue) : "—"} />
-        <StatCard
-          label="Lockers busy"
-          value={summary ? `${summary.lockers_occupied}/${summary.lockers_total}` : "—"}
-        />
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+      <Sheet open={showVisitorForm} onOpenChange={setShowVisitorForm}>
+        <SheetContent><SheetHeader><SheetTitle>Log a visitor</SheetTitle><SheetDescription>Record a walk-in, guest or day pass.</SheetDescription></SheetHeader><SheetBody>
         {/* Log a visitor */}
-        <Card>
-          <CardHeader title="Log a visitor" subtitle="Day passes take payment at the desk" />
-          <form onSubmit={logVisitor} className="space-y-3 p-5">
+        <div>
+          <form onSubmit={logVisitor} className="space-y-3">
             <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" required />
             <div className="grid grid-cols-2 gap-3">
               <Input label="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" />
@@ -301,99 +301,53 @@ export default function FrontDeskPage() {
 
             <Button type="submit" loading={busy === "log"} disabled={!name.trim()}>Log visitor</Button>
           </form>
-        </Card>
-
-        {/* Guest log + lockers */}
-        <div className="space-y-5">
-          <Card className="flex flex-col overflow-hidden">
-            <CardHeader
-              title="Guest log"
-              subtitle={visitors ? `${visitors.length} today` : "Loading…"}
-            />
-            {visitors === null ? (
-              <div className="p-5"><Spinner label="Loading visitors…" /></div>
-            ) : visitors.length === 0 ? (
-              <EmptyState title="No visitors yet" hint="Log a walk-in or day pass to see them here." />
-            ) : (
-              <ul className="divide-y divide-foreground/[0.06]">
-                {visitors.map((v) => (
-                  <li key={v.id} className="flex items-center gap-3 px-5 py-3">
-                    <Avatar name={v.name} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="truncate text-[13px] font-medium text-foreground">{v.name}</span>
-                        <Badge tone={KIND_TONE[v.kind] ?? "neutral"} size="sm">{titleCase(v.kind)}</Badge>
-                        {v.paid && v.amount > 0 && <Badge tone="success" size="sm">{money(v.amount)}</Badge>}
-                        {v.host_name && <span className="text-[11px] text-muted-foreground">guest of {v.host_name}</span>}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        In {clock(v.checked_in_at)}
-                        {v.checked_out_at ? ` · out ${clock(v.checked_out_at)}` : " · inside"}
-                        {v.locker_number ? ` · locker ${v.locker_number}` : ""}
-                      </p>
-                    </div>
-                    {v.checked_out_at ? (
-                      <Badge tone="neutral" size="sm">Out</Badge>
-                    ) : (
-                      <Button variant="secondary" disabled={busy === v.id} onClick={() => checkOut(v.id)}>
-                        Check out
-                      </Button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
-          {/* Lockers */}
-          <Card>
-            <CardHeader title="Lockers" subtitle="Assign and release the register" />
-            <form onSubmit={addLocker} className="flex items-end gap-2 px-5 pt-4">
-              <Input label="Add locker" value={newLocker} onChange={(e) => setNewLocker(e.target.value)} placeholder="Number" className="w-32" />
-              <Button type="submit" variant="secondary" loading={busy === "locker"} disabled={!newLocker.trim()}>Add</Button>
-            </form>
-            <div className="p-5">
-              {lockers === null ? (
-                <Spinner label="Loading lockers…" />
-              ) : lockers.length === 0 ? (
-                <p className="text-[12px] text-muted-foreground">No lockers registered yet.</p>
-              ) : (
-                <ul className="grid gap-2 sm:grid-cols-2">
-                  {lockers.map((l) => (
-                    <li
-                      key={l.id}
-                      className={`flex items-center gap-2 rounded-md border px-3 py-2 ${
-                        l.status === "occupied" ? "border-warning-border bg-warning-bg" : "border-foreground/10"
-                      }`}
-                    >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground/[0.06] font-mono text-[12px] font-semibold text-foreground">
-                        {l.number}
-                      </span>
-                      {l.status === "occupied" ? (
-                        <>
-                          <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{l.holder_label}</span>
-                          <Button variant="ghost" disabled={busy === l.id} onClick={() => releaseLocker(l.id)}>Release</Button>
-                        </>
-                      ) : (
-                        <>
-                          <input
-                            value={holders[l.id] ?? ""}
-                            onChange={(e) => setHolders((h) => ({ ...h, [l.id]: e.target.value }))}
-                            placeholder="Holder"
-                            className="h-7 min-w-0 flex-1 rounded-md border border-foreground/15 bg-card px-2 text-[12px] text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none"
-                          />
-                          <Button variant="ghost" disabled={busy === l.id || !(holders[l.id] ?? "").trim()} onClick={() => assignLocker(l.id)}>
-                            Assign
-                          </Button>
-                        </>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </Card>
         </div>
+        </SheetBody></SheetContent>
+      </Sheet>
+
+      <ListToolbar tabs={[
+        { value: "visitors", label: "Visitors", count: visitors?.length ?? summary?.visitors_today },
+        { value: "lockers", label: "Lockers", count: lockers?.length ?? summary?.lockers_total },
+      ]} value={view} onChange={setView} search={search} onSearch={setSearch} searchPlaceholder={view === "visitors" ? "Search visitors…" : "Search lockers…"} />
+
+      <div className="mt-3">
+
+        {view === "visitors" ? (
+          visitors === null ? <Spinner label="Loading visitors…" /> :
+          filteredVisitors?.length === 0 ?
+            <EmptyState title={search ? "No matching visitors" : "No visitors yet"} hint={search ? "Try another name or type." : "Log a walk-in or day pass to see them here."} /> :
+            <div className="overflow-x-auto"><table className={`${TABLE} min-w-[720px]`}>
+              <thead><tr className={THEAD_ROW}>
+                <th className={`${TH} ${CELL_FIRST}`}>Name</th><th className={`${TH} ${CELL}`}>Type</th><th className={`${TH} ${CELL}`}>Arrival</th><th className={`${TH} ${CELL}`}>Amount</th><th className={`${TH} ${CELL}`}>Status</th><th className={`${TH} ${CELL_LAST}`}>Action</th>
+              </tr></thead>
+              <tbody>{filteredVisitors?.map((v) => <tr key={v.id} className={TR}>
+                <td className={`${TD} ${CELL_FIRST} py-3`}><p className="text-[13px] font-medium">{v.name}</p><p className="text-[11px] text-muted-foreground">{v.host_name ? `Guest of ${v.host_name}` : v.phone || ""}</p></td>
+                <td className={`${TD} ${CELL} py-3`}><Badge tone={KIND_TONE[v.kind] ?? "neutral"} size="sm">{titleCase(v.kind)}</Badge></td>
+                <td className={`${TD} ${CELL} py-3 text-[12px]`}>{clock(v.checked_in_at)}</td>
+                <td className={`${TD} ${CELL} py-3 text-[12px] tabular-nums`}>{v.paid && v.amount > 0 ? money(v.amount) : "—"}</td>
+                <td className={`${TD} ${CELL} py-3`}><Badge tone={v.checked_out_at ? "neutral" : "success"} size="sm">{v.checked_out_at ? "Out" : "Inside"}</Badge></td>
+                <td className={`${TD} ${CELL_LAST} py-3`}>{!v.checked_out_at && <Button variant="secondary" disabled={busy === v.id} onClick={() => checkOut(v.id)}>Check out</Button>}</td>
+              </tr>)}</tbody>
+            </table></div>
+        ) : (
+          <>
+            <form onSubmit={addLocker} className="mb-4 flex items-end gap-2">
+              <Input label="Add locker" value={newLocker} onChange={(e) => setNewLocker(e.target.value)} placeholder="Number" className="w-32" />
+              <Button type="submit" variant="secondary" loading={busy === "locker"} disabled={!newLocker.trim()}>Add locker</Button>
+            </form>
+            {lockers === null ? <Spinner label="Loading lockers…" /> : filteredLockers?.length === 0 ?
+              <EmptyState title={search ? "No matching lockers" : "No lockers registered"} hint="Add a locker to start the register." /> :
+              <div className="overflow-x-auto"><table className={`${TABLE} min-w-[620px]`}>
+                <thead><tr className={THEAD_ROW}><th className={`${TH} ${CELL_FIRST}`}>Locker</th><th className={`${TH} ${CELL}`}>Holder</th><th className={`${TH} ${CELL}`}>Status</th><th className={`${TH} ${CELL_LAST}`}>Action</th></tr></thead>
+                <tbody>{filteredLockers?.map((l) => <tr key={l.id} className={TR}>
+                  <td className={`${TD} ${CELL_FIRST} py-3 text-[13px] font-medium`}>{l.number}</td>
+                  <td className={`${TD} ${CELL} py-3`}>{l.status === "occupied" ? l.holder_label : <input value={holders[l.id] ?? ""} onChange={(e) => setHolders((h) => ({ ...h, [l.id]: e.target.value }))} placeholder="Holder name" className="h-8 w-full max-w-56 rounded-md border border-foreground/15 bg-card px-2 text-[12px]" />}</td>
+                  <td className={`${TD} ${CELL} py-3`}><Badge tone={l.status === "occupied" ? "warning" : "neutral"} size="sm">{titleCase(l.status)}</Badge></td>
+                  <td className={`${TD} ${CELL_LAST} py-3`}>{l.status === "occupied" ? <Button variant="secondary" disabled={busy === l.id} onClick={() => releaseLocker(l.id)}>Release</Button> : <Button variant="secondary" disabled={busy === l.id || !(holders[l.id] ?? "").trim()} onClick={() => assignLocker(l.id)}>Assign</Button>}</td>
+                </tr>)}</tbody>
+              </table></div>}
+          </>
+        )}
       </div>
     </>
   );

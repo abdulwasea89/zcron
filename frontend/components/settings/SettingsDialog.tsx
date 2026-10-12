@@ -56,7 +56,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         </button>
 
         <div className="min-h-0 flex-1 overflow-hidden py-6 pl-4 pr-12 sm:pl-6 sm:pr-14">
-          <SettingsView />
+          <SettingsView onNavigate={close} />
         </div>
       </div>
     </div>

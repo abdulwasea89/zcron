@@ -147,7 +147,7 @@ the practical product meaning of the full matrix.
 
 | Department | Built | Partial / improvement | Not built / broken | Strategic implication |
 |---|---|---|---|---|
-| Sales and leads | Lead profile, pipeline board/history, referral attribution, validated manual/source-tagged capture, normalized contacts, tenant-scoped duplicate prevention, editable source attribution, fuller update audit evidence | Manual capture remains the only working intake path | External channel capture, instant reply, trial booking, sequences, scoring, lost reasons, response-time reporting | Existing capture quality is improved; the intentionally unbuilt Lead Concierge workflow remains out of scope |
+| Sales and leads | Lead profile, pipeline board/history, referral attribution, validated manual/source-tagged capture, normalized contacts, tenant-scoped duplicate prevention, editable source attribution, trial-class and tour booking, attendance/no-show/cancellation tracking, consent-gated day 0/1/3/7 follow-up emails, controlled lost reasons, explainable lead score | Manual capture remains the only working intake path; follow-up email copy is fixed rather than configurable; booking confirmations/reminders to leads are absent | External channel capture, instant reply, automated qualification, speed-to-lead reporting, missed-call text-back | Trial/tour booking, follow-up, loss analysis, and profile-readiness scoring work in the web lead view; full Lead Concierge automation remains incomplete |
 | Memberships | Signup, invitations, approval enrollment, plans, activation, statuses | Profiles, plan variants, freeze, reminders, segmentation | Promotions, family/multi-payer, member plan changes, transfer, cancellation/save offers | Good operational base; lifecycle completion is still required |
 | Front desk | Tasks, walk-ins, guest log, day passes, lockers, status cards | QR/manual check-in and offline check-in sync | Hardware integrations and full offline application behavior | One of the strongest product areas |
 | Finance | Cash reconciliation, receipts, Stripe flows | Recurring cards, dunning, tax, revenue views, refunds | Regional payment rails, P&L, credits, chargeback packs, accounting exports | Financial records are useful, but recovery and localisation remain weak |
@@ -167,8 +167,9 @@ the practical product meaning of the full matrix.
 
 ### 6.1 Sales and Leads partial-feature improvement
 
-This pass improves only the already-existing manual/source-tagged capture path.
-It does not implement any requirement previously classified as not built.
+This section covers improvements to the existing manual/source-tagged capture
+path. Lead follow-up emails are implemented separately and are sent only when
+staff records the prospect's explicit permission.
 
 | Existing capability | Improvement completed | Result |
 |---|---|---|
@@ -179,20 +180,26 @@ It does not implement any requirement previously classified as not built.
 | Audit evidence | Lead updates now record both previous and new values | Source/contact corrections become explainable in the existing audit trail |
 | API replay safety | Idempotency hashing now uses JSON-mode schema output for enum-backed source values | Controlled sources remain stable under request replay |
 
-The following Sales and Leads features remain intentionally unbuilt in this
-pass: provider-driven channel capture, instant first response, trial/tour
-booking, follow-up sequences, lost-reason classification, lead scoring,
-speed-to-lead analytics, and missed-call text-back.
+Trial and tour booking is implemented for leads: staff can choose an available
+class slot or set a tour time, then track attendance, no-show, or cancellation.
+Lead follow-up emails now send on days 0, 1, 3, and 7 when explicit email
+permission is recorded, with delivery status, staff reminders, completion/skip
+tracking, and outcome notes. Copy is currently fixed. Booking
+confirmations/reminders remain absent. Lost leads require a controlled reason;
+the visible 0–100 score explains profile completeness and is not presented as a
+conversion prediction. Remaining gaps include provider-driven capture, instant
+first response, qualification automation, speed-to-lead analytics, and
+missed-call text-back.
 
 ## 7. Blueprint and code-only feature totals
 
 | Status | Blueprint-derived items | Code-only items | Total |
 |---|---:|---:|---:|
-| Built | 15 | 15 | 30 |
+| Built | 18 | 15 | 33 |
 | Improvement | 4 | 0 | 4 |
 | Partial | 70 | 3 | 73 |
 | Broken / stubbed | 1 | 0 | 1 |
-| Not built | 62 | 0 | 62 |
+| Not built | 59 | 0 | 59 |
 | **Total** | **152** | **18** | **170** |
 
 These totals are row-level classifications rather than estimates of percentage
@@ -606,7 +613,7 @@ means the Strategy Report itself says not to build it before validation.
 
 | ID | Requirement | Pri | Relation | Status | Current evidence or exact gap |
 |---|---|---|---|---|---|
-| S074 | Trial-to-paid: capture, qualify, schedule, confirm, attend, follow up, verify purchase | P0 | Both: B1–B8 | Partial | Lead/pipeline and membership records exist; trial and channel automation do not |
+| S074 | Trial-to-paid: capture, qualify, schedule, confirm, attend, follow up, verify purchase | P0 | Both: B1–B8 | Partial | Trial/tour scheduling, attendance tracking, and consent-gated day 0/1/3/7 follow-up emails exist; instant capture, qualification, booking confirmations, and verified purchase loop remain absent |
 | S075 | Retention: detect baseline decline, review context, intervene, observe return | P0 | Both: B31–B37 | Partial | Detection and messages/tasks exist; case, provider replies, and verified incremental result do not |
 | S076 | Payment recovery: verified failure, permitted outreach/link, provider verification, closure | P0 | Both: B23/B25/B93 | Partial | Payment events and dunning pieces exist; member recovery workflow is incomplete |
 | S077 | Complaint resolution: classify, gather policy/context, assign, respond, track, request feedback | P1 | Both: B44/B97 | Partial | NPS/theme clustering and tasks exist; no complaint case lifecycle |
@@ -718,9 +725,9 @@ This section embeds the complete Blueprint feature inventory so this report is i
 | 2 | Lead profile: goal, budget, preferred times, preferences | P0 | ✓ | ✓ | — | — | ✅ Built | Tenant-scoped profile fields editable in `/app/leads`, with field provenance, searchable prospects, and pipeline stage tracking; does not include AI extraction or conversation linking |
 | 3 | Pipeline: New → Contacted → Trial booked → Visited → Joined / Lost | P0 | ✓ | ✓ | ✓ | — | ✅ Built | Board/list views, six stages, search/filter/counts, accessible stage controls, and paginated actor/timestamp history at `/app/leads` and `GET /leads/{id}/history`. Referral conversions share audited transitions; legacy unknown previous stages are labeled. Trial/visit automation remains separate. |
 | 4 | Instant first reply 24/7 | P0 | ✓ | — | — | — | ❌ Not built | No auto-reply, no FAQ knowledge base |
-| 5 | Trial and tour booking | P0 | ✓ | — | — | — | ❌ Not built | `plan.trial_days` is a SaaS free trial; `visitor.py:4` says "a trial" in prose only. Only class booking exists |
-| 6 | Follow-up sequences (day 0, 1, 3, 7) | P0 | ✓ | — | — | — | ❌ Not built | Member-side onboarding exists (row 31); lead-side does not |
-| 7 | Lost-reason tracking and lead scoring | P1 | ✓ | — | — | — | ❌ Not built | — |
+| 5 | Trial and tour booking | P0 | ✓ | ✓ | ✓ | — | ✅ Built | Lead booking panel at `/app/leads`: available class slots for trials and custom tour times; tenant-scoped reservations, capacity enforcement, duplicate-active-booking prevention, and attended/no-show/cancel transitions (`GET /leads/trial-slots`, `POST /leads/{id}/bookings`, `PATCH /leads/{id}/bookings/{booking_id}`). No automated confirmation/reminders |
+| 6 | Follow-up sequences (day 0, 1, 3, 7) | P0 | ✓ | ✓ | ✓ | — | ✅ Built | Consent-gated day 0/1/3/7 email sequence, scheduled worker, per-step delivery tracking, staff due notifications, completion/skip controls, and outcome notes; copy is currently fixed |
+| 7 | Lost-reason tracking and lead scoring | P1 | ✓ | ✓ | ✓ | — | ✅ Built | Marking a lead Lost requires a controlled reason; `/app/leads` shows a 0–100 explainable profile-completeness score with per-factor breakdown, not a predictive conversion claim |
 | 8 | Speed-to-lead reporting; missed-call text-back | P1 | ✓ | — | — | — | ❌ Not built | — |
 | 9 | Corporate and group memberships; referral tracking | P1–P2 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Corporate contracts/invoices and team seat management exist (`models/company.py`, `company_contract.py`, `invoices_service.py`, `/app/companies`). Referral program supports member codes, signup attribution, qualification after successful payment, dual rewards, admin tracking/manual fulfillment, mobile share/status, and joined Lead attribution (`services/referrals_service.py`, `/app/referrals`, mobile dashboard). Rewards are recorded and manually delivered; no automatic wallet credit/discount. Not available for office B2B tenants or invite-only enrollment. |
 | 10 | Member profile: photo, ID (where legal), contact, emergency contact, goals, health notes | P0 | ✓ | ✓ | ✓ | — | ⚠️ Partial | `membership.py:40 photo_url`, `:41 emergency_contact`, `user.py:35 emergency_contact`. Missing: ID, goals, health notes, auto-generated summary |
@@ -805,7 +812,7 @@ This section embeds the complete Blueprint feature inventory so this report is i
 | 89 | L2 Approve first: discounts, win-back offers, complaint replies, freezes, bulk campaigns — one-tap approval | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Real human-in-the-loop gate: `agent/tools/write.py` 8 approval-gated writes via `_proposal()` / `_rejected()`. No one-tap approval UI for the full set |
 | 90 | L3 Human only: refunds, price changes, medical topics, angry customers, cash mismatches — AI briefs a human | — | ✓ | — | — | — | ❌ Not built | Not distinguished from L2. No risk classification, no fail-closed timeout |
 | 91 | Owner trust ladder: move any action type between levels; promote to L1 after seeing results; AI-disclosure setting per country | — | ✓ | — | — | — | ❌ Not built | No L0–L3 tiers, no owner-controlled promotion dial, no AI-disclosure setting (`AI Act Art. 50`) |
-| 92 | Lead Concierge — instant reply, qualification, trial booking, follow-up | — | ✓ | — | — | — | ❌ Not built | No lead entity, no inbound auto-reply |
+| 92 | Lead Concierge — instant reply, qualification, trial booking, follow-up | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Lead pipeline, trial/tour booking, consent-gated follow-up emails, controlled lost reasons, and profile score exist; instant reply and automated qualification remain absent |
 | 93 | Renewal & Collections — expiry reminders, dunning, payment links, proof matching | — | ✓ | ✓ | — | — | ⚠️ Partial | Grace reminders (days 1/2/3), payment-proof pipeline, SaaS dunning ladder. Missing: payment links to members, member escalation ladder |
 | 94 | Retention Coach — onboarding, absence check-ins, milestones, save offers | — | ✓ | ✓ | — | — | ✅ Built | Onboarding journey + inactivity ladder + win-back + celebrations all built with routes and daily workers |
 | 95 | Front-Desk Copilot — check-in context, draft replies | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Check-in status card (row 18) + inbox AI draft (`inbox_service.py`). Missing: context summary at check-in beyond status flags |

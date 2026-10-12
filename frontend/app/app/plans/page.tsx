@@ -405,14 +405,14 @@ export default function PlansPage() {
               <EmptyState
                 title="No plans yet"
                 hint={"Create your first plan — members can’t sign up until one is published."}
-                icon={<span className="flex h-10 w-10 items-center justify-center rounded-md bg-brand/10 text-brand"><svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></span>}
+                icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>}
                 action={<Button onClick={newPlan}>+ Create your first plan</Button>}
               />
             ) : isOffice ? (
               <EmptyState
                 title="No space plans yet"
                 hint="Publish a space plan so companies can sign seat contracts and get billed."
-                icon={<span className="flex h-10 w-10 items-center justify-center rounded-md bg-brand/10 text-brand"><svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18" /><path d="M9 7h6M9 11h6M9 15h4" /></svg></span>}
+                icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18" /><path d="M9 7h6M9 11h6M9 15h4" /></svg>}
                 action={<Button onClick={newPlan}>+ Create your first space plan</Button>}
               />
             ) : (
@@ -429,7 +429,7 @@ export default function PlansPage() {
             <EmptyState
               title={search ? `No plans matching "${search}"` : `No ${filter} plans`}
               hint={search ? "Try a different name." : filter === "archived" ? "Archive a plan to see it here." : undefined}
-              icon={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-background text-muted-foreground"><SearchIcon /></span>}
+              icon={<SearchIcon />}
             />
           )
         ) : (

@@ -2,19 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { ListToolbar } from "@/components/ListToolbar";
+import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import {
   Alert,
   Avatar,
   Badge,
   Button,
   Card,
-  CardHeader,
   EmptyState,
-  Input,
   Spinner,
-  StatCard,
 } from "@/components/ui";
-import { LiveIndicator, useRealtimeEvent } from "@/components/Realtime";
+import { useRealtimeEvent } from "@/components/Realtime";
 import { QrScanner } from "@/components/attendance/QrScanner";
 import { useModuleGate } from "@/hooks/useModuleGate";
 import { api, ApiError } from "@/lib/api";
@@ -111,24 +110,6 @@ function relTime(iso: string, now: number): string {
   return new Date(iso + "Z").toLocaleDateString();
 }
 
-const METHOD_ICON: Record<string, string> = {
-  manual: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a7.5 7.5 0 1115 0v.75H4.5v-.75z",
-  qr: "M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 12h10",
-  app: "M7 3h10a1 1 0 011 1v16a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm5 14h.01",
-  card: "M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z",
-  biometric: "M12 11c0 3.517-1.009 6.799-2.753 9.571M12 3a9 9 0 019 9M3 12a9 9 0 019-9M15.9 5.5c.7.6 1.3 1.3 1.7 2.1M12 15a3 3 0 100-6 3 3 0 000 6z",
-};
-
-/* Icons for the KPI strip, matching the dashboard's stat-tile language. */
-const METRIC_ICON = {
-  checkin: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-  members:
-    "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
-  average:
-    "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z",
-  slipping: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z",
-};
-
 export default function AttendancePage() {
   const { ready } = useModuleGate("attendance");
 
@@ -137,6 +118,8 @@ export default function AttendancePage() {
   const [results, setResults] = useState<AttendanceMember[]>([]);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<"today" | "members">("today");
+  const [feedSearch, setFeedSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [lastCheckIn, setLastCheckIn] = useState<{ name: string; res: CheckInOut } | null>(null);
@@ -304,7 +287,8 @@ export default function AttendancePage() {
       const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement | null)?.isContentEditable;
       if (typing) return;
       e.preventDefault();
-      searchRef.current?.focus();
+      setView("members");
+      requestAnimationFrame(() => searchRef.current?.focus());
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -401,6 +385,10 @@ export default function AttendancePage() {
       .slice(0, 8);
   }, [query, roster]);
   const shown = online ? results : offlineResults;
+  const memberRows = query.trim() ? shown : roster;
+  const filteredToday = (today ?? []).filter((item) =>
+    `${item.member_name ?? ""} ${item.method} ${clock(item.checked_in_at)}`.toLowerCase().includes(feedSearch.toLowerCase()),
+  );
 
   function onSearchKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && shown.length > 0) {
@@ -414,14 +402,12 @@ export default function AttendancePage() {
 
   if (!ready) return <Spinner label="Loading check-in…" />;
 
-  const hasQuery = query.trim() !== "";
-
   return (
     <>
       <PageHeader
         title="Check-in"
-        subtitle="The front desk's live console — log arrivals and act on who needs attention."
-        action={<LiveIndicator />}
+        subtitle="Track arrivals and check members in."
+        action={<Button onClick={() => setScanning(true)}>Scan QR</Button>}
       />
 
       {error && (
@@ -453,205 +439,64 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {/* KPI strip — one surface, hairline-separated cells (matches the dashboard). */}
-      <div className="mb-5 grid grid-cols-1 gap-px overflow-hidden border border-foreground/10 bg-[var(--border)] sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          joined
-          accent
-          label="Check-ins today"
-          value={String(summary?.today_count ?? "—")}
-          icon={<MetricIcon d={METRIC_ICON.checkin} />}
-        />
-        <StatCard
-          joined
-          label="Unique members"
-          value={String(summary?.unique_today ?? "—")}
-          icon={<MetricIcon d={METRIC_ICON.members} />}
-        />
-        <StatCard
-          joined
-          label="7-day daily avg"
-          value={summary ? summary.avg_last_7_days.toFixed(1) : "—"}
-          icon={<MetricIcon d={METRIC_ICON.average} />}
-        />
-        <StatCard
-          joined
-          label="Slipping · 14d"
-          value={String(summary?.dormant_members ?? "—")}
-          hint="Active members with no visit in 14 days"
-          icon={<MetricIcon d={METRIC_ICON.slipping} />}
-        />
-      </div>
+      {lastCheckIn && (
+        <div className="mb-5"><CheckInReceipt name={lastCheckIn.name} res={lastCheckIn.res} onDismiss={() => setLastCheckIn(null)} /></div>
+      )}
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        {/* ── Check-in command bar ───────────────────────────────────── */}
-        <div className="space-y-5 lg:col-span-2">
-          <Card className="overflow-hidden">
-            {/* Stage: the desk's whole job, given the top of the page. */}
-            <div className="relative border-b border-foreground/10 px-5 py-4">
-              <div
-                className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-brand/[0.06] to-transparent"
-                aria-hidden="true"
-              />
-              <h2 className="relative text-lg font-semibold leading-tight tracking-tight text-foreground sm:text-xl">
-                Who&rsquo;s arriving?
-              </h2>
+      <ListToolbar
+        tabs={[
+          { value: "today", label: "Today", count: today?.length ?? summary?.today_count },
+          { value: "members", label: "Members", count: roster.length },
+        ]}
+        value={view}
+        onChange={setView}
+        search={view === "today" ? feedSearch : query}
+        onSearch={view === "today" ? setFeedSearch : onQueryChange}
+        searchPlaceholder={view === "today" ? "Search check-ins…" : "Search members…"}
+        searchRef={view === "members" ? searchRef : undefined}
+        onSearchKeyDown={view === "members" ? onSearchKey : undefined}
+      />
 
-              <div className="relative mt-3">
-                <Input
-                  ref={searchRef}
-                  autoFocus
-                  value={query}
-                  onChange={(e) => onQueryChange(e.target.value)}
-                  onKeyDown={onSearchKey}
-                  placeholder="Search name, email or phone…"
-                  aria-label="Search members to check in"
-                  prefix={<SearchIcon className="h-4 w-4" />}
-                  trailing={
-                    <button
-                      type="button"
-                      onClick={() => setScanning(true)}
-                      aria-label="Scan member QR code"
-                      title="Scan QR code"
-                      className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-                    >
-                      <ScanIcon className="h-4 w-4" />
-                    </button>
-                  }
-                />
-              </div>
-
-              <div className="relative mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                <Hint k="Enter">check in top match</Hint>
-                <Hint k="/">focus search</Hint>
-              </div>
-            </div>
-
-            {/* Results / idle */}
-            <div className="p-2">
-              {!hasQuery ? (
-                <div className="flex items-center gap-2.5 px-3 py-3 text-[12px] text-muted-foreground">
-                  <SearchIcon className="h-3.5 w-3.5 shrink-0" />
-                  Start typing to find a member — or scan their QR code.
-                </div>
-              ) : searching && shown.length === 0 ? (
-                <div className="flex items-center gap-2.5 px-3 py-3 text-[12px] text-muted-foreground">
-                  <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-foreground/20 border-t-foreground/60" />
-                  Searching…
-                </div>
-              ) : shown.length === 0 ? (
-                <div className="px-3 py-3 text-[12px] text-muted-foreground">
-                  No one matches “{query}”. Try an email or phone number.
-                </div>
-              ) : (
-                <ul className="space-y-0.5">
-                  {shown.map((m, i) => (
-                    <li key={m.member_id}>
-                      <button
-                        type="button"
-                        disabled={busyId === m.member_id}
-                        onClick={() =>
-                          checkIn(m.member_id, m.member_name || m.member_email, "manual")
-                        }
-                        className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-foreground/[0.04] focus-visible:bg-foreground/[0.04] focus-visible:outline-none disabled:opacity-50"
-                      >
-                        <Avatar name={m.member_name || m.member_email} size="sm" />
-                        <span className="min-w-0 flex-1">
-                          <span className="flex flex-wrap items-center gap-1.5">
-                            <span className="truncate text-[13px] font-medium text-foreground">
-                              {m.member_name || "—"}
-                            </span>
-                            <Badge tone={statusTone(m.member_status)} size="sm">
-                              {titleCase(m.member_status)}
-                            </Badge>
-                            <StatusBadges item={m} />
-                          </span>
-                          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                            {m.member_email}
-                          </span>
-                        </span>
-                        <span className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-brand opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                          {i === 0 && (
-                            <kbd className="rounded border border-foreground/15 bg-secondary px-1 font-mono text-[10px] text-muted-foreground">
-                              ↵
-                            </kbd>
-                          )}
-                          <CheckIcon className="h-4 w-4" />
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </Card>
-
-          {lastCheckIn && (
-            <CheckInReceipt
-              name={lastCheckIn.name}
-              res={lastCheckIn.res}
-              onDismiss={() => setLastCheckIn(null)}
-            />
-          )}
-        </div>
-
-        {/* ── Today ──────────────────────────────────────────────────── */}
-        <Card className="flex flex-col overflow-hidden lg:col-span-1">
-          <CardHeader
-            title="Today"
-            subtitle={
-              today ? `${today.length} visit${today.length === 1 ? "" : "s"} logged` : "Loading…"
-            }
-            action={
-              <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-foreground/10 bg-surface px-3">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
-                </span>
-                <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Live</span>
-              </span>
-            }
-          />
-
-          {today === null ? (
-            <div className="p-5">
-              <Spinner label="Loading today’s check-ins…" />
-            </div>
-          ) : today.length === 0 ? (
-            <EmptyState
-              title="No check-ins yet today"
-              hint="Visits logged here or scanned from the app will appear in real time."
-            />
-          ) : (
-            <ul className="max-h-[calc(100vh-22rem)] divide-y divide-[var(--border)] overflow-y-auto">
-              {today.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex animate-slide-up items-center gap-3 px-5 py-2.5 transition-colors hover:bg-foreground/[0.03]"
-                >
-                  <Avatar name={a.member_name || "?"} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-foreground">
-                      {a.member_name || "—"}
-                    </p>
-                    <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <path d={METHOD_ICON[a.method] ?? METHOD_ICON.manual} />
-                        </svg>
-                        {titleCase(a.method)} · {clock(a.checked_in_at)}
-                      </span>
-                      <StatusBadges item={a} />
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                    {relTime(a.checked_in_at, now)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+      <div className="mt-3 overflow-x-auto">
+        {view === "today" ? (
+          today === null ? <Spinner label="Loading check-ins…" /> :
+          filteredToday.length === 0 ? <EmptyState title={feedSearch ? "No matching check-ins" : "No check-ins yet today"} hint="Visits logged at the desk or in the app appear here." /> :
+          <table className={TABLE + " min-w-[720px]"}>
+            <thead><tr className={THEAD_ROW}>
+              <th className={TH + " " + CELL_FIRST}>Member</th>
+              <th className={TH + " " + CELL}>Method</th>
+              <th className={TH + " " + CELL}>Time</th>
+              <th className={TH + " " + CELL}>Attention</th>
+              <th className={TH + " " + CELL_LAST}>Status</th>
+            </tr></thead>
+            <tbody>{filteredToday.map((a) => <tr key={a.id} className={TR}>
+              <td className={TD + " " + CELL_FIRST + " py-3 text-[13px] font-medium"}>{a.member_name || "—"}</td>
+              <td className={TD + " " + CELL + " py-3 text-[12px]"}>{titleCase(a.method)}</td>
+              <td className={TD + " " + CELL + " py-3 text-[12px]"}>{clock(a.checked_in_at)}<p className="text-[11px] text-muted-foreground">{relTime(a.checked_in_at, now)}</p></td>
+              <td className={TD + " " + CELL + " py-3"}><div className="flex flex-wrap gap-1"><StatusBadges item={a} /></div></td>
+              <td className={TD + " " + CELL_LAST + " py-3"}><Badge tone="success" size="sm">Checked in</Badge></td>
+            </tr>)}</tbody>
+          </table>
+        ) : (
+          searching && memberRows.length === 0 ? <Spinner label="Searching members…" /> :
+          memberRows.length === 0 ? <EmptyState title="No matching members" hint="Try another name, email or phone number." /> :
+          <table className={TABLE + " min-w-[720px]"}>
+            <thead><tr className={THEAD_ROW}>
+              <th className={TH + " " + CELL_FIRST}>Member</th>
+              <th className={TH + " " + CELL}>Email</th>
+              <th className={TH + " " + CELL}>Membership</th>
+              <th className={TH + " " + CELL}>Attention</th>
+              <th className={TH + " " + CELL_LAST}>Action</th>
+            </tr></thead>
+            <tbody>{memberRows.map((m) => <tr key={m.member_id} className={TR}>
+              <td className={TD + " " + CELL_FIRST + " py-3 text-[13px] font-medium"}>{m.member_name || "—"}</td>
+              <td className={TD + " " + CELL + " py-3 text-[12px]"}>{m.member_email}</td>
+              <td className={TD + " " + CELL + " py-3"}><Badge tone={statusTone(m.member_status)} size="sm">{titleCase(m.member_status)}</Badge></td>
+              <td className={TD + " " + CELL + " py-3"}><div className="flex flex-wrap gap-1"><StatusBadges item={m} /></div></td>
+              <td className={TD + " " + CELL_LAST + " py-3"}><Button variant="secondary" disabled={busyId === m.member_id} onClick={() => checkIn(m.member_id, m.member_name || m.member_email, "manual")}>Check in</Button></td>
+            </tr>)}</tbody>
+          </table>
+        )}
       </div>
 
       {scanning && <QrScanner onResult={onScan} onClose={() => setScanning(false)} />}
@@ -707,42 +552,6 @@ function CheckInReceipt({
         </button>
       </div>
     </Card>
-  );
-}
-
-/** A keyboard-shortcut legend chip: keycap + its action. */
-function Hint({ k, children }: { k: string; children: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <kbd className="rounded border border-foreground/15 bg-secondary px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
-        {k}
-      </kbd>
-      {children}
-    </span>
-  );
-}
-
-function MetricIcon({ d }: { d: string }) {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={d} />
-    </svg>
-  );
-}
-
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
-    </svg>
-  );
-}
-
-function ScanIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 12h10" />
-    </svg>
   );
 }
 

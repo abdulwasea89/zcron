@@ -1,10 +1,7 @@
 @import "tailwindcss";
 
-/* Dark-variant utilities must also fire under the other dark themes. Matches
-   any element nested under a `.dark` / `.midnight` / `.oled` ancestor (the theme
-   class lives on <html>), mirroring next-themes attribute="class". Solarized is
-   a light theme and is intentionally excluded. */
-@custom-variant dark (&:where(.dark *, .midnight *, .oled *));
+/* Dark utilities follow every dark palette chosen through next-themes. */
+@custom-variant dark (&:where(.dark *, .midnight *, .oled *, .helix *, .notion-dark *, .chatgpt *));
 
 /* ─────────────────────────────────────────────────────────────────────────
    Radius + typography scale — theme-independent.
@@ -387,6 +384,205 @@
   --chart-3: #2dd4bf;
   --chart-4: #a3e635;
   --chart-5: #fbbf24;
+}
+
+/* Shared semantic states for the three reference-inspired dark palettes. */
+.helix, .notion-dark, .chatgpt {
+  color-scheme: dark;
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --foreground-muted: var(--muted-foreground);
+  --secondary-foreground: var(--foreground);
+  --accent: var(--foreground);
+  --accent-foreground: var(--background);
+  --accent-light: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --accent-hover: color-mix(in srgb, var(--foreground) 84%, var(--background));
+  --input: var(--border);
+  --ring: color-mix(in srgb, var(--brand) 45%, transparent);
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+  --primary-light: color-mix(in srgb, var(--brand) 16%, transparent);
+  --ring-accent: var(--brand);
+
+  --success: #83c79a;
+  --success-hover: #9ad9ad;
+  --success-bg: color-mix(in srgb, var(--success) 14%, var(--background));
+  --success-border: color-mix(in srgb, var(--success) 43%, transparent);
+  --danger: #f07676;
+  --danger-hover: #fa8989;
+  --danger-bg: color-mix(in srgb, var(--danger) 14%, var(--background));
+  --danger-border: color-mix(in srgb, var(--danger) 44%, transparent);
+  --warning: #ddb76d;
+  --warning-hover: #e9c986;
+  --warning-bg: color-mix(in srgb, var(--warning) 14%, var(--background));
+  --warning-border: color-mix(in srgb, var(--warning) 44%, transparent);
+  --info: #82b5ee;
+  --info-hover: #9bc6f4;
+  --info-bg: color-mix(in srgb, var(--info) 14%, var(--background));
+  --info-border: color-mix(in srgb, var(--info) 44%, transparent);
+}
+
+/* Helix: warm black, brass hairlines, and orange actions. Its controls and
+   panels keep the sharp geometry shown in the reference. */
+.helix {
+  --background: #181411;
+  --foreground: #f3ead8;
+  --card: #211c17;
+  --surface: #211c17;
+  --popover: #262019;
+  --muted-foreground: #ad9b7e;
+  --muted: #8c7d68;
+  --secondary: #2b241d;
+  --border: #5a4c3c;
+  --border-strong: #826a50;
+  --brand: #ff6a00;
+  --brand-foreground: #1a120c;
+  --primary-hover: #ff8a33;
+  --success: #a2c878;
+  --warning: #e5bc5f;
+  --info: #91b7cf;
+  --chart-1: #ff6a00;
+  --chart-2: #e7bd68;
+  --chart-3: #9fbc7b;
+  --chart-4: #d5865d;
+  --chart-5: #f3ead8;
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+}
+
+/* Notion's dark palette uses a charcoal canvas and slightly raised gray
+   surfaces; blue stays a restrained action and focus color. */
+.notion-dark {
+  --background: #191919;
+  --foreground: #e9e9e7;
+  --card: #202020;
+  --surface: #202020;
+  --popover: #252525;
+  --muted-foreground: #a0a0a0;
+  --muted: #777777;
+  --secondary: #2b2b2b;
+  --border: #373737;
+  --border-strong: #505050;
+  --brand: #5b9fed;
+  --brand-foreground: #101820;
+  --primary-hover: #78b4f4;
+  --chart-1: #5b9fed;
+  --chart-2: #79bba8;
+  --chart-3: #b49ad6;
+  --chart-4: #d2a96b;
+  --chart-5: #a0a0a0;
+}
+
+/* ChatGPT's dark palette keeps the canvas almost black, with graphite
+   surfaces and neutral primary actions. Purple is reserved for accents. */
+.chatgpt {
+  --background: #0b0b0b;
+  --foreground: #f3f3f3;
+  --card: #171717;
+  --surface: #171717;
+  --popover: #242424;
+  --muted-foreground: #a6a6a6;
+  --muted: #777777;
+  --secondary: #2a2a2a;
+  --border: #303030;
+  --border-strong: #4a4a4a;
+  --brand: #e8e8e8;
+  --brand-foreground: #151515;
+  --primary-hover: #cccccc;
+  --ring-accent: #a376ed;
+  --info: #ad87ed;
+  --chart-1: #a376ed;
+  --chart-2: #8b8ff3;
+  --chart-3: #70b5b5;
+  --chart-4: #c493d7;
+  --chart-5: #b9b9b9;
+}
+
+/* Helix primary controls start as muted orange buttons. Hover reveals four
+   L-shaped corners outside the button without moving it.
+   Static cards keep a quiet brass border; interactive cards acquire an orange
+   hairline. Keyboard focus retains its separate outline. */
+.helix button[data-variant="primary"],
+.helix .workspace-action-primary {
+  --helix-action: #d97627;
+  position: relative;
+  border: 1px solid var(--helix-action);
+  border-radius: 0;
+  background: var(--helix-action);
+  color: var(--brand-foreground);
+  box-shadow: none;
+}
+.helix button[data-variant="primary"]::after,
+.helix .workspace-action-primary::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  z-index: 1;
+  pointer-events: none;
+  color: var(--helix-action);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+  background-image:
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor);
+  background-position:
+    left top, left top, right top, right top,
+    left bottom, left bottom, right bottom, right bottom;
+  background-size:
+    13px 2px, 2px 13px, 13px 2px, 2px 13px,
+    13px 2px, 2px 13px, 13px 2px, 2px 13px;
+  background-repeat: no-repeat;
+}
+.helix button[data-variant="primary"]:hover,
+.helix .workspace-action-primary:hover {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--helix-action) 8%, var(--background));
+  color: var(--helix-action);
+}
+.helix button[data-variant="primary"]:hover::after,
+.helix .workspace-action-primary:hover::after {
+  opacity: 1;
+}
+.helix button[data-variant="secondary"] {
+  border-radius: 0;
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: none;
+}
+.helix button[data-variant="secondary"]:hover {
+  background: var(--secondary);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.helix a.group:hover {
+  outline: 1px solid var(--brand);
+  outline-offset: -1px;
+}
+.helix aside a[aria-current="page"] {
+  background: var(--primary-light);
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+.helix aside :is(a, button):hover,
+.helix .theme-choice:hover,
+.helix .theme-choice[aria-pressed="true"] {
+  color: var(--brand);
+}
+.helix .theme-choice:hover,
+.helix .theme-choice[aria-pressed="true"] {
+  border-color: var(--brand);
+  background: var(--primary-light);
+}
+.helix :is(a, button):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

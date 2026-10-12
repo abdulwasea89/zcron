@@ -325,9 +325,15 @@ export default function InboxPage() {
       {(initialLoading || empty || (listFailed && conversations === null)) ? (
         <section className="mt-5 flex min-h-[440px] flex-col items-center justify-center border-t border-border px-6 py-16 text-center" aria-live="polite">
           {initialLoading ? <Spinner label="Loading conversations…" /> : <>
-            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 text-brand">
-              <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M4 5h16v11H9l-5 4V5Z" /><path d="M8 9h8M8 12h5" />
+            <div className="mb-4 text-muted-foreground" aria-hidden="true">
+              <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                {listFailed ? (
+                  <><circle cx="12" cy="12" r="9" /><path d="M12 7.5v6M12 16.5h.01" /></>
+                ) : query.trim() ? (
+                  <><circle cx="10.75" cy="10.75" r="6.75" /><path d="m16 16 4.25 4.25" /></>
+                ) : (
+                  <><path d="M4.5 5.25h15v10.5h-10L4.5 19.5V5.25Z" /><path d="m8.5 10.5 2.25 2.25 4.75-4.75" /></>
+                )}
               </svg>
             </div>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">{listFailed ? "Couldn’t load conversations" : emptyTitle}</h2>

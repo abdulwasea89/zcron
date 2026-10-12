@@ -64,6 +64,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   return (
     <button
       ref={ref}
+      data-variant={variant}
       className={cx(
         "inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3",
         "text-sm font-medium",
@@ -661,18 +662,48 @@ export function Spinner({ label }: { label?: string }) {
 }
 
 /* ── EmptyState (flat callout — sits inside the table surface, no outline) ── */
+const EMPTY_ICON_PATHS = {
+  search: "M21 21l-4.35-4.35m1.35-5.4a6.75 6.75 0 11-13.5 0 6.75 6.75 0 0113.5 0z",
+  person: "M12 11.25a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5zM4.5 20.25a7.5 7.5 0 0115 0",
+  people: "M16.5 20.25a6 6 0 00-12 0m12-12a3 3 0 11-6 0 3 3 0 016 0zm2.25 5.25a4.5 4.5 0 014.5 4.5M18.75 5.5a2.75 2.75 0 010 5.5",
+  plan: "M9 4.5H6.75A2.25 2.25 0 004.5 6.75v12a2.25 2.25 0 002.25 2.25h10.5a2.25 2.25 0 002.25-2.25v-12A2.25 2.25 0 0017.25 4.5H15M9 4.5a2.25 2.25 0 004.5 0M9 4.5a2.25 2.25 0 014.5 0M8.25 12h7.5m-7.5 3.75h5.25",
+  money: "M3 7.5h18v9H3v-9zm9 7.5a3 3 0 100-6 3 3 0 000 6zM6 4.5h12M6 19.5h12",
+  calendar: "M7.5 3v3m9-3v3M3.75 9h16.5M6 5.25h12a2.25 2.25 0 012.25 2.25v11.25A2.25 2.25 0 0118 21H6a2.25 2.25 0 01-2.25-2.25V7.5A2.25 2.25 0 016 5.25z",
+  message: "M20.25 11.25a8.25 8.25 0 01-8.25 8.25 8.4 8.4 0 01-3.42-.72L3.75 20.25l1.47-4.83A8.25 8.25 0 1120.25 11.25z",
+  check: "M9 12.75l2.25 2.25L15.75 9M12 21a9 9 0 110-18 9 9 0 010 18z",
+  building: "M3.75 21h16.5M5.25 21V4.5h13.5V21M9 8.25h1.5m3 0H15M9 12h1.5m3 0H15M9 15.75h1.5m3 0H15",
+  door: "M5.25 21V3.75h12V21M3.75 21h15m-4.5-9h.75",
+  locker: "M5.25 3.75h13.5v16.5H5.25V3.75zm6.75 0v16.5m-3-9h.75m4.5 0H15",
+} as const;
+
+function EmptyStateGlyph({ title, hint = "" }: { title: string; hint?: string }) {
+  const subject = title.toLowerCase();
+  const kind = /match|search|filter/.test(subject) ? "search"
+    : /lead|prospect/.test(subject) ? "person"
+    : /referral|member|staff|seat-holder|student|people|client/.test(subject) ? "people"
+    : /payment|cash|receipt|invoice|payroll|billing|transaction/.test(subject) ? "money"
+    : /plan|offer|contract|subscription/.test(subject) ? "plan"
+    : /locker/.test(subject) ? "locker"
+    : /space|company|companies/.test(subject) ? "building"
+    : /visitor|desk|walk-in/.test(subject) ? "door"
+    : /class|booking|slot|attendance|check-in|tour|shift/.test(subject) ? "calendar"
+    : /inbox|message|conversation/.test(subject) ? "message"
+    : /approval|task|audit|queue|clear|entry|entries|event/.test(subject) ? "check"
+    : /payment|receipt/.test(hint.toLowerCase()) ? "money"
+    : "plan";
+  return (
+    <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={EMPTY_ICON_PATHS[kind]} />
+    </svg>
+  );
+}
+
 export function EmptyState({ title, hint, icon, action }: { title: string; hint?: string; icon?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      {icon ? (
-        <div className="mb-4 text-foreground/40">{icon}</div>
-      ) : (
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-foreground/15">
-          <svg className="h-5 w-5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-          </svg>
-        </div>
-      )}
+      <div className="mb-4 flex h-8 w-8 items-center justify-center text-muted-foreground [&_svg]:h-7 [&_svg]:w-7" aria-hidden="true">
+        {icon ?? <EmptyStateGlyph title={title} hint={hint} />}
+      </div>
       <p className="text-sm font-semibold text-foreground">{title}</p>
       {hint && <p className="mt-1 max-w-xs text-sm text-muted-foreground">{hint}</p>}
       {action && <div className="mt-5">{action}</div>}

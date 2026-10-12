@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.core.constants import LeadSource
 
@@ -37,6 +37,7 @@ class LeadProfileFields(BaseModel):
     budget: str | None = Field(default=None, max_length=200)
     preferred_times: str | None = Field(default=None, max_length=500)
     preferences: str | None = Field(default=None, max_length=2000)
+    email_followup_consent: bool | None = None
 
     @field_validator("name")
     @classmethod
@@ -66,11 +67,24 @@ class LeadProfileFields(BaseModel):
 class LeadCreate(LeadProfileFields):
     name: str = Field(min_length=1, max_length=160)
     source: LeadSource = LeadSource.STAFF_ENTERED
+    email_followup_consent: bool = False
 
 
 class LeadUpdate(LeadProfileFields):
     source: LeadSource | None = None
     stage: str | None = Field(default=None, pattern="^(new|contacted|trial_booked|visited|joined|lost)$")
+    lost_reason: Literal[
+        "price", "schedule", "timing", "location", "joined_elsewhere",
+        "no_response", "not_interested", "other",
+    ] | None = None
+
+    @model_validator(mode="after")
+    def validate_lost_reason(self) -> LeadUpdate:
+        if self.stage == "lost" and self.lost_reason is None:
+            raise ValueError("Choose a reason when moving a lead to Lost.")
+        if self.lost_reason is not None and self.stage not in {None, "lost"}:
+            raise ValueError("Lost reason can only be set while the lead is Lost.")
+        return self
 
 
 class LeadOut(BaseModel):
@@ -87,8 +101,34 @@ class LeadOut(BaseModel):
     source: str
     stage: str
     profile_sources: dict[str, str]
+    email_followup_consent: bool
+    email_followup_consent_at: datetime | None
+    lost_reason: str | None
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def lead_score(self) -> int:
+        return sum(weight for _, weight, present in self._score_parts() if present)
+
+    @computed_field
+    @property
+    def lead_score_factors(self) -> list[str]:
+        return [
+            f"{label} (+{weight})" if present else f"Missing: {label}"
+            for label, weight, present in self._score_parts()
+        ]
+
+    def _score_parts(self) -> list[tuple[str, int, bool]]:
+        return [
+            ("Contact method", 25, bool(self.email or self.phone)),
+            ("Fitness goal", 25, bool(self.goal)),
+            ("Budget", 15, bool(self.budget)),
+            ("Preferred times", 15, bool(self.preferred_times)),
+            ("Preferences", 10, bool(self.preferences)),
+            ("Lead source", 10, bool(self.source)),
+        ]
 
 
 class LeadHistoryItem(BaseModel):
@@ -107,6 +147,27 @@ class LeadHistoryOut(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class LeadFollowUpOut(BaseModel):
+    id: str
+    day: Literal[0, 1, 3, 7]
+    due_at: datetime
+    status: Literal["scheduled", "due", "completed", "skipped"]
+    completed_at: datetime | None
+    note: str | None
+    email_status: Literal["pending", "sent", "failed", "skipped"]
+    email_sent_at: datetime | None
+
+
+class LeadFollowUpUpdate(BaseModel):
+    status: Literal["completed", "skipped"]
+    note: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("note")
+    @classmethod
+    def clean_note(cls, value: str | None) -> str | None:
+        return _clean_optional_text(value)
 
 
 def _naive_utc(value: datetime | None) -> datetime | None:

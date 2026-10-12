@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { Alert, Avatar, Badge, Button, Card, CardHeader, Input, Spinner } from "@/components/ui";
+import { ListToolbar } from "@/components/ListToolbar";
+import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useRealtimeEvent } from "@/components/Realtime";
+import { Alert, Avatar, Badge, Button, EmptyState, Input, Spinner } from "@/components/ui";
 import {
   Select,
   SelectContent,
@@ -21,37 +25,101 @@ function localDate() {
   return new Date(now.getTime() - offset).toISOString().slice(0, 10);
 }
 
+type CashHistoryItem = {
+  id: string;
+  member_name: string | null;
+  plan_name: string | null;
+  amount: number;
+  currency: string;
+  method: string;
+  status: string;
+  paid_at: string | null;
+};
+
 export default function CashPage() {
+  const [history, setHistory] = useState<CashHistoryItem[] | null>(null);
+  const [error, setError] = useState("");
+  const [methodFilter, setMethodFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [showPayment, setShowPayment] = useState(false);
+  const [showReconcile, setShowReconcile] = useState(false);
+
+  async function loadHistory() {
+    try {
+      setHistory(await api.get<CashHistoryItem[]>("/cash/history"));
+      setError("");
+    } catch (caught) {
+      setError((caught as ApiError).message);
+      setHistory([]);
+    }
+  }
+
+  useEffect(() => { queueMicrotask(() => void loadHistory()); }, []);
+  useRealtimeEvent(["payment.recorded"], () => void loadHistory());
+
+  const all = history ?? [];
+  const filtered = all.filter((item) =>
+    (methodFilter === "all" || item.method === methodFilter) &&
+    `${item.member_name || "Walk-in"} ${item.plan_name || ""} ${item.method} ${item.amount}`
+      .toLowerCase().includes(search.trim().toLowerCase()),
+  );
+
   return (
     <>
-      <PageHeader
-        title="Cash & offline payments"
-        subtitle="Record front-desk payments confidently, then close the drawer with a clear audit trail."
+      <PageHeader title="Cash & offline payments" subtitle="Record payments and reconcile the drawer."
+        action={<div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => setShowReconcile(true)}>Close drawer</Button>
+          <Button onClick={() => setShowPayment(true)}>+ New payment</Button>
+        </div>}
+      />
+      {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+
+      <Sheet open={showPayment} onOpenChange={setShowPayment}>
+        <SheetContent className="[--sheet-max-w:560px]">
+          <SheetHeader><SheetTitle>Log a payment</SheetTitle><SheetDescription>Record an offline payment and activate the member.</SheetDescription></SheetHeader>
+          <SheetBody className="p-0"><LogPayment onSaved={() => void loadHistory()} /></SheetBody>
+        </SheetContent>
+      </Sheet>
+      <Sheet open={showReconcile} onOpenChange={setShowReconcile}>
+        <SheetContent>
+          <SheetHeader><SheetTitle>Close the drawer</SheetTitle><SheetDescription>Reconcile each business day before handover.</SheetDescription></SheetHeader>
+          <SheetBody className="p-0"><Reconcile /></SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      <ListToolbar
+        tabs={[
+          { value: "all", label: "All", count: all.length },
+          { value: "cash", label: "Cash", count: all.filter((item) => item.method === "cash").length },
+          { value: "bank_transfer", label: "Bank transfer", count: all.filter((item) => item.method === "bank_transfer").length },
+          { value: "mobile_wallet", label: "Mobile wallet", count: all.filter((item) => item.method === "mobile_wallet").length },
+        ]}
+        value={methodFilter} onChange={setMethodFilter} search={search} onSearch={setSearch} searchPlaceholder="Search payments…"
       />
 
-      <section className="mb-6 grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 sm:grid-cols-3 sm:p-5" aria-label="Cash workflow overview">
-        <WorkflowStep number="1" title="Record payment" hint="Select the member and plan" />
-        <WorkflowStep number="2" title="Activate membership" hint="Receipt is emailed automatically" />
-        <WorkflowStep number="3" title="Reconcile daily" hint="Flag discrepancies before close" />
-      </section>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-        <LogPayment />
-        <Reconcile />
+      <div className="mt-3 overflow-x-auto">
+        {history === null ? <Spinner label="Loading payments…" /> :
+          filtered.length === 0 ? <EmptyState title={all.length === 0 ? "No offline payments yet" : "No matching payments"} hint={all.length === 0 ? "Record a payment to see it here." : "Try another method or search term."} /> :
+          <table className={TABLE + " min-w-[720px]"}>
+            <thead><tr className={THEAD_ROW}>
+              <th className={TH + " " + CELL_FIRST}>Member</th>
+              <th className={TH + " " + CELL}>Plan</th>
+              <th className={TH + " " + CELL}>Amount</th>
+              <th className={TH + " " + CELL}>Method</th>
+              <th className={TH + " " + CELL}>Status</th>
+              <th className={TH + " " + CELL_LAST}>Date</th>
+            </tr></thead>
+            <tbody>{filtered.map((item) => <tr key={item.id} className={TR}>
+              <td className={TD + " " + CELL_FIRST + " py-3 text-[13px] font-medium"}>{item.member_name || "Walk-in"}</td>
+              <td className={TD + " " + CELL + " py-3 text-[12px]"}>{item.plan_name || "—"}</td>
+              <td className={TD + " " + CELL + " py-3 text-[13px] font-medium tabular-nums"}>{money(item.amount, item.currency)}</td>
+              <td className={TD + " " + CELL + " py-3 text-[12px]"}>{titleCase(item.method)}</td>
+              <td className={TD + " " + CELL + " py-3"}><Badge tone={item.status === "succeeded" ? "success" : "warning"} size="sm">{titleCase(item.status)}</Badge></td>
+              <td className={TD + " " + CELL_LAST + " py-3 text-[12px] text-muted-foreground"}>{item.paid_at ? new Date(item.paid_at).toLocaleDateString() : "—"}</td>
+            </tr>)}</tbody>
+          </table>}
       </div>
     </>
-  );
-}
-
-function WorkflowStep({ number, title, hint }: { number: string; title: string; hint: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-xs font-bold text-[var(--primary-foreground)]">{number}</span>
-      <div>
-        <p className="text-sm font-semibold text-[var(--foreground)]">{title}</p>
-        <p className="text-xs text-[var(--foreground-muted)]">{hint}</p>
-      </div>
-    </div>
   );
 }
 
@@ -346,7 +414,7 @@ function ReceiptRow({ label, value }: { label: string; value: React.ReactNode })
 
 /* ─── LogPayment ─── */
 
-function LogPayment() {
+function LogPayment({ onSaved }: { onSaved: () => void }) {
   const [plans, setPlans] = useState<PlanOut[] | null>(null);
   const [selected, setSelected] = useState<CashMemberItem | null>(null);
   const [memberId, setMemberId] = useState("");
@@ -416,6 +484,7 @@ function LogPayment() {
         member_id: memberId, plan_id: planId, amount: amt, method, note: note.trim() || null,
       });
       setResult(out);
+      onSaved();
       setReceipt({ member: selected, plan: selectedPlan, method });
       setSelected(null); setMemberId(""); setQuery(""); setResults([]);
       setPlanId(""); setAmount(""); setNote("");
@@ -429,12 +498,7 @@ function LogPayment() {
   const methods = ["cash", "bank_transfer", "mobile_wallet"];
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader
-        title="Log a payment"
-        subtitle="Activate a member and send their payment receipt in one step"
-        action={<Badge tone="info">Front desk</Badge>}
-      />
+    <div className="overflow-hidden">
 
       {plans === null ? (
         <Spinner label="Loading plans…" />
@@ -543,7 +607,7 @@ function LogPayment() {
           </div>
         </form>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -584,8 +648,7 @@ function Reconcile() {
   }
 
   return (
-    <Card className="overflow-hidden xl:sticky xl:top-6">
-      <CardHeader title="Close the drawer" subtitle="Reconcile each business day before handover" action={<Badge tone="warning">Daily control</Badge>} />
+    <div className="overflow-hidden">
       <form onSubmit={submit} className="grid gap-5 p-5 sm:p-6">
         {error && <Alert onDismiss={() => setError("")}>{error}</Alert>}
         <div className="rounded-xl border border-[var(--warning-border)] bg-[var(--warning-bg)] p-3.5 text-sm text-[var(--warning)]">
@@ -633,7 +696,7 @@ function Reconcile() {
           </section>
         )}
       </form>
-    </Card>
+    </div>
   );
 }
 

@@ -50,6 +50,35 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        if settings.is_sqlite:
+            # ``create_all`` creates new tables but does not evolve existing
+            # ones. Local SQLite databases are often kept between app updates,
+            # so add columns introduced to Lead since the database was created.
+            # Production databases use Alembic migrations instead.
+            await conn.run_sync(_upgrade_sqlite_leads_schema)
+
+
+def _upgrade_sqlite_leads_schema(connection) -> None:
+    """Apply additive lead-column changes to existing local SQLite databases."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    if "leads" not in inspector.get_table_names():
+        return
+
+    existing = {column["name"] for column in inspector.get_columns("leads")}
+    additions = {
+        "converted_member_id": "VARCHAR",
+        "referred_by_member_id": "VARCHAR",
+        "email_followup_consent": "BOOLEAN NOT NULL DEFAULT 0",
+        "email_followup_consent_at": "DATETIME",
+        "lost_reason": "VARCHAR",
+    }
+    for name, definition in additions.items():
+        if name not in existing:
+            connection.exec_driver_sql(f'ALTER TABLE leads ADD COLUMN "{name}" {definition}')
+
+    connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_leads_lost_reason ON leads (lost_reason)")
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

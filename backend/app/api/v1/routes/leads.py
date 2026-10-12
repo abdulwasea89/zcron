@@ -16,6 +16,8 @@ from app.schemas.leads import (
     LeadBookingOut,
     LeadBookingStatusUpdate,
     LeadCreate,
+    LeadFollowUpOut,
+    LeadFollowUpUpdate,
     LeadHistoryOut,
     LeadOut,
     LeadUpdate,
@@ -44,6 +46,32 @@ async def lead_history(
 ):
     return await leads_service.stage_history(
         session, org_id=ctx.org_id, lead_id=lead_id, page=page, page_size=page_size,
+    )
+
+
+@router.get("/{lead_id}/followups", response_model=list[LeadFollowUpOut])
+async def list_lead_followups(
+    lead_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    return await leads_service.list_lead_followups(session, org_id=ctx.org_id, lead_id=lead_id)
+
+
+@router.patch(
+    "/{lead_id}/followups/{followup_id}", response_model=LeadFollowUpOut,
+)
+async def update_lead_followup(
+    lead_id: str,
+    followup_id: str,
+    data: LeadFollowUpUpdate,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    org: Organization = Depends(require_writable_org),
+    session: AsyncSession = Depends(get_session),
+):
+    return await leads_service.update_lead_followup(
+        session, org_id=ctx.org_id, lead_id=lead_id, followup_id=followup_id,
+        actor_id=ctx.user_id, status=data.status, note=data.note,
     )
 
 
@@ -108,7 +136,12 @@ async def create_lead_booking(
         org_id=ctx.org_id,
         actor_id=ctx.user_id,
         lead_id=lead_id,
-        **body,
+        booking_type=data.booking_type,
+        class_session_id=data.class_session_id,
+        trainer_member_id=data.trainer_member_id,
+        starts_at=data.starts_at,
+        ends_at=data.ends_at,
+        notes=data.notes,
     )
     output = LeadBookingOut.model_validate(booking)
     await idempotency_service.complete(session, claim.record, code=201, body=output.model_dump_json())

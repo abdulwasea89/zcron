@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import or_
@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.models.class_session import ClassSession
-from app.models.lead import Lead, LeadBooking
+from app.models.lead import Lead, LeadBooking, LeadFollowUp
 from app.models.membership import OrganizationMember
 from app.models.audit_log import AuditLog
 from app.models.user import User
@@ -41,6 +41,19 @@ async def change_stage(session: AsyncSession, *, lead: Lead, stage: str,
         old_values={"stage": previous}, new_values={"stage": stage},
         metadata={"origin": origin, "created": created},
     )
+    if stage in {"joined", "lost"}:
+        followups = (
+            await session.execute(
+                select(LeadFollowUp).where(
+                    LeadFollowUp.organization_id == lead.organization_id,
+                    LeadFollowUp.lead_id == lead.id,
+                    LeadFollowUp.status.in_(["scheduled", "due"]),
+                ).with_for_update()
+            )
+        ).scalars()
+        for followup in followups:
+            followup.status = "skipped"
+            session.add(followup)
 
 
 async def stage_history(session: AsyncSession, *, org_id: str, lead_id: str,
@@ -127,24 +140,98 @@ async def create_lead(session: AsyncSession, *, org_id: str, actor_id: str, data
         email=values["email"],
         phone=values["phone"],
     )
+    consent = values.pop("email_followup_consent", False)
+    consent_at = now_utc() if consent and values.get("email") else None
     values["profile_sources"] = {key: "staff_entered" for key in _PROFILE_FIELDS if values[key]}
-    lead = Lead(organization_id=org_id, created_by=actor_id, **values)
+    lead = Lead(
+        organization_id=org_id,
+        created_by=actor_id,
+        email_followup_consent=bool(consent and values.get("email")),
+        email_followup_consent_at=consent_at,
+        **values,
+    )
     session.add(lead)
     await session.flush()
     await change_stage(session, lead=lead, stage="new", actor_id=actor_id, created=True)
+    for day in (0, 1, 3, 7):
+        session.add(LeadFollowUp(
+            organization_id=org_id,
+            lead_id=lead.id,
+            day=day,
+            due_at=lead.created_at + timedelta(days=day),
+            email_status="pending" if lead.email_followup_consent else "skipped",
+        ))
     await record_audit(session, action="lead.created", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="lead", entity_id=lead.id, new_values={"name": lead.name, "source": lead.source})
     return lead
+
+
+async def list_lead_followups(
+    session: AsyncSession, *, org_id: str, lead_id: str,
+) -> list[LeadFollowUp]:
+    await get_lead(session, org_id=org_id, lead_id=lead_id)
+    return list((await session.execute(
+        select(LeadFollowUp).where(
+            LeadFollowUp.organization_id == org_id,
+            LeadFollowUp.lead_id == lead_id,
+        ).order_by(LeadFollowUp.day)
+    )).scalars())
+
+
+async def update_lead_followup(
+    session: AsyncSession, *, org_id: str, lead_id: str, followup_id: str,
+    actor_id: str, status: str, note: str | None,
+) -> LeadFollowUp:
+    lead = await get_lead(session, org_id=org_id, lead_id=lead_id)
+    followup = (await session.execute(
+        select(LeadFollowUp).where(
+            LeadFollowUp.id == followup_id,
+            LeadFollowUp.organization_id == org_id,
+            LeadFollowUp.lead_id == lead.id,
+        ).with_for_update()
+    )).scalar_one_or_none()
+    if followup is None:
+        raise HTTPException(status_code=404, detail="Lead follow-up not found.")
+    if followup.status not in {"due", "completed", "skipped"}:
+        raise HTTPException(status_code=409, detail="This follow-up is not due yet.")
+    if followup.status in {"completed", "skipped"}:
+        raise HTTPException(status_code=409, detail="This follow-up is already closed.")
+    if status not in {"completed", "skipped"}:
+        raise HTTPException(status_code=422, detail="Invalid follow-up status.")
+    followup.status = status
+    followup.completed_at = now_utc()
+    followup.completed_by = actor_id
+    followup.note = note
+    session.add(followup)
+    await record_audit(
+        session, action="lead.followup_updated", organization_id=org_id,
+        actor_user_id=actor_id, entity_type="lead_followup", entity_id=followup.id,
+        new_values={"day": followup.day, "status": status, "note": note},
+    )
+    return followup
 
 
 async def update_lead(session: AsyncSession, *, org_id: str, actor_id: str,
                       lead_id: str, data: LeadUpdate) -> Lead:
     lead = await get_lead(session, org_id=org_id, lead_id=lead_id)
     changes = data.model_dump(exclude_unset=True, mode="json")
+    if "email" in changes and changes["email"] != lead.email:
+        changes["email_followup_consent"] = False
     if "stage" in changes and changes["stage"] not in _STAGES:
         raise HTTPException(status_code=422, detail="Invalid lead stage.")
-    if "stage" in changes:
-        await change_stage(session, lead=lead, stage=changes.pop("stage"), actor_id=actor_id)
+    requested_stage = changes.pop("stage", None)
+    if requested_stage is not None:
+        if requested_stage == "lost" and not changes.get("lost_reason"):
+            raise HTTPException(status_code=422, detail="Choose a reason when moving a lead to Lost.")
+        await change_stage(session, lead=lead, stage=requested_stage, actor_id=actor_id)
+        if requested_stage != "lost":
+            changes["lost_reason"] = None
+    elif "lost_reason" in changes and lead.stage != "lost":
+        raise HTTPException(status_code=422, detail="Lost reason can only be set while the lead is Lost.")
+    if "email_followup_consent" in changes:
+        opted_in = bool(changes["email_followup_consent"] and changes.get("email", lead.email))
+        changes["email_followup_consent"] = opted_in
+        changes["email_followup_consent_at"] = now_utc() if opted_in else None
     await _reject_duplicate_contact(
         session,
         org_id=org_id,
@@ -161,6 +248,32 @@ async def update_lead(session: AsyncSession, *, org_id: str, actor_id: str,
     for key, value in changes.items():
         setattr(lead, key, value)
     session.add(lead)
+    if "email_followup_consent" in changes:
+        if changes["email_followup_consent"]:
+            followups = (await session.execute(
+                select(LeadFollowUp).where(
+                    LeadFollowUp.organization_id == org_id,
+                    LeadFollowUp.lead_id == lead.id,
+                    LeadFollowUp.email_status == "skipped",
+                    LeadFollowUp.email_sent_at.is_(None),
+                    LeadFollowUp.due_at > now_utc(),
+                ).with_for_update()
+            )).scalars()
+            for followup in followups:
+                followup.email_status = "pending"
+                session.add(followup)
+        else:
+            followups = (await session.execute(
+                select(LeadFollowUp).where(
+                    LeadFollowUp.organization_id == org_id,
+                    LeadFollowUp.lead_id == lead.id,
+                    LeadFollowUp.email_status == "pending",
+                    LeadFollowUp.email_sent_at.is_(None),
+                ).with_for_update()
+            )).scalars()
+            for followup in followups:
+                followup.email_status = "skipped"
+                session.add(followup)
     await record_audit(session, action="lead.updated", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="lead", entity_id=lead.id,
                        old_values=previous_values, new_values=changes)
@@ -219,8 +332,8 @@ async def create_lead_booking(
     booking_type: str,
     class_session_id: str | None,
     trainer_member_id: str | None,
-    starts_at,
-    ends_at,
+    starts_at: datetime | None,
+    ends_at: datetime | None,
     notes: str | None,
 ) -> dict:
     lead = await _get_locked_lead(session, org_id=org_id, lead_id=lead_id)
@@ -408,8 +521,15 @@ async def _booking_class(
 ) -> ClassSession | None:
     if booking.class_session_id is None:
         return None
-    class_session = await session.get(ClassSession, booking.class_session_id)
-    if class_session is None or class_session.organization_id != org_id:
+    class_session = (
+        await session.execute(
+            select(ClassSession).where(
+                ClassSession.id == booking.class_session_id,
+                ClassSession.organization_id == org_id,
+            ).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if class_session is None:
         raise HTTPException(status_code=404, detail="Trial class slot not found.")
     return class_session
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
+import Link from "next/link";
 import { AccountFields, emptyAccountFields, type AccountFieldsValue } from "@/app/app/account/page";
 import AuditPage from "@/app/app/audit/page";
 import BillingPage from "@/app/app/billing/page";
@@ -9,9 +10,10 @@ import { MfaCard } from "@/app/app/account/MfaCard";
 import { LiveIndicator } from "@/components/Realtime";
 import { Alert, Badge, Button, Input, Select, Spinner } from "@/components/ui";
 import { Row, ReadValue, Section } from "@/components/settings/primitives";
-import { getIndustry } from "@/lib/industries";
+import { getIndustry, NAV_MODULE_BY_HREF } from "@/lib/industries";
 import { api, ApiError } from "@/lib/api";
 import { fmtDate, gymStatusLabel, statusTone, titleCase } from "@/lib/format";
+import { THEME_OPTIONS } from "@/lib/themes";
 import type { AdminSessionInfo, HeadlineMetrics, InvoiceSettings, OrganizationOut, ProfileOut } from "@/lib/types";
 
 /* Notion-style settings: a left section rail and a right pane of rows, each a
@@ -35,6 +37,7 @@ const SECTION_KEYWORDS: Record<string, string[]> = {
     "subscription", "member", "mfa", "created",
   ],
   preferences: ["theme", "connection", "enrollment"],
+  tools: ["staff", "payroll", "receipts", "workspace", "manage"],
   invoice: ["legal", "tax", "vat", "address", "payment terms"],
   payments: ["stripe", "connect", "payments"],
   billing: ["subscription", "plan", "tier", "saas", "invoice"],
@@ -58,7 +61,7 @@ const NAV_ICON: Record<string, string> = {
  *  returns them there instead of always resetting to Organization. */
 const SETTINGS_TAB_KEY = "acron.settings.tab";
 
-export function SettingsView() {
+export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
   const [org, setOrg] = useState<OrganizationOut | null>(null);
   const [metrics, setMetrics] = useState<HeadlineMetrics | null>(null);
   const [profile, setProfile] = useState<ProfileOut | null>(null);
@@ -143,7 +146,7 @@ export function SettingsView() {
   useEffect(() => {
     if (!org) return;
     const valid = [
-      "account", "organization", "preferences", "billing", "sessions", "security", "audit",
+      "account", "organization", "preferences", "tools", "billing", "sessions", "security", "audit",
       ...(invoice ? ["invoice"] : []),
       ...(org.industry !== "office" ? ["payments"] : []),
     ];
@@ -263,6 +266,11 @@ export function SettingsView() {
   if (org === null && !error) return <Spinner label="Loading settings..." />;
 
   const industry = getIndustry(org?.industry);
+  const toolLinks = [
+    { label: "Staff", href: "/app/staff", description: "Team members, roles and shifts" },
+    { label: "Payroll", href: "/app/payroll", description: "Pay runs and staff entries" },
+    { label: "Receipts", href: "/app/receipts", description: "Review submitted receipts" },
+  ].filter((item) => industry.modules.includes(NAV_MODULE_BY_HREF[item.href]));
 
   // Grouped rail (Notion settings modal): Account / Preferences / Billing / Security.
   const navGroups = org
@@ -275,6 +283,7 @@ export function SettingsView() {
           ],
         },
         { label: "Preferences", items: [{ id: "preferences", label: "Preferences", icon: NAV_ICON.sliders }] },
+        ...(toolLinks.length ? [{ label: "Workspace", items: [{ id: "tools", label: "Workspace tools", icon: NAV_ICON.building }] }] : []),
         {
           label: "Billing",
           items: [
@@ -437,6 +446,16 @@ export function SettingsView() {
               </Row>
             </Section>
 
+            <Section id="tools" title="Workspace tools" description="Manage the less frequent administrative work" hidden={active !== "tools"}>
+              {toolLinks.map((item) => (
+                <Row key={item.href} label={item.label} description={item.description}>
+                  <Link href={item.href} onClick={onNavigate} className="text-sm font-medium text-brand hover:underline">
+                    Open {item.label.toLowerCase()} →
+                  </Link>
+                </Row>
+              ))}
+            </Section>
+
             {invoice && (
               <Section id="invoice" title="Invoice details" hidden={active !== "invoice"}>
                 <Row label="Legal name" description="Printed on invoices to companies">
@@ -530,16 +549,6 @@ export function SettingsView() {
 /* Theme picker: buttons that call setTheme directly, mirroring the header
    toggle so choosing a theme always takes effect. A swatch makes each option
    readable at a glance. */
-const THEMES = [
-  { value: "system", label: "System", swatch: "conic-gradient(from 90deg, #fafafa, #1a1a1a)" },
-  { value: "notion", label: "Notion", swatch: "linear-gradient(135deg, #ffffff 40%, #2383e2)" },
-  { value: "light", label: "Light", swatch: "#faf7f2" },
-  { value: "midnight", label: "Midnight", swatch: "oklch(0.16 0.012 165)" },
-  { value: "dark", label: "Dark", swatch: "oklch(0.17 0.006 90)" },
-  { value: "solarized", label: "Solarized", swatch: "#fdf6e3" },
-  { value: "oled", label: "OLED", swatch: "#000000" },
-] as const;
-
 function ThemePicker() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -549,7 +558,7 @@ function ThemePicker() {
 
   return (
     <div className="grid w-full grid-cols-2 gap-1.5">
-      {THEMES.map((o) => {
+      {THEME_OPTIONS.map((o) => {
         const active = mounted && theme === o.value;
         return (
           <button
@@ -557,7 +566,7 @@ function ThemePicker() {
             type="button"
             onClick={() => setTheme(o.value)}
             aria-pressed={active}
-            className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[12px] transition-colors ${
+            className={`theme-choice flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[12px] transition-colors ${
               active
                 ? "border-foreground/25 bg-foreground/[0.06] font-medium text-foreground"
                 : "border-[var(--border)] text-muted-foreground hover:bg-foreground/5 hover:text-foreground"

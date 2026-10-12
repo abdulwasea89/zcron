@@ -15,6 +15,7 @@ from sqlmodel import select
 from app.core.constants import AttendanceMethod, AttendanceSource, BookingStatus, MemberStatus, Role
 from app.core.security import now_utc
 from app.models.class_session import ClassBooking, ClassSession
+from app.models.lead import LeadBooking
 from app.models.membership import OrganizationMember
 from app.models.user import User
 from app.realtime import events
@@ -24,8 +25,15 @@ from app.services.audit_service import record_audit
 
 
 async def _get_owned_session(session: AsyncSession, org_id: str, class_id: str) -> ClassSession:
-    cs = await session.get(ClassSession, class_id)
-    if cs is None or cs.organization_id != org_id:
+    cs = (
+        await session.execute(
+            select(ClassSession).where(
+                ClassSession.id == class_id,
+                ClassSession.organization_id == org_id,
+            ).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if cs is None:
         raise HTTPException(status_code=404, detail="Class session not found.")
     return cs
 
@@ -80,6 +88,19 @@ async def cancel_session(
     for b in bookings:
         b.status = BookingStatus.CANCELLED
         session.add(b)
+    trial_bookings = (
+        await session.execute(
+            select(LeadBooking).where(
+                LeadBooking.organization_id == org_id,
+                LeadBooking.class_session_id == cs.id,
+                LeadBooking.status == "scheduled",
+            ).with_for_update()
+        )
+    ).scalars()
+    for booking in trial_bookings:
+        booking.status = "cancelled"
+        booking.cancelled_at = now_utc()
+        session.add(booking)
     await record_audit(session, action="class.cancelled", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="class_session", entity_id=cs.id)
     return cs
