@@ -38,6 +38,7 @@ from app.realtime import events
 from app.schemas.cash import CashPaymentLog
 from app.services.audit_service import record_audit
 from app.services.notifications_service import create_notification
+from app.services.pricing_service import quote_member_payment
 from app.utils.pdf import render_receipt_pdf
 
 # 3 discrepancies within 30 days triggers an owner alert (Section 11.2).
@@ -58,8 +59,11 @@ async def log_cash_payment(
     plan = await session.get(MembershipPlan, data.plan_id)
     if plan is None or plan.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Plan not found.")
-    if data.amount <= 0:
-        raise HTTPException(status_code=422, detail="Amount must be positive.")
+    quote = await quote_member_payment(
+        session, org_id=org_id, member_id=member.id, plan=plan, promo_code=data.promo_code,
+    )
+    if round(data.amount, 2) != quote.total:
+        raise HTTPException(status_code=422, detail=f"Amount must match the current quote: {plan.currency} {quote.total:.2f}.")
 
     payment = Payment(
         organization_id=org_id,
@@ -68,7 +72,12 @@ async def log_cash_payment(
         kind=PaymentKind.MEMBER_FEE,
         method=data.method,
         status=PaymentStatus.SUCCEEDED,
-        amount=data.amount,
+        amount=quote.total,
+        tax_amount=quote.tax_amount,
+        plan_price_amount=quote.plan_price,
+        joining_fee_amount=quote.joining_fee,
+        discount_amount=quote.discount_amount,
+        promo_code=quote.promo_code,
         currency=plan.currency,
         logged_by=staff_user_id,
         note=data.note,
@@ -193,6 +202,11 @@ async def render_receipt(session: AsyncSession, *, org_id: str, payment_id: str)
         logged_by=logged_by,
         valid_until=valid_until,
         note=payment.note,
+        plan_price=payment.plan_price_amount,
+        joining_fee=payment.joining_fee_amount,
+        discount=payment.discount_amount,
+        tax=payment.tax_amount,
+        promo_code=payment.promo_code,
     )
     return pdf, f"receipt-{payment.id[:12]}.pdf"
 

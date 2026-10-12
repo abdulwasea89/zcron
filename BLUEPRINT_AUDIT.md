@@ -29,16 +29,16 @@ Every material feature identified in both source PDFs and the current codebase i
 
 | Status | Part A: Blueprint (152) | Part B: code-only (18) | Part C: Strategy (106) | Traceability rows (276) |
 |---|---:|---:|---:|---:|
-| ✅ Built | 20 | 15 | 1 | **36** |
+| ✅ Built | 21 | 15 | 1 | **37** |
 | 🔧 Improvement | 4 | 0 | 0 | **4** |
 | ⚠️ Partial | 68 | 3 | 53 | **124** |
 | 🧨 Broken / stubbed | 1 | 0 | 0 | **1** |
-| ❌ Not built | 59 | 0 | 46 | **105** |
+| ❌ Not built | 58 | 0 | 46 | **104** |
 | ⏸️ Deferred | 0 | 0 | 6 | **6** |
 
 The surface columns are not mutually exclusive; a row can have API and web coverage, for example. Counts above classify each traceability row once by its overall status. Part C intentionally maps overlaps, so 276 traceability rows do not mean 276 unique product capabilities. Blueprint rows 80–152 expand cross-cutting architecture, UX, evidence, localisation, expansion, and Sales Pack details; those row numbers are audit indices, not numbering printed in the PDF.
 
-For the original prioritized rows in Parts A and B: P0 — 21 built, 1 improvement, 17 partial, 8 not built; P1 — 8 built, 2 improvements, 13 partial, 12 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
+For the original prioritized rows in Parts A and B: P0 — 22 built, 1 improvement, 17 partial, 7 not built; P1 — 8 built, 2 improvements, 13 partial, 12 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
 
 ### Source-to-row coverage recheck
 
@@ -91,7 +91,7 @@ The supplied Notion page did not load in the available browser during this audit
 | 9 | Corporate and group memberships; referral tracking | P1–P2 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Corporate contracts/invoices and team seat management exist (`models/company.py`, `company_contract.py`, `invoices_service.py`, `/app/companies`). Referral program supports member codes, signup attribution, qualification after successful payment, dual rewards, admin tracking/manual fulfillment, mobile share/status, and joined Lead attribution (`services/referrals_service.py`, `/app/referrals`, mobile dashboard). Rewards are recorded and manually delivered; no automatic wallet credit/discount. Not available for office B2B tenants or invite-only enrollment. |
 | 10 | Member profile: photo, ID (where legal), contact, emergency contact, goals, health notes | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Organization-scoped photo URL, contact, emergency contact, goals, private health notes, optional ID type/final four, and a deterministic profile summary. Owner/manager edit via `/members/{id}/profile` and `/app/members`; members edit their own profile on mobile. Health notes and ID metadata are hidden from front desk. Audit records changed field names without sensitive values; archive clears private fields. Photo is linked by HTTPS URL; full ID numbers and document images are intentionally not stored. |
 | 11 | Plans: daily to yearly, family, student, off-peak, class packs, credits | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Owner plan builder exposes day/week/month/year cycles, student/family audience, family capacity, local off-peak window, class-pack size/validity, and optional recurring visit credits. Purchase snapshots the allowance; check-in consumes one credit atomically and flags out-of-window or exhausted visits while still logging attendance. Owner/manager can link same-org members to an active family plan; they share the payer's entitlement and credits. Student status is a plan label and is not automatically verified. Visit credits are separate from account/payment credits in row 30. |
-| 12 | Joining fees, discounts, promo codes | P0 | ✓ | — | — | — | ❌ Not built | 0 matches for `discount\|coupon\|promo\|joining_fee` in `backend/app`. No promotion engine at all |
+| 12 | Joining fees, discounts, promo codes | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Plans define a first-purchase joining fee; owner/manager can create and activate tenant-scoped percentage or fixed promo codes, optionally limited to one plan. Card signup and offline payments use the same server quote for plan price, joining fee, discount, added tax, and total; the charged payment snapshots each component. Mobile checkout and web cash logging show the breakdown, and offline receipts include it. No usage limits or automatic referral wallet credits. |
 | 13 | Freeze/pause (travel, illness, seasonal) | P0 | ✓ | ✓ | ✓ | — | ⚠️ Partial | `MemberStatus.FROZEN`; `members_service.py:83 freeze` / `:85 unfreeze` — staff actions only. Missing: member-requested freeze, approve flow, auto-detect from messages |
 | 14 | Renewals and expiry reminders | P0 | ✓ | ✓ | — | — | ⚠️ Partial | Post-expiry grace reminders only (`workers/notifications.py:33`, days 1/2/3). Missing: pre-expiry T-7/T-3/T-1 cadence |
 | 15 | Upgrades, downgrades, transfers, cancellation with save offer | P1 | ✓ | — | — | — | ❌ Not built | `saas_billing_service.py:74 upgrade` / `:90 downgrade` / `:116 cancel` are **SaaS-tier only**. `memberships_service.py` is signup/activation — no member plan change, transfer, save offer (verified: no such function exists) |

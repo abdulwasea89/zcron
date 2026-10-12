@@ -6,6 +6,7 @@ import { router } from "expo-router";
 import { AuthScreen } from "@/components/auth-screen";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/icon";
 import { api, ApiError } from "@/lib/api";
 import { useJoinStore } from "@/stores/join-store";
@@ -18,6 +19,9 @@ export default function JoinPay() {
   const { orgCode, email, selectedPlanId, orgName, reset } = useJoinStore();
   const { setSession } = useAuthStore();
   const [plan, setPlan] = useState<PublicPlanOut | null>(null);
+  const [promoCode, setPromoCode] = useState("");
+  const [quote, setQuote] = useState<{ plan_price: number; joining_fee: number; discount_amount: number; tax_amount: number; total: number; currency: string } | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isDark = useColorScheme() === "dark";
@@ -34,6 +38,20 @@ export default function JoinPay() {
       .catch(() => setPlan(null));
   }, [orgCode, selectedPlanId]);
 
+  useEffect(() => {
+    if (!orgCode || !email || !selectedPlanId) return;
+    let cancelled = false;
+    setQuote(null);
+    api.post<typeof quote>("/memberships/signup/quote", {
+      org_code: orgCode, email, plan_id: selectedPlanId, promo_code: promoCode.trim() || null,
+    }).then((result) => {
+      if (!cancelled) { setQuote(result); setQuoteError(null); }
+    }).catch((e) => {
+      if (!cancelled) { setQuoteError((e as ApiError).message); setQuote(null); }
+    });
+    return () => { cancelled = true; };
+  }, [orgCode, email, selectedPlanId, promoCode]);
+
   if (!orgCode || !email || !selectedPlanId) {
     router.replace("/(auth)/register/org-code");
     return null;
@@ -49,6 +67,7 @@ export default function JoinPay() {
           org_code: orgCode,
           email,
           plan_id: selectedPlanId,
+          promo_code: promoCode.trim() || null,
           payment_token: "tok_stub",
         },
         { idempotent: true },
@@ -80,7 +99,7 @@ export default function JoinPay() {
     }
   };
 
-  const amount = plan ? `${plan.currency} ${plan.price}` : null;
+  const amount = quote ? `${quote.currency} ${quote.total.toFixed(2)}` : null;
 
   return (
     <AuthScreen
@@ -89,8 +108,8 @@ export default function JoinPay() {
       back
       progress={flowPosition(JOIN_FLOW, "/(auth)/join/pay")}
       footer={
-        <Button loading={loading} onPress={handlePay}>
-          {amount ? `Pay ${amount}` : "Pay now"}
+        <Button loading={loading} disabled={!quote} onPress={handlePay}>
+          {amount ? (quote?.total === 0 ? "Activate membership" : `Pay ${amount}`) : "Loading total…"}
         </Button>
       }
     >
@@ -99,6 +118,7 @@ export default function JoinPay() {
           <Alert type="error" message={error} onDismiss={() => setError(null)} />
         </View>
       ) : null}
+      {quoteError ? <View className="mb-5"><Alert type="error" message={quoteError} onDismiss={() => setQuoteError(null)} /></View> : null}
 
       <View className="gap-3 rounded-2xl bg-surface p-5">
         <View className="flex-row items-center justify-between">
@@ -118,6 +138,12 @@ export default function JoinPay() {
           </Text>
         </View>
         <View className="my-1 h-px bg-border" />
+        {quote && <>
+          <View className="flex-row justify-between"><Text type="body-sm" color="muted">Plan price</Text><Text type="body-sm">{quote.currency} {quote.plan_price.toFixed(2)}</Text></View>
+          {quote.joining_fee > 0 && <View className="flex-row justify-between"><Text type="body-sm" color="muted">Joining fee</Text><Text type="body-sm">{quote.currency} {quote.joining_fee.toFixed(2)}</Text></View>}
+          {quote.discount_amount > 0 && <View className="flex-row justify-between"><Text type="body-sm" color="muted">Promo discount</Text><Text type="body-sm">−{quote.currency} {quote.discount_amount.toFixed(2)}</Text></View>}
+          {quote.tax_amount > 0 && <View className="flex-row justify-between"><Text type="body-sm" color="muted">Tax</Text><Text type="body-sm">{quote.currency} {quote.tax_amount.toFixed(2)}</Text></View>}
+        </>}
         <View className="flex-row items-center justify-between">
           <Text type="body" className="text-foreground">
             Due now
@@ -127,6 +153,8 @@ export default function JoinPay() {
           </Text>
         </View>
       </View>
+
+      <View className="mt-5"><Input label="Promo code (optional)" value={promoCode} onChangeText={setPromoCode} autoCapitalize="characters" placeholder="Enter a code" /></View>
 
       <View className="mt-5 flex-row items-start gap-3 rounded-2xl bg-surface p-4">
         <Icon name="lock.fill" android="lock" size={17} color={p.muted} />

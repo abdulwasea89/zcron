@@ -76,6 +76,7 @@ class PublicPlanOut(BaseModel):
     name: str
     public_description: str | None
     price: float
+    joining_fee: float = 0.0
     currency: str
     billing_type: str
     featured: bool
@@ -97,6 +98,14 @@ class SignupPay(BaseModel):
     email: EmailStr
     plan_id: str
     payment_token: str = "tok_stub"
+    promo_code: str | None = None
+
+
+class SignupQuote(BaseModel):
+    org_code: str
+    email: EmailStr
+    plan_id: str
+    promo_code: str | None = None
 
 
 class ProfileComplete(BaseModel):

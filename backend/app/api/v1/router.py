@@ -36,6 +36,7 @@ from app.api.v1.routes import (
     payments,
     payroll,
     plans,
+    promotions,
     receipts,
     referrals,
     retention,
@@ -54,6 +55,7 @@ api_router.include_router(organizations.router, prefix="/organizations", tags=["
 api_router.include_router(initial.router, prefix="", tags=["initial"])
 api_router.include_router(saas_billing.router, prefix="/saas-billing", tags=["saas-billing"])
 api_router.include_router(plans.router, prefix="/plans", tags=["plans"])
+api_router.include_router(promotions.router, prefix="/promotions", tags=["promotions"])
 api_router.include_router(memberships.router, prefix="/memberships", tags=["memberships"])
 api_router.include_router(members.router, prefix="/members", tags=["members"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])

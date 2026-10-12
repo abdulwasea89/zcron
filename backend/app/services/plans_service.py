@@ -133,6 +133,7 @@ async def create_plan(
         public_description=data.public_description,
         internal_notes=data.internal_notes,
         price=data.price,
+        joining_fee=data.joining_fee,
         currency=data.currency or org.default_currency,
         tax_mode=data.tax_mode,
         tax_rate=data.tax_rate,

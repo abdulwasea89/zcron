@@ -21,6 +21,7 @@ from app.schemas.memberships import (
     PublicPlanOut,
     SignupEmail,
     SignupPay,
+    SignupQuote,
     RedeemInvite,
     SignupSetPassword,
     SignupSetPasswordOut,
@@ -30,6 +31,12 @@ from app.schemas.memberships import (
 )
 from app.services import memberships_service as members
 from app.services.memberships_service import _org_by_code
+from app.services.pricing_service import quote_member_payment
+from app.schemas.promotions import PriceQuoteOut
+from app.models.plan import MembershipPlan
+from fastapi import HTTPException
+from sqlmodel import select
+from app.models.membership import OrganizationMember
 
 router = APIRouter()
 
@@ -107,7 +114,7 @@ async def signup_plans(org_code: str, session: AsyncSession = Depends(get_sessio
     return [
         PublicPlanOut(
             id=p.id, name=p.name, public_description=p.public_description,
-            price=p.price, currency=p.currency, billing_type=p.billing_type.value,
+            price=p.price, joining_fee=p.joining_fee, currency=p.currency, billing_type=p.billing_type.value,
             featured=p.featured,
             audience=p.audience, family_capacity=p.family_capacity,
             cycle_length=p.cycle_length, cycle_unit=p.cycle_unit,
@@ -119,6 +126,25 @@ async def signup_plans(org_code: str, session: AsyncSession = Depends(get_sessio
     ]
 
 
+@router.post("/signup/quote", response_model=PriceQuoteOut)
+async def signup_quote(data: SignupQuote, session: AsyncSession = Depends(get_session)):
+    org = await _org_by_code(session, data.org_code)
+    user = (await session.execute(select(User).where(User.email == data.email.lower()))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="Membership not found.")
+    member = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.organization_id == org.id,
+        OrganizationMember.user_id == user.id,
+    ))).scalar_one_or_none()
+    if member is None:
+        raise HTTPException(status_code=404, detail="Membership not found.")
+    plan = await session.get(MembershipPlan, data.plan_id)
+    if plan is None or plan.organization_id != org.id:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+    return await quote_member_payment(session, org_id=org.id, member_id=member.id,
+                                      plan=plan, promo_code=data.promo_code)
+
+
 @router.post("/signup/pay", response_model=LoginResponse)
 async def signup_pay(
     data: SignupPay,
@@ -128,7 +154,7 @@ async def signup_pay(
 ):
     return await members.pay_and_activate(
         session, org_code=data.org_code, email=data.email, plan_id=data.plan_id,
-        idempotency_key=idempotency_key, ip=get_client_ip(request),
+        idempotency_key=idempotency_key, promo_code=data.promo_code, ip=get_client_ip(request),
     )
 
 

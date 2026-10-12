@@ -165,6 +165,11 @@ def render_receipt_pdf(
     currency: str,
     method: str,
     logged_by: str,
+    plan_price: float | None = None,
+    joining_fee: float = 0,
+    discount: float = 0,
+    tax: float = 0,
+    promo_code: str | None = None,
     valid_until: str | None = None,
     note: str | None = None,
 ) -> bytes:
@@ -208,8 +213,18 @@ def render_receipt_pdf(
     y -= 16
 
     lines.append(_text_at(72, y, plan_name, size=10))
-    lines.append(_right_text(y, f"{currency} {amount:.2f}", size=10))
+    lines.append(_right_text(y, f"{currency} {(plan_price if plan_price is not None else amount):.2f}", size=10))
     y -= 18
+
+    for label, value in (
+        ("Joining fee", joining_fee),
+        (f"Promo {promo_code}" if promo_code else "Discount", -discount),
+        ("Tax", tax),
+    ):
+        if value:
+            lines.append(_text_at(72, y, label, size=10))
+            lines.append(_right_text(y, f"{currency} {value:.2f}", size=10))
+            y -= 18
 
     lines.append(_text_at(72, y, f"Payment method: {method}", size=10))
     y -= 18

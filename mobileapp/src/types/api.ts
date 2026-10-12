@@ -338,6 +338,7 @@ export interface PublicPlanOut {
   name: string;
   public_description?: string | null;
   price: number;
+  joining_fee: number;
   currency: string;
   billing_type: string;
   featured: boolean;

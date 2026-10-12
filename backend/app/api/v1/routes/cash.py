@@ -19,11 +19,15 @@ from app.schemas.cash import (
     CashMemberOut,
     CashHistoryOut,
     CashPaymentLog,
+    CashQuoteRequest,
     CashPaymentOut,
     ReconciliationOut,
     ReconciliationRequest,
 )
 from app.services import cash_service as cash
+from app.services.pricing_service import quote_member_payment
+from app.schemas.promotions import PriceQuoteOut
+from fastapi import HTTPException
 
 router = APIRouter()
 
@@ -85,6 +89,22 @@ async def log_cash_payment(
         method=payment.method.value, member_status=member.member_status.value,
         receipt_pdf_url=pdf_url,
     )
+
+
+@router.post("/quote", response_model=PriceQuoteOut)
+async def cash_quote(
+    data: CashQuoteRequest,
+    ctx: TenantContext = Depends(require_capability(Capability.LOG_CASH_PAYMENT)),
+    session: AsyncSession = Depends(get_session),
+):
+    member = await session.get(OrganizationMember, data.member_id)
+    plan = await session.get(MembershipPlan, data.plan_id)
+    if member is None or member.organization_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    if plan is None or plan.organization_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+    return await quote_member_payment(session, org_id=ctx.org_id, member_id=member.id,
+                                      plan=plan, promo_code=data.promo_code)
 
 
 @router.get("/payments/{payment_id}/receipt")

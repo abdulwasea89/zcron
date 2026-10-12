@@ -30,6 +30,7 @@ def _to_out(p: MembershipPlan) -> PlanOut:
             spec = None
     return PlanOut(
         id=p.id, name=p.name, public_description=p.public_description, price=p.price,
+        joining_fee=p.joining_fee,
         currency=p.currency, tax_mode=p.tax_mode.value, tax_rate=p.tax_rate,
         billing_type=p.billing_type.value, visibility=p.visibility.value,
         status=p.status.value, featured=p.featured,

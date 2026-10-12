@@ -8,6 +8,7 @@ import { TABLE, THEAD_ROW, TH, TR, TR_INTERACTIVE, TD, CELL, CELL_FIRST, CELL_LA
 import { ListToolbar } from "@/components/ListToolbar";
 import { RowMenu } from "@/components/RowMenu";
 import { PlanFields } from "@/components/plans/PlanFields";
+import { PromotionsPanel } from "@/components/plans/PromotionsPanel";
 import { useAssistantDock, useAssistantHint } from "@/components/assistant/AssistantDock";
 import { useAssistantChats } from "@/components/assistant/AssistantChats";
 import { Alert, Badge, Button, EmptyState, Input, Spinner, Textarea } from "@/components/ui";
@@ -536,6 +537,7 @@ export default function PlansPage() {
           </table>
         )}
       </div>
+      {isGym && plans !== null && <PromotionsPanel plans={plans} />}
     </>
   );
 }
@@ -572,6 +574,7 @@ function FieldSelect({
 function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | null; industryKey?: string; onCreated: () => void }) {
   const [name, setName] = useState(plan?.name ?? "");
   const [price, setPrice] = useState(plan ? String(plan.price) : "0");
+  const [joiningFee, setJoiningFee] = useState(plan ? String(plan.joining_fee ?? 0) : "0");
   const [billing, setBilling] = useState(plan?.billing_type ?? "recurring");
   const [cycleUnit, setCycleUnit] = useState(plan?.cycle_unit ?? "month");
   const [cycleLength, setCycleLength] = useState(String(plan?.cycle_length ?? 1));
@@ -610,6 +613,7 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
       const body: Record<string, unknown> = {
         name,
         price: parseFloat(price) || 0,
+        joining_fee: isOffice ? 0 : parseFloat(joiningFee) || 0,
         billing_type: billing,
         visibility,
         public_description: desc || null,
@@ -687,6 +691,16 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
           onChange={(e) => setPrice(e.target.value)}
           hint={isOffice ? "Companies are billed by invoice; the price above is per seat per term." : undefined}
         />
+        {!isOffice && <Input
+          labelVariant="sentence"
+          label="One-time joining fee"
+          type="number"
+          min="0"
+          step="0.01"
+          value={joiningFee}
+          onChange={(e) => setJoiningFee(e.target.value)}
+          hint="Charged only on the member's first successful payment."
+        />}
 
         {isOffice && (
           <>

@@ -51,6 +51,8 @@ from app.schemas.auth import LoginResponse
 from app.services import auth_service, idempotency_service
 from app.services import verification_service as verif
 from app.services.audit_service import record_audit
+from app.services.pricing_service import quote_member_payment
+from app.schemas.promotions import PriceQuoteOut
 
 
 # ----------------------------------------------------------------- helpers
@@ -353,17 +355,6 @@ async def public_plans(session: AsyncSession, *, org: Organization) -> list[Memb
 
 
 # --------------------------------------------------------- step 6: pay
-def _amount_with_tax(plan: MembershipPlan) -> tuple[float, float]:
-    """Return (charge_amount, tax_amount). Inclusive tax doesn't add on top."""
-
-    from app.core.constants import TaxMode
-
-    if plan.tax_mode == TaxMode.ADDED and plan.tax_rate:
-        tax = round(plan.price * plan.tax_rate, 2)
-        return round(plan.price + tax, 2), tax
-    return plan.price, 0.0
-
-
 async def _activate_membership(
     session: AsyncSession, *, org: Organization, member: OrganizationMember, plan: MembershipPlan,
     payment: Payment,
@@ -423,6 +414,7 @@ async def pay_and_activate(
     email: str,
     plan_id: str,
     idempotency_key: str,
+    promo_code: str | None = None,
     ip: str | None = None,
 ) -> LoginResponse:
     """Step 6 — idempotent member payment -> activation -> logged in.
@@ -463,7 +455,8 @@ async def pay_and_activate(
     endpoint = "POST /memberships/pay"
     claim = await idempotency_service.claim(
         session, key=idempotency_key, endpoint=endpoint,
-        body={"org_code": org_code, "email": email, "plan_id": plan_id},
+        body={"org_code": org_code, "email": email, "plan_id": plan_id,
+              "promo_code": promo_code.strip().upper() if promo_code else None},
         organization_id=org.id, user_id=user.id,
     )
     if not claim.claimed:
@@ -477,19 +470,24 @@ async def pay_and_activate(
             user=auth_service.login_user_payload(user, org.id, Role.MEMBER, member),
         )
 
-    if org.stripe_connect_status != ConnectStatus.ACTIVE:
+    quote = await quote_member_payment(
+        session, org_id=org.id, member_id=member.id, plan=plan, promo_code=promo_code,
+    )
+    if quote.total > 0 and org.stripe_connect_status != ConnectStatus.ACTIVE:
         await idempotency_service.fail(session, claim.record, code=402,
                                        body='{"detail":"Gym cannot accept payments yet."}')
         raise HTTPException(status_code=402, detail="This gym cannot accept payments yet.")
 
-    amount, tax = _amount_with_tax(plan)
-    result = await connect_stripe.charge_member(
-        connected_account_id=org.stripe_connect_account_id,
-        amount_cents=int(round(amount * 100)),
-        currency=plan.currency.lower(),
-        idempotency_key=idempotency_key,
-        description=f"{org.name} — {plan.name}",
-    )
+    amount = quote.total
+    result = None
+    if amount > 0:
+        result = await connect_stripe.charge_member(
+            connected_account_id=org.stripe_connect_account_id,
+            amount_cents=int(round(amount * 100)),
+            currency=plan.currency.lower(),
+            idempotency_key=idempotency_key,
+            description=f"{org.name} — {plan.name}",
+        )
 
     payment = Payment(
         organization_id=org.id,
@@ -497,19 +495,23 @@ async def pay_and_activate(
         plan_id=plan.id,
         kind=PaymentKind.MEMBER_FEE,
         method=PaymentMethod.CARD,
-        status=PaymentStatus.SUCCEEDED if result.status == "succeeded" else PaymentStatus.FAILED,
+        status=PaymentStatus.SUCCEEDED if result is None or result.status == "succeeded" else PaymentStatus.FAILED,
         amount=amount,
-        tax_amount=tax,
+        tax_amount=quote.tax_amount,
+        plan_price_amount=quote.plan_price,
+        joining_fee_amount=quote.joining_fee,
+        discount_amount=quote.discount_amount,
+        promo_code=quote.promo_code,
         currency=plan.currency,
-        stripe_payment_intent_id=result.id,
-        stripe_charge_id=result.charge_id,
+        stripe_payment_intent_id=result.id if result else None,
+        stripe_charge_id=result.charge_id if result else None,
         idempotency_key=idempotency_key,
-        paid_at=now_utc() if result.status == "succeeded" else None,
+        paid_at=now_utc() if result is None or result.status == "succeeded" else None,
     )
     session.add(payment)
     await session.flush()
 
-    if result.status != "succeeded":
+    if result is not None and result.status != "succeeded":
         await idempotency_service.fail(session, claim.record, code=402,
                                        body='{"detail":"Payment failed."}')
         raise HTTPException(status_code=402, detail="Payment failed. Please retry.")

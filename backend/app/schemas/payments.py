@@ -16,6 +16,10 @@ class PaymentOut(BaseModel):
     status: str
     amount: float
     tax_amount: float
+    plan_price_amount: float | None = None
+    joining_fee_amount: float = 0.0
+    discount_amount: float = 0.0
+    promo_code: str | None = None
     currency: str
     refunded_amount: float
     paid_at: datetime | None

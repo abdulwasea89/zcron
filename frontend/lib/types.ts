@@ -62,6 +62,7 @@ export interface PlanOut {
   name: string;
   public_description: string | null;
   price: number;
+  joining_fee: number;
   currency: string;
   tax_mode: string;
   tax_rate: number;
@@ -90,6 +91,7 @@ export interface PlanCreate {
   name: string;
   public_description?: string | null;
   price: number;
+  joining_fee?: number;
   billing_type: string;
   visibility?: string;
   cycle_unit?: string | null;
@@ -373,6 +375,10 @@ export interface PaymentOut {
   status: string;
   amount: number;
   tax_amount: number;
+  plan_price_amount?: number | null;
+  joining_fee_amount?: number;
+  discount_amount?: number;
+  promo_code?: string | null;
   currency: string;
   refunded_amount: number;
   paid_at: string | null;

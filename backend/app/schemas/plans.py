@@ -12,7 +12,8 @@ class PlanCreate(BaseModel):
     name: str
     public_description: str | None = None
     internal_notes: str | None = None
-    price: float = 0.0
+    price: float = Field(default=0.0, ge=0)
+    joining_fee: float = Field(default=0.0, ge=0)
     currency: str | None = None  # defaults to org currency
     tax_mode: TaxMode = TaxMode.INCLUSIVE
     tax_rate: float = 0.0
@@ -43,7 +44,8 @@ class PlanUpdate(BaseModel):
     name: str | None = None
     public_description: str | None = None
     internal_notes: str | None = None
-    price: float | None = None
+    price: float | None = Field(default=None, ge=0)
+    joining_fee: float | None = Field(default=None, ge=0)
     tax_mode: TaxMode | None = None
     tax_rate: float | None = None
     billing_type: PlanBillingType | None = None
@@ -77,6 +79,7 @@ class PlanOut(BaseModel):
     name: str
     public_description: str | None
     price: float
+    joining_fee: float
     currency: str
     tax_mode: str
     tax_rate: float

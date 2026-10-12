@@ -17,6 +17,13 @@ class CashPaymentLog(BaseModel):
     amount: float
     method: PaymentMethod = PaymentMethod.CASH
     note: str | None = None
+    promo_code: str | None = None
+
+
+class CashQuoteRequest(BaseModel):
+    member_id: str
+    plan_id: str
+    promo_code: str | None = None
 
 
 class CashPaymentOut(BaseModel):

@@ -424,6 +424,9 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
   const [searchError, setSearchError] = useState("");
   const [planId, setPlanId] = useState("");
   const [amount, setAmount] = useState("");
+  const [promoCode, setPromoCode] = useState("");
+  const [quote, setQuote] = useState<{ plan_price: number; joining_fee: number; discount_amount: number; tax_amount: number; total: number; currency: string } | null>(null);
+  const [quoteError, setQuoteError] = useState("");
   const [method, setMethod] = useState("cash");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -433,6 +436,21 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
   const [loading, setLoading] = useState(false);
 
   const selectedPlan = plans?.find((p) => p.id === planId) ?? null;
+
+  useEffect(() => {
+    if (!memberId || !planId) { setQuote(null); setAmount(""); return; }
+    let cancelled = false;
+    setQuote(null);
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api.post<typeof quote>("/cash/quote", { member_id: memberId, plan_id: planId, promo_code: promoCode.trim() || null });
+        if (!cancelled) { setQuote(result); setAmount(String(result?.total ?? "")); setQuoteError(""); }
+      } catch (e) {
+        if (!cancelled) { setQuoteError((e as ApiError).message); setAmount(""); }
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [memberId, planId, promoCode]);
 
   useEffect(() => {
     async function load() {
@@ -467,14 +485,12 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
 
   function selectPlan(id: string) {
     setPlanId(id);
-    const plan = plans?.find((p) => p.id === id);
-    if (plan) setAmount(String(plan.price));
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const amt = Number(amount);
-    if (!Number.isFinite(amt) || amt <= 0) { setError("Enter a valid amount."); return; }
+    if (!quote || !Number.isFinite(amt) || amt < 0) { setError("Wait for a valid payment quote."); return; }
 
     setError("");
     setResult(null);
@@ -482,12 +498,13 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
     try {
       const out = await api.post<CashPaymentOut>("/cash/log", {
         member_id: memberId, plan_id: planId, amount: amt, method, note: note.trim() || null,
+        promo_code: promoCode.trim() || null,
       });
       setResult(out);
       onSaved();
       setReceipt({ member: selected, plan: selectedPlan, method });
       setSelected(null); setMemberId(""); setQuery(""); setResults([]);
-      setPlanId(""); setAmount(""); setNote("");
+      setPlanId(""); setAmount(""); setNote(""); setPromoCode("");
     } catch (e) {
       setError((e as ApiError).message);
     } finally {
@@ -554,19 +571,28 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
             )}
           </div>
 
-          {/* Step 3: Amount + Method */}
+          {/* Step 3: Server-calculated amount + Method */}
+          <Input label="Promo code (optional)" value={promoCode} onChange={(e) => setPromoCode(e.target.value.toUpperCase())} placeholder="WELCOME10" />
+          {quoteError && <Alert onDismiss={() => setQuoteError("")}>{quoteError}</Alert>}
+          {quote && <div className="grid gap-1 border border-[var(--border)] p-3 text-xs text-muted-foreground">
+            <div>Plan price: {money(quote.plan_price, quote.currency)}</div>
+            {quote.joining_fee > 0 && <div>Joining fee: {money(quote.joining_fee, quote.currency)}</div>}
+            {quote.discount_amount > 0 && <div>Promo discount: −{money(quote.discount_amount, quote.currency)}</div>}
+            {quote.tax_amount > 0 && <div>Tax: {money(quote.tax_amount, quote.currency)}</div>}
+            <strong className="text-foreground">Due now: {money(quote.total, quote.currency)}</strong>
+          </div>}
           <div className="grid gap-5 sm:grid-cols-[1fr_auto]">
             <Input
-              label="Amount received"
+              label="Amount due"
               type="number"
-              min="0.01"
+              min="0"
               step="0.01"
               inputMode="decimal"
               required
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              readOnly
               placeholder="0.00"
-              hint={selectedPlan ? `Plan price: ${money(selectedPlan.price, selectedPlan.currency)}` : "Enter the amount actually received."}
+              hint="Calculated from the plan, first-time joining fee, promotion, and tax."
               className="tabular-nums"
             />
             <div>
@@ -596,7 +622,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
             <Button
               type="submit"
               loading={loading}
-              disabled={!memberId || !planId}
+              disabled={!memberId || !planId || !quote}
               className="w-full shrink-0 whitespace-nowrap px-8 sm:w-auto"
             >
               <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">

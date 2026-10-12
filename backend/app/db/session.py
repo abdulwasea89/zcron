@@ -58,6 +58,27 @@ async def init_db() -> None:
             await conn.run_sync(_upgrade_sqlite_leads_schema)
             await conn.run_sync(_upgrade_sqlite_member_profile_schema)
             await conn.run_sync(_upgrade_sqlite_plan_variants_schema)
+            await conn.run_sync(_upgrade_sqlite_promotions_schema)
+
+
+def _upgrade_sqlite_promotions_schema(connection) -> None:
+    """Add item 12 columns to existing local databases; create_all makes the new table."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    for table, columns in {
+        "membership_plans": {"joining_fee": "FLOAT NOT NULL DEFAULT 0"},
+        "payments": {
+            "plan_price_amount": "FLOAT", "joining_fee_amount": "FLOAT NOT NULL DEFAULT 0",
+            "discount_amount": "FLOAT NOT NULL DEFAULT 0", "promo_code": "VARCHAR",
+        },
+    }.items():
+        if table not in inspector.get_table_names():
+            continue
+        existing = {column["name"] for column in inspector.get_columns(table)}
+        for name, sql_type in columns.items():
+            if name not in existing:
+                connection.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {sql_type}')
 
 
 def _upgrade_sqlite_leads_schema(connection) -> None:

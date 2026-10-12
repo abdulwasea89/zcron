@@ -29,6 +29,10 @@ class Payment(UUIDModel, TimestampModel, table=True):
 
     amount: float = 0.0
     tax_amount: float = 0.0
+    plan_price_amount: float | None = None
+    joining_fee_amount: float = 0.0
+    discount_amount: float = 0.0
+    promo_code: str | None = None
     currency: str = "USD"
 
     # Card via Stripe (Connect for member fees)
