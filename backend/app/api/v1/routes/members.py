@@ -15,6 +15,8 @@ from app.schemas.members import (
     ApprovalDecision,
     ClientAssignment,
     EmailUpdate,
+    FamilyLinkRequest,
+    FamilyMemberOut,
     MemberDetailOut,
     MemberDirectoryItem,
     MemberInvite,
@@ -30,6 +32,7 @@ from app.schemas.members import (
 from app.schemas.organizations import BulkImportResult
 from app.services import member_trainers_service as trainer_assign
 from app.services import members_service as members
+from app.services import family_service as families
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
 from app.models.user import User
@@ -139,6 +142,20 @@ async def member_detail(
     member, user = data["member"], data["user"]
     sub = data["subscription"]
     plan = data["plan"]
+    family_owner = None
+    if member.family_owner_member_id:
+        owner = await session.get(OrganizationMember, member.family_owner_member_id)
+        if owner and owner.organization_id == ctx.org_id:
+            owner_user = await session.get(User, owner.user_id)
+            family_owner = FamilyMemberOut(member_id=owner.id, name=owner.display_name or (owner_user.full_name or owner_user.email if owner_user else "Member"))
+    family_rows = await families.family_members(session, ctx.org_id, member.id)
+    family_members = []
+    for family_member in family_rows:
+        family_user = await session.get(User, family_member.user_id)
+        family_members.append(FamilyMemberOut(
+            member_id=family_member.id,
+            name=family_member.display_name or (family_user.full_name or family_user.email if family_user else "Member"),
+        ))
 
     subscription = None
     if sub is not None:
@@ -157,6 +174,9 @@ async def member_detail(
             frozen_until=sub.frozen_until,
             cancelled_at=sub.cancelled_at,
             classes_remaining=sub.classes_remaining,
+            credits_allowance=sub.credits_allowance,
+            audience=plan.audience if plan else "standard",
+            family_capacity=plan.family_capacity if plan else None,
         )
 
     from app.api.v1.routes.payments import _to_out as payment_to_out
@@ -187,7 +207,41 @@ async def member_detail(
         payments=[payment_to_out(p) for p in data["payments"]],
         pending_payments=data["pending_payments"],
         trainer_assignments=trainer_assignments,
+        family_owner=family_owner,
+        family_members=family_members,
     )
+
+
+@router.post("/{member_id}/family", response_model=Message, dependencies=[Depends(require_writable_org)])
+async def add_family_member(
+    member_id: str,
+    data: FamilyLinkRequest,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    if ctx.role not in {Role.OWNER, Role.MANAGER}:
+        raise HTTPException(status_code=403, detail="Owner or manager access required.")
+    await families.set_family_member(
+        session, org_id=ctx.org_id, owner_id=member_id,
+        dependent_id=data.member_id, attach=True, actor_id=ctx.user_id,
+    )
+    return Message(message="Member added to family plan.")
+
+
+@router.delete("/{member_id}/family/{dependent_id}", response_model=Message, dependencies=[Depends(require_writable_org)])
+async def remove_family_member(
+    member_id: str,
+    dependent_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    if ctx.role not in {Role.OWNER, Role.MANAGER}:
+        raise HTTPException(status_code=403, detail="Owner or manager access required.")
+    await families.set_family_member(
+        session, org_id=ctx.org_id, owner_id=member_id,
+        dependent_id=dependent_id, attach=False, actor_id=ctx.user_id,
+    )
+    return Message(message="Member removed from family plan.")
 
 
 @router.patch("/{member_id}/profile", response_model=MemberProfileOut)

@@ -160,6 +160,9 @@ async def reverse_auto_approval(
     if member is not None:
         member.member_status = MemberStatus.EXPIRED
         session.add(member)
+        from app.services.family_service import sync_family_status
+
+        await sync_family_status(session, org_id, member.id, MemberStatus.EXPIRED)
     if receipt.payment_id:
         payment = await session.get(Payment, receipt.payment_id)
         if payment is not None:

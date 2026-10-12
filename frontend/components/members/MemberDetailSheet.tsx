@@ -29,6 +29,7 @@ import {
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { api, ApiError } from "@/lib/api";
 import { MemberProfileCard } from "@/components/members/MemberProfileCard";
+import { FamilyPlanCard } from "@/components/members/FamilyPlanCard";
 import { money, statusTone, titleCase } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { AttendanceOut, MemberDetailOut, MemberDirectoryItem, PendingPaymentItem } from "@/lib/types";
@@ -398,8 +399,9 @@ export function MemberDetailSheet({
                             <Field label="Valid until">{new Date(sub.current_period_end).toLocaleDateString()}</Field>
                           )}
                           {sub.classes_remaining != null && (
-                            <Field label="Classes remaining">{sub.classes_remaining}</Field>
+                            <Field label="Visit credits">{sub.classes_remaining}{sub.credits_allowance ? ` of ${sub.credits_allowance} left` : " left"}</Field>
                           )}
+                          {data.family_owner && <Field label="Family plan payer">{data.family_owner.name}</Field>}
                           {sub.grace_until && (
                             <Field label="Grace until">{new Date(sub.grace_until).toLocaleDateString()}</Field>
                           )}
@@ -419,6 +421,7 @@ export function MemberDetailSheet({
                   canManage={canManage}
                   onSaved={() => load(m.member_id)}
                 />
+                <FamilyPlanCard detail={data} canManage={canManage} onSaved={() => load(m.member_id)} />
 
                 {/* Visits (#18) */}
                 <Card>

@@ -15,10 +15,20 @@ import type { PublicPlanOut } from "@/types/api";
 
 /** Billing type → the unit shown after the price. */
 const PERIOD: Record<string, string> = {
-  recurring: "/month",
+  recurring: "/term",
   one_time_pack: " pack",
   drop_in: " drop-in",
 };
+
+function planTerms(plan: PublicPlanOut): string {
+  const details = [plan.public_description].filter(Boolean) as string[];
+  if (plan.audience === "student") details.push("Student plan");
+  if (plan.audience === "family" && plan.family_capacity) details.push(`Covers up to ${plan.family_capacity} people`);
+  if (plan.billing_type === "one_time_pack" && plan.pack_size) details.push(`${plan.pack_size} class credits${plan.validity_days ? ` · valid ${plan.validity_days} days` : ""}`);
+  if (plan.included_credits) details.push(`${plan.included_credits} visits per term`);
+  if (plan.off_peak_start && plan.off_peak_end) details.push(`Off-peak ${plan.off_peak_start}–${plan.off_peak_end}`);
+  return details.join(" · ");
+}
 
 export default function PickPlan() {
   const { orgCode, selectedPlanId, setSelectedPlan } = useJoinStore();
@@ -108,9 +118,9 @@ export default function PickPlan() {
             <ChoiceCard
               key={plan.id}
               price={`${plan.currency} ${plan.price}`}
-              period={PERIOD[plan.billing_type] ?? ""}
+              period={plan.billing_type === "recurring" ? `/${plan.cycle_length ?? 1} ${plan.cycle_unit ?? "month"}${(plan.cycle_length ?? 1) === 1 ? "" : "s"}` : PERIOD[plan.billing_type] ?? ""}
               name={plan.name}
-              detail={plan.public_description ?? undefined}
+              detail={planTerms(plan)}
               featured={plan.featured}
               selected={selected === plan.id}
               onPress={() => setSelected(plan.id)}

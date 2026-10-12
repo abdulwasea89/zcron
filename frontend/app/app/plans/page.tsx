@@ -248,6 +248,7 @@ export default function PlansPage() {
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.billing_type.toLowerCase().includes(q) ||
+        p.audience.toLowerCase().includes(q) ||
         p.visibility.toLowerCase().includes(q) ||
         p.status.toLowerCase().includes(q)
     );
@@ -475,7 +476,7 @@ export default function PlansPage() {
                         {money(p.price, p.currency)}
                       </div>
                       <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-                        {planCadence(p.billing_type)}
+                        {planCadence(p.billing_type, p.cycle_length, p.cycle_unit)}
                       </div>
                     </div>
                   </td>
@@ -572,6 +573,16 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
   const [name, setName] = useState(plan?.name ?? "");
   const [price, setPrice] = useState(plan ? String(plan.price) : "0");
   const [billing, setBilling] = useState(plan?.billing_type ?? "recurring");
+  const [cycleUnit, setCycleUnit] = useState(plan?.cycle_unit ?? "month");
+  const [cycleLength, setCycleLength] = useState(String(plan?.cycle_length ?? 1));
+  const [packSize, setPackSize] = useState(String(plan?.pack_size ?? 10));
+  const [validityDays, setValidityDays] = useState(plan?.validity_days ? String(plan.validity_days) : "");
+  const [audience, setAudience] = useState(plan?.audience ?? "standard");
+  const [familyCapacity, setFamilyCapacity] = useState(String(plan?.family_capacity ?? 4));
+  const [includedCredits, setIncludedCredits] = useState(plan?.included_credits ? String(plan.included_credits) : "");
+  const [offPeak, setOffPeak] = useState(Boolean(plan?.off_peak_start));
+  const [offPeakStart, setOffPeakStart] = useState(plan?.off_peak_start ?? "09:00");
+  const [offPeakEnd, setOffPeakEnd] = useState(plan?.off_peak_end ?? "16:00");
   const [visibility, setVisibility] = useState(plan?.visibility ?? "public");
   const [desc, setDesc] = useState(plan?.public_description ?? "");
   const [featured, setFeatured] = useState(plan?.featured ?? false);
@@ -604,7 +615,17 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
         public_description: desc || null,
         featured: featured || undefined,
         ...(isOffice ? { offer_kind: "space", spec } : {}),
-        ...(billing === "recurring" ? { cycle_unit: "month", cycle_length: 1 } : {}),
+        cycle_unit: billing === "recurring" ? cycleUnit : null,
+        cycle_length: billing === "recurring" ? Number(cycleLength) : null,
+        pack_size: billing === "one_time_pack" ? Number(packSize) : null,
+        validity_days: billing === "one_time_pack" && validityDays ? Number(validityDays) : null,
+        ...(!isOffice ? {
+          audience,
+          family_capacity: audience === "family" ? Number(familyCapacity) : null,
+          included_credits: billing === "recurring" && includedCredits ? Number(includedCredits) : null,
+          off_peak_start: offPeak ? offPeakStart : null,
+          off_peak_end: offPeak ? offPeakEnd : null,
+        } : {}),
       };
       if (plan) {
         await api.patch(`/plans/${plan.id}`, body);
@@ -708,6 +729,42 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
             <SelectItem value="invite_only">Invite only</SelectItem>
           </FieldSelect>
         </div>
+
+        {billing === "recurring" && (
+          <div className="grid grid-cols-2 gap-4">
+            <Input labelVariant="sentence" label="Every" type="number" min="1" max="365" required value={cycleLength} onChange={(e) => setCycleLength(e.target.value)} />
+            <FieldSelect label="Cycle unit" value={cycleUnit} onChange={setCycleUnit}>
+              <SelectItem value="day">Day</SelectItem>
+              <SelectItem value="week">Week</SelectItem>
+              <SelectItem value="month">Month</SelectItem>
+              <SelectItem value="year">Year</SelectItem>
+            </FieldSelect>
+          </div>
+        )}
+
+        {billing === "one_time_pack" && (
+          <div className="grid grid-cols-2 gap-4">
+            <Input labelVariant="sentence" label="Class credits" type="number" min="1" required value={packSize} onChange={(e) => setPackSize(e.target.value)} />
+            <Input labelVariant="sentence" label="Valid for days" type="number" min="1" placeholder="No expiry" value={validityDays} onChange={(e) => setValidityDays(e.target.value)} />
+          </div>
+        )}
+
+        {!isOffice && (
+          <div className="space-y-4 border-t border-foreground/10 pt-5">
+            <FieldSelect label="Who is this for?" value={audience} onChange={setAudience}>
+              <SelectItem value="standard">Everyone</SelectItem>
+              <SelectItem value="student">Students</SelectItem>
+              <SelectItem value="family">Family</SelectItem>
+            </FieldSelect>
+            {audience === "family" && <Input labelVariant="sentence" label="Covered people, including payer" type="number" min="2" max="20" required value={familyCapacity} onChange={(e) => setFamilyCapacity(e.target.value)} />}
+            {billing === "recurring" && <Input labelVariant="sentence" label="Visit credits per term" type="number" min="1" placeholder="Unlimited" value={includedCredits} onChange={(e) => setIncludedCredits(e.target.value)} hint="Optional. Shared across all covered family members." />}
+            <label className="flex items-center gap-2 text-sm text-foreground"><input type="checkbox" checked={offPeak} onChange={(e) => setOffPeak(e.target.checked)} /> Off-peak hours</label>
+            {offPeak && <div className="grid grid-cols-2 gap-4">
+              <Input labelVariant="sentence" label="From (local time)" type="time" required value={offPeakStart} onChange={(e) => setOffPeakStart(e.target.value)} />
+              <Input labelVariant="sentence" label="Until (local time)" type="time" required value={offPeakEnd} onChange={(e) => setOffPeakEnd(e.target.value)} />
+            </div>}
+          </div>
+        )}
 
         <Textarea
           labelVariant="sentence"

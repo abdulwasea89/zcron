@@ -517,19 +517,20 @@ function CheckInReceipt({
   const who = name || res.member_name || "member";
   const showBadges = res.payment_due || res.birthday_today || res.at_risk;
   return (
-    <Card className="animate-slide-up overflow-hidden border-success-border">
-      <div className="flex items-start gap-3.5 bg-success-bg px-5 py-4">
+    <Card className={`animate-slide-up overflow-hidden ${res.access_warning ? "border-warning-border" : "border-success-border"}`}>
+      <div className={`flex items-start gap-3.5 px-5 py-4 ${res.access_warning ? "bg-warning-bg" : "bg-success-bg"}`}>
         <span className="relative shrink-0">
           <Avatar name={who} size="md" />
-          <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-[var(--success-bg)] bg-success text-white">
-            <CheckIcon className="h-3 w-3" />
+          <span className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 text-white ${res.access_warning ? "border-[var(--warning-bg)] bg-warning" : "border-[var(--success-bg)] bg-success"}`}>
+            {res.access_warning ? "!" : <CheckIcon className="h-3 w-3" />}
           </span>
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-semibold text-foreground">Checked in {who}</p>
+          <p className="text-[14px] font-semibold text-foreground">{res.access_warning ? `Visit logged for ${who} — review access` : `Checked in ${who}`}</p>
           {res.hint && (
             <p className="mt-1 text-[12.5px] font-medium text-foreground/90">{res.hint}</p>
           )}
+          {res.credit_consumed && <p className="mt-1 text-[12px] text-muted-foreground">1 visit credit used</p>}
           <p className="mt-0.5 text-[12px] text-muted-foreground">
             {clock(res.checked_in_at)} · {titleCase(res.method)} ·{" "}
             {res.visits_today === 1 ? "first visit today" : `visit #${res.visits_today} today`}

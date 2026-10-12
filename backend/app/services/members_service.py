@@ -130,6 +130,9 @@ async def change_status(
         raise HTTPException(status_code=422, detail="Invalid status action.")
 
     session.add(member)
+    from app.services.family_service import sync_family_status
+
+    await sync_family_status(session, org_id, member.id, member.member_status)
     await record_audit(session, action=f"member.{action}", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="member", entity_id=member.id, metadata={"reason": reason})
     return member
@@ -149,6 +152,11 @@ async def change_role(
         raise HTTPException(status_code=422, detail=f"Invalid role: {new_role}")
     if parsed not in {Role.MANAGER, Role.TRAINER, Role.FRONT_DESK, Role.MEMBER}:
         raise HTTPException(status_code=422, detail="Invalid role.")
+    if parsed != Role.MEMBER:
+        from app.services.family_service import family_members
+
+        if member.family_owner_member_id or await family_members(session, org_id, member.id):
+            raise HTTPException(status_code=409, detail="Remove family-plan links before changing this member's role.")
     old_role = member.role
     member.role = parsed
     session.add(member)
@@ -466,6 +474,13 @@ async def delete_member(
         raise HTTPException(status_code=422, detail="Cannot delete the owner.")
     if member.user_id == actor_user_id:
         raise HTTPException(status_code=422, detail="Cannot delete yourself.")
+    from app.services.family_service import family_members, set_family_member
+
+    for dependent in await family_members(session, org_id, member.id):
+        await set_family_member(
+            session, org_id=org_id, owner_id=member.id,
+            dependent_id=dependent.id, attach=False, actor_id=actor_user_id,
+        )
     await record_audit(session, action="member.deleted", organization_id=org_id, actor_user_id=actor_user_id,
                        entity_type="member", entity_id=member.id,
                        metadata={"deleted_user_id": member.user_id, "deleted_role": member.role.value})
@@ -500,6 +515,10 @@ async def member_detail(
             .order_by(Subscription.created_at.desc())
         )
     ).scalars().first()
+    if member.family_owner_member_id:
+        from app.services.family_service import covered_subscription
+
+        subscription = await covered_subscription(session, org_id, member)
     plan = None
     if subscription is not None:
         plan = await session.get(MembershipPlan, subscription.plan_id)

@@ -42,6 +42,8 @@ class CheckInOut(BaseModel):
     at_risk: bool
     visits_today: int
     hint: str | None = None
+    credit_consumed: bool = False
+    access_warning: str | None = None
 
 
 class AttendanceOut(BaseModel):
@@ -68,6 +70,7 @@ class AttendanceOut(BaseModel):
     at_risk: bool = False
     days_since_last_visit: int | None = None
     hint: str | None = None
+    credit_consumed: bool = False
 
 
 class AttendanceSummary(BaseModel):

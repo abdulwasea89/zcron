@@ -148,6 +148,18 @@ class MemberSubscriptionOut(BaseModel):
     frozen_until: datetime | None
     cancelled_at: datetime | None
     classes_remaining: int | None
+    credits_allowance: int | None = None
+    audience: str = "standard"
+    family_capacity: int | None = None
+
+
+class FamilyMemberOut(BaseModel):
+    member_id: str
+    name: str
+
+
+class FamilyLinkRequest(BaseModel):
+    member_id: str
 
 
 class PendingPaymentItem(BaseModel):
@@ -168,3 +180,5 @@ class MemberDetailOut(BaseModel):
     payments: list[PaymentOut] = []
     pending_payments: list[PendingPaymentItem] = []
     trainer_assignments: list[TrainerAssignment] = []
+    family_owner: FamilyMemberOut | None = None
+    family_members: list[FamilyMemberOut] = []

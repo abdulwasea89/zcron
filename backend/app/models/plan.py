@@ -48,6 +48,11 @@ class MembershipPlan(UUIDModel, TimestampModel, table=True):
     trial_days: int = 0
     pack_size: int | None = None         # for one_time_pack (N classes)
     validity_days: int | None = None     # pack validity window
+    audience: str = "standard"           # standard | student | family
+    family_capacity: int | None = None   # includes the paying member
+    off_peak_start: str | None = None    # local HH:MM, inclusive
+    off_peak_end: str | None = None      # local HH:MM, exclusive
+    included_credits: int | None = None  # visits per recurring term; null = unlimited
 
     # Inclusions & rules stored as JSON strings (Section 6.4 / 6.5)
     inclusions_json: str | None = None

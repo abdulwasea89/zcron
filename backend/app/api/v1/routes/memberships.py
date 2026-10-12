@@ -109,6 +109,11 @@ async def signup_plans(org_code: str, session: AsyncSession = Depends(get_sessio
             id=p.id, name=p.name, public_description=p.public_description,
             price=p.price, currency=p.currency, billing_type=p.billing_type.value,
             featured=p.featured,
+            audience=p.audience, family_capacity=p.family_capacity,
+            cycle_length=p.cycle_length, cycle_unit=p.cycle_unit,
+            pack_size=p.pack_size, validity_days=p.validity_days,
+            included_credits=p.included_credits,
+            off_peak_start=p.off_peak_start, off_peak_end=p.off_peak_end,
         )
         for p in plans
     ]

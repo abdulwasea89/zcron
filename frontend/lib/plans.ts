@@ -6,8 +6,12 @@ import { titleCase } from "@/lib/format";
 import type { PlanOut } from "@/lib/types";
 
 /** What a plan's price is *per*, so the number in a price cell is not bare. */
-export function planCadence(billingType: string): string {
-  if (billingType === "recurring") return "/month";
+export function planCadence(billingType: string, cycleLength?: number | null, cycleUnit?: string | null): string {
+  if (billingType === "recurring") {
+    const length = cycleLength ?? 1;
+    const unit = cycleUnit ?? "month";
+    return `/${length === 1 ? "" : `${length} `}${unit}${length === 1 ? "" : "s"}`;
+  }
   if (billingType === "one_time_pack") return "one-time";
   return "per visit";
 }

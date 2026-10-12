@@ -181,6 +181,9 @@ async def _connect_payment_succeeded(session: AsyncSession, obj: dict, account_i
             if member.joined_at is None:
                 member.joined_at = now_utc()
             session.add(member)
+            from app.services.family_service import sync_family_status
+
+            await sync_family_status(session, payment.organization_id, member.id, MemberStatus.ACTIVE)
             from app.services.referrals_service import qualify_referral_for_member
 
             await qualify_referral_for_member(

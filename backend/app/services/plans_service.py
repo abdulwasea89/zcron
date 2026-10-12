@@ -13,16 +13,19 @@ Plans are owner-defined. Key rules enforced here:
 from __future__ import annotations
 
 import json
+import re
 
 from fastapi import HTTPException
 from jsonschema import ValidationError as JsonSchemaError
 from jsonschema import validate as json_schema_validate
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func
 from sqlmodel import select
 
-from app.core.constants import PlanStatus, PlanVisibility, SubscriptionStatus
+from app.core.constants import PlanBillingType, PlanStatus, PlanVisibility, SubscriptionStatus
 from app.core.industry import OfferKind, get_industry
 from app.models.organization import Organization
+from app.models.membership import OrganizationMember
 from app.models.plan import MembershipPlan
 from app.models.subscription import Subscription
 from app.realtime import events
@@ -82,6 +85,44 @@ def _resolve_offer(org: Organization, data: PlanCreate) -> tuple[OfferKind, dict
     return offer_kind, spec
 
 
+def _validate_membership_variant(plan: MembershipPlan) -> None:
+    """Keep plan limits coherent before a draft is saved or published."""
+    if not isinstance(plan.billing_type, PlanBillingType):
+        raise HTTPException(status_code=422, detail="Choose a valid billing type.")
+    if plan.offer_kind != "membership":
+        if any((plan.family_capacity, plan.included_credits, plan.off_peak_start, plan.off_peak_end)) or plan.audience != "standard":
+            raise HTTPException(status_code=422, detail="Membership variants are only available for membership plans.")
+        return
+    if plan.audience not in {"standard", "student", "family"}:
+        raise HTTPException(status_code=422, detail="Audience must be standard, student, or family.")
+    if (plan.audience == "family") != (plan.family_capacity is not None):
+        raise HTTPException(status_code=422, detail="Family plans require a capacity; other plans cannot set one.")
+    if plan.family_capacity is not None and not 2 <= plan.family_capacity <= 20:
+        raise HTTPException(status_code=422, detail="Family capacity must be between 2 and 20.")
+    if bool(plan.off_peak_start) != bool(plan.off_peak_end):
+        raise HTTPException(status_code=422, detail="Provide both off-peak start and end times.")
+    for value in (plan.off_peak_start, plan.off_peak_end):
+        if value and (not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value)):
+            raise HTTPException(status_code=422, detail="Off-peak times must use 24-hour HH:MM format.")
+    if plan.off_peak_start and plan.off_peak_start == plan.off_peak_end:
+        raise HTTPException(status_code=422, detail="Off-peak start and end cannot be the same.")
+    if plan.billing_type.value == "recurring":
+        if plan.cycle_length is None:
+            plan.cycle_length = 1
+        if plan.cycle_unit is None:
+            plan.cycle_unit = "month"
+        if not plan.cycle_length or not 1 <= plan.cycle_length <= 365:
+            raise HTTPException(status_code=422, detail="Recurring plans need a cycle length from 1 to 365.")
+        if plan.cycle_unit not in {"day", "week", "month", "year"}:
+            raise HTTPException(status_code=422, detail="Recurring cycle unit must be day, week, month, or year.")
+    if plan.billing_type.value == "one_time_pack" and (not plan.pack_size or plan.pack_size < 1):
+        raise HTTPException(status_code=422, detail="Class packs need at least one class credit.")
+    if plan.included_credits is not None and (plan.included_credits < 1 or plan.billing_type.value != "recurring"):
+        raise HTTPException(status_code=422, detail="Included credits require a recurring plan and a positive allowance.")
+    if plan.validity_days is not None and plan.validity_days < 1:
+        raise HTTPException(status_code=422, detail="Pack validity must be positive.")
+
+
 async def create_plan(
     session: AsyncSession, *, org: Organization, data: PlanCreate, actor_id: str
 ) -> MembershipPlan:
@@ -102,6 +143,11 @@ async def create_plan(
         trial_days=data.trial_days,
         pack_size=data.pack_size,
         validity_days=data.validity_days,
+        audience=data.audience,
+        family_capacity=data.family_capacity,
+        off_peak_start=data.off_peak_start,
+        off_peak_end=data.off_peak_end,
+        included_credits=data.included_credits,
         inclusions_json=data.inclusions_json,
         rules_json=data.rules_json,
         visibility=data.visibility,
@@ -111,6 +157,8 @@ async def create_plan(
         org_industry=org.industry or "gym",
         spec_json=json.dumps(spec) if spec is not None else None,
     )
+    _validate_membership_variant(plan)
+
     session.add(plan)
     await session.flush()
     await record_audit(session, action="plan.created", organization_id=org.id, actor_user_id=actor_id,
@@ -152,6 +200,26 @@ async def update_plan(
             _validate_offer_spec(org, kind, spec)
             plan.spec_json = json.dumps(spec)
 
+    _validate_membership_variant(plan)
+
+    # Existing households must keep enough places after an owner edits a plan.
+    active_owners = (await session.execute(
+        select(Subscription.member_id).where(
+            Subscription.organization_id == org_id,
+            Subscription.plan_id == plan.id,
+            Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE]),
+        )
+    )).scalars().all()
+    for owner_id in set(active_owners):
+        linked = (await session.execute(
+            select(func.count()).select_from(OrganizationMember).where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.family_owner_member_id == owner_id,
+            )
+        )).scalar_one()
+        if linked and (plan.audience != "family" or not plan.family_capacity or linked + 1 > plan.family_capacity):
+            raise HTTPException(status_code=422, detail="This plan already covers family members; keep its family capacity.")
+
     session.add(plan)
     await record_audit(
         session, action="plan.updated", organization_id=org_id, actor_user_id=actor_id,
@@ -167,6 +235,7 @@ async def publish_plan(
     session: AsyncSession, *, org: Organization, plan_id: str, actor_id: str
 ) -> MembershipPlan:
     plan = await get_owned_plan(session, org.id, plan_id)
+    _validate_membership_variant(plan)
     plan.status = PlanStatus.PUBLISHED
     session.add(plan)
     # Unblock member signup once at least one plan is published.

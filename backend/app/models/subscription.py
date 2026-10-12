@@ -36,5 +36,6 @@ class Subscription(UUIDModel, TimestampModel, table=True):
 
     # For one-time packs: remaining class credits
     classes_remaining: int | None = None
+    credits_allowance: int | None = None  # snapshot of plan allowance; null = unlimited
 
     stripe_subscription_id: str | None = None

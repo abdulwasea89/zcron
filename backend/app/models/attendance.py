@@ -40,3 +40,4 @@ class Attendance(UUIDModel, TimestampModel, table=True):
 
     note: str | None = None
     idempotency_key: str | None = Field(default=None, index=True)
+    credit_subscription_id: str | None = Field(default=None, foreign_key="subscriptions.id")

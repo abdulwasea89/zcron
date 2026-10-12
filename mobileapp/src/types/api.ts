@@ -341,6 +341,15 @@ export interface PublicPlanOut {
   currency: string;
   billing_type: string;
   featured: boolean;
+  audience: string;
+  family_capacity: number | null;
+  cycle_length: number | null;
+  cycle_unit: string | null;
+  pack_size: number | null;
+  validity_days: number | null;
+  included_credits: number | null;
+  off_peak_start: string | null;
+  off_peak_end: string | null;
 }
 
 export interface SignupPayRequest {

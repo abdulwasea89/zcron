@@ -79,6 +79,15 @@ class PublicPlanOut(BaseModel):
     currency: str
     billing_type: str
     featured: bool
+    audience: str = "standard"
+    family_capacity: int | None = None
+    cycle_length: int | None = None
+    cycle_unit: str | None = None
+    pack_size: int | None = None
+    validity_days: int | None = None
+    included_credits: int | None = None
+    off_peak_start: str | None = None
+    off_peak_end: str | None = None
 
 
 class SignupPay(BaseModel):

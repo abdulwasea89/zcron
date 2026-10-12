@@ -69,6 +69,15 @@ export interface PlanOut {
   visibility: string;
   status: string;
   featured: boolean;
+  cycle_length: number | null;
+  cycle_unit: string | null;
+  pack_size: number | null;
+  validity_days: number | null;
+  audience: string;
+  family_capacity: number | null;
+  off_peak_start: string | null;
+  off_peak_end: string | null;
+  included_credits: number | null;
   /** Offer kind (membership | space | course); defaults to membership. */
   offer_kind?: string;
   /** Industry-specific attributes for space/course offers (validated server-side). */
@@ -88,6 +97,11 @@ export interface PlanCreate {
   pack_size?: number | null;
   validity_days?: number | null;
   featured?: boolean;
+  audience?: string;
+  family_capacity?: number | null;
+  off_peak_start?: string | null;
+  off_peak_end?: string | null;
+  included_credits?: number | null;
   /** Multi-industry offer shape (defaults to the org's industry offer kind). */
   offer_kind?: string;
   spec?: Record<string, unknown> | null;
@@ -127,6 +141,9 @@ export interface MemberSubscriptionOut {
   frozen_until: string | null;
   cancelled_at: string | null;
   classes_remaining: number | null;
+  credits_allowance: number | null;
+  audience: string;
+  family_capacity: number | null;
 }
 
 export interface PendingPaymentItem {
@@ -145,6 +162,8 @@ export interface MemberDetailOut {
   payments: PaymentOut[];
   pending_payments: PendingPaymentItem[];
   trainer_assignments: TrainerAssignment[];
+  family_owner: { member_id: string; name: string } | null;
+  family_members: { member_id: string; name: string }[];
 }
 
 export interface MemberProfile {
@@ -751,6 +770,7 @@ export interface AttendanceOut {
   at_risk?: boolean;
   days_since_last_visit?: number | null;
   hint?: string | null;
+  credit_consumed?: boolean;
 }
 
 export interface CheckInOut extends AttendanceOut {
@@ -763,6 +783,8 @@ export interface CheckInOut extends AttendanceOut {
   at_risk: boolean;
   visits_today: number;
   hint: string | null;
+  credit_consumed: boolean;
+  access_warning: string | null;
 }
 
 export interface AttendanceSummary {

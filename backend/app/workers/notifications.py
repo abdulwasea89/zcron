@@ -86,5 +86,8 @@ async def expire_due_memberships(session: AsyncSession, *, org_id: str) -> int:
             if member is not None and member.member_status in {MemberStatus.ACTIVE, MemberStatus.GRACE}:
                 member.member_status = MemberStatus.EXPIRED
                 session.add(member)
+                from app.services.family_service import sync_family_status
+
+                await sync_family_status(session, org_id, member.id, MemberStatus.EXPIRED)
             expired += 1
     return expired

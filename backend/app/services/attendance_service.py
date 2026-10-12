@@ -15,7 +15,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -29,10 +29,12 @@ from app.core.security import now_utc
 from app.models.attendance import Attendance
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
+from app.models.plan import MembershipPlan
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.realtime import events
 from app.services.audit_service import record_audit
+from app.services.family_service import covered_subscription
 
 # A repeat check-in for the same member within this window is treated as a
 # double-tap and replayed rather than stored (only when no idempotency key was
@@ -330,6 +332,38 @@ async def record_checkin(
             return _out(recent, member=member, user=user, status=status)
 
     at = checked_in_at or now_utc()
+    if at.tzinfo is not None:
+        at = at.astimezone(timezone.utc).replace(tzinfo=None)
+    sub = await covered_subscription(session, org_id, member)
+    access_warning = None
+    credit_subscription_id = None
+    valid_until = (sub.grace_until if sub.status == SubscriptionStatus.GRACE and sub.grace_until else sub.current_period_end) if sub else None
+    if member.banned or member.member_status not in {MemberStatus.ACTIVE, MemberStatus.GRACE}:
+        access_warning = "Membership is not active."
+    elif sub is None:
+        access_warning = "No active plan covers this visit."
+    elif valid_until and at > valid_until:
+        access_warning = "Plan validity has ended."
+    else:
+        plan = await session.get(MembershipPlan, sub.plan_id)
+        if plan and plan.off_peak_start and plan.off_peak_end:
+            local_time = at.replace(tzinfo=timezone.utc).astimezone(_tz(tz_name)).strftime("%H:%M")
+            start, end = plan.off_peak_start, plan.off_peak_end
+            permitted = start <= local_time < end if start < end else local_time >= start or local_time < end
+            if not permitted:
+                access_warning = f"This plan is valid from {start} to {end} local time."
+        if access_warning is None and sub.classes_remaining is not None:
+            consumed = await session.execute(
+                update(Subscription).where(
+                    Subscription.id == sub.id,
+                    Subscription.organization_id == org_id,
+                    Subscription.classes_remaining > 0,
+                ).values(classes_remaining=Subscription.classes_remaining - 1)
+            )
+            if consumed.rowcount:
+                credit_subscription_id = sub.id
+            else:
+                access_warning = "No visit credits remaining."
     row = Attendance(
         organization_id=org_id,
         member_id=member.id,
@@ -340,6 +374,7 @@ async def record_checkin(
         class_session_id=class_session_id,
         note=note,
         idempotency_key=idempotency_key,
+        credit_subscription_id=credit_subscription_id,
     )
     session.add(row)
     await session.flush()
@@ -350,6 +385,9 @@ async def record_checkin(
     status["visits_today"] = await _visits_today(
         session, org_id=org_id, member_id=member.id, tz_name=tz_name
     )
+    status["access_warning"] = access_warning
+    if access_warning:
+        status["hint"] = access_warning
 
     await record_audit(
         session,
@@ -380,6 +418,7 @@ def _out(
         "source": row.source.value if hasattr(row.source, "value") else str(row.source),
         "class_session_id": row.class_session_id,
         "note": row.note,
+        "credit_consumed": row.credit_subscription_id is not None,
         **status,
     }
 

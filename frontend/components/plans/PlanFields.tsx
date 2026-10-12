@@ -61,9 +61,19 @@ export function PlanFields({ plan }: { plan: PlanOut }) {
       <FieldRow icon={<LayersIcon />} label="Offer">{titleCase(plan.offer_kind ?? "membership")}</FieldRow>
       <FieldRow icon={<TagIcon />} label="Price">
         <span className="font-medium tabular-nums">{money(plan.price, plan.currency)}</span>
-        <span className="ml-1.5 text-muted-foreground">{planCadence(plan.billing_type)}</span>
+        <span className="ml-1.5 text-muted-foreground">{planCadence(plan.billing_type, plan.cycle_length, plan.cycle_unit)}</span>
       </FieldRow>
       <FieldRow icon={<RepeatIcon />} label="Billing">{titleCase(plan.billing_type)}</FieldRow>
+      {plan.offer_kind === "membership" && (
+        <>
+          <FieldRow icon={<LayersIcon />} label="Audience">{titleCase(plan.audience)}</FieldRow>
+          {plan.family_capacity && <FieldRow icon={<LayersIcon />} label="Family size">Up to {plan.family_capacity} people</FieldRow>}
+          {plan.billing_type === "recurring" && <FieldRow icon={<CalendarIcon />} label="Cycle">Every {plan.cycle_length} {plan.cycle_unit}{plan.cycle_length === 1 ? "" : "s"}</FieldRow>}
+          {plan.billing_type === "one_time_pack" && <FieldRow icon={<TagIcon />} label="Class pack">{plan.pack_size} credits{plan.validity_days ? ` · valid ${plan.validity_days} days` : ""}</FieldRow>}
+          {plan.included_credits && <FieldRow icon={<TagIcon />} label="Visit credits">{plan.included_credits} per term</FieldRow>}
+          {plan.off_peak_start && <FieldRow icon={<CalendarIcon />} label="Off-peak">{plan.off_peak_start}–{plan.off_peak_end} local time</FieldRow>}
+        </>
+      )}
       <FieldRow icon={<GlobeIcon />} label="Visibility">{titleCase(plan.visibility)}</FieldRow>
       <FieldRow icon={<StatusIcon />} label="Status">
         <Badge tone={statusTone(plan.status)}>

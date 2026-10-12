@@ -14,8 +14,6 @@ Approved- and invite-only variants are handled by branching on enrollment mode.
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -30,7 +28,6 @@ from app.core.constants import (
     PaymentKind,
     PaymentMethod,
     PaymentStatus,
-    PlanBillingType,
     Role,
     SaasStatus,
     SubscriptionStatus,
@@ -373,16 +370,9 @@ async def _activate_membership(
 ) -> Subscription:
     """Create the subscription (price snapshot) and flip member to active."""
 
-    period_end = None
-    classes_remaining = None
-    if plan.billing_type == PlanBillingType.RECURRING:
-        unit_days = {"day": 1, "week": 7, "month": 30}.get(plan.cycle_unit or "month", 30)
-        length = plan.cycle_length or 1
-        period_end = now_utc() + timedelta(days=unit_days * length)
-    elif plan.billing_type == PlanBillingType.ONE_TIME_PACK:
-        classes_remaining = plan.pack_size
-        if plan.validity_days:
-            period_end = now_utc() + timedelta(days=plan.validity_days)
+    from app.services.plan_entitlements import subscription_terms
+
+    period_end, classes_remaining = subscription_terms(plan)
 
     sub = Subscription(
         organization_id=org.id,
@@ -393,14 +383,20 @@ async def _activate_membership(
         currency=plan.currency,
         current_period_end=period_end,
         classes_remaining=classes_remaining,
+        credits_allowance=classes_remaining,
     )
     session.add(sub)
     await session.flush()
 
     member.member_status = MemberStatus.ACTIVE
+    member.family_owner_member_id = None  # a new purchase replaces family coverage
     if member.joined_at is None:
         member.joined_at = now_utc()
     session.add(member)
+
+    from app.services.family_service import sync_family_status
+
+    await sync_family_status(session, org.id, member.id, MemberStatus.ACTIVE)
 
     # Start the 90-day onboarding journey (#32). Idempotent: a renewal returns
     # the member's existing journey rather than restarting it.

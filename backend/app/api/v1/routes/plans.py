@@ -33,6 +33,11 @@ def _to_out(p: MembershipPlan) -> PlanOut:
         currency=p.currency, tax_mode=p.tax_mode.value, tax_rate=p.tax_rate,
         billing_type=p.billing_type.value, visibility=p.visibility.value,
         status=p.status.value, featured=p.featured,
+        cycle_length=p.cycle_length, cycle_unit=p.cycle_unit,
+        pack_size=p.pack_size, validity_days=p.validity_days,
+        audience=p.audience, family_capacity=p.family_capacity,
+        off_peak_start=p.off_peak_start, off_peak_end=p.off_peak_end,
+        included_credits=p.included_credits,
         offer_kind=p.offer_kind or "membership", spec=spec,
         summary=p.summary,
     )

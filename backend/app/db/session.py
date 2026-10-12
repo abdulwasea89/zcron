@@ -57,6 +57,7 @@ async def init_db() -> None:
             # Production databases use Alembic migrations instead.
             await conn.run_sync(_upgrade_sqlite_leads_schema)
             await conn.run_sync(_upgrade_sqlite_member_profile_schema)
+            await conn.run_sync(_upgrade_sqlite_plan_variants_schema)
 
 
 def _upgrade_sqlite_leads_schema(connection) -> None:
@@ -95,6 +96,38 @@ def _upgrade_sqlite_member_profile_schema(connection) -> None:
             connection.exec_driver_sql(
                 f'ALTER TABLE organization_members ADD COLUMN "{name}" VARCHAR'
             )
+
+
+def _upgrade_sqlite_plan_variants_schema(connection) -> None:
+    """Apply additive plan columns to existing local SQLite databases."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    additions = {
+        "membership_plans": {
+            "audience": "VARCHAR NOT NULL DEFAULT 'standard'",
+            "family_capacity": "INTEGER",
+            "off_peak_start": "VARCHAR",
+            "off_peak_end": "VARCHAR",
+            "included_credits": "INTEGER",
+        },
+        "organization_members": {"family_owner_member_id": "VARCHAR"},
+        "subscriptions": {"credits_allowance": "INTEGER"},
+        "attendance": {"credit_subscription_id": "VARCHAR"},
+    }
+    for table, columns in additions.items():
+        if table not in tables:
+            continue
+        existing = {column["name"] for column in inspector.get_columns(table)}
+        for name, sql_type in columns.items():
+            if name not in existing:
+                connection.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {sql_type}')
+    if "organization_members" in tables:
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_organization_members_family_owner_member_id "
+            "ON organization_members (family_owner_member_id)"
+        )
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
