@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.schemas.payments import PaymentOut
 
@@ -15,6 +15,7 @@ class MemberDirectoryItem(BaseModel):
     email: str
     full_name: str | None
     display_name: str | None = None
+    photo_url: str | None = None
     role: str
     member_status: str
     phone: str | None
@@ -26,6 +27,50 @@ class MemberDirectoryItem(BaseModel):
     commission_rate: float = 0.0
     # Display names of the trainers currently assigned to this member.
     assigned_trainers: list[str] = []
+
+
+class MemberProfileUpdate(BaseModel):
+    display_name: str | None = Field(default=None, max_length=160)
+    phone: str | None = Field(default=None, max_length=40)
+    photo_url: str | None = Field(default=None, max_length=2048)
+    emergency_contact: str | None = Field(default=None, max_length=120)
+    goals: str | None = Field(default=None, max_length=1000)
+    health_notes: str | None = Field(default=None, max_length=2000)
+    id_document_type: str | None = Field(default=None, max_length=60)
+    id_document_last4: str | None = Field(default=None, max_length=4)
+
+    @field_validator("display_name", "phone", "photo_url", "emergency_contact", "goals", "health_notes", "id_document_type", "id_document_last4")
+    @classmethod
+    def clean_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @field_validator("photo_url")
+    @classmethod
+    def safe_photo_url(cls, value: str | None) -> str | None:
+        if value and not value.startswith("https://"):
+            raise ValueError("Photo URL must use HTTPS.")
+        return value
+
+    @field_validator("id_document_last4")
+    @classmethod
+    def safe_id_suffix(cls, value: str | None) -> str | None:
+        if value and (len(value) != 4 or not value.isalnum()):
+            raise ValueError("Use only the final four letters or digits of the ID.")
+        return value.upper() if value else None
+
+
+class MemberProfileOut(BaseModel):
+    display_name: str | None = None
+    phone: str | None = None
+    photo_url: str | None = None
+    emergency_contact: str | None = None
+    goals: str | None = None
+    health_notes: str | None = None
+    id_document_type: str | None = None
+    id_document_last4: str | None = None
+    summary: str
 
 
 class TrainerAssign(BaseModel):
@@ -118,6 +163,7 @@ class PendingPaymentItem(BaseModel):
 
 class MemberDetailOut(BaseModel):
     member: MemberDirectoryItem
+    profile: MemberProfileOut
     subscription: MemberSubscriptionOut | None = None
     payments: list[PaymentOut] = []
     pending_payments: list[PendingPaymentItem] = []

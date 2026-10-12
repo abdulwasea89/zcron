@@ -99,6 +99,7 @@ export interface MemberDirectoryItem {
   email: string;
   full_name: string | null;
   display_name: string | null;
+  photo_url: string | null;
   role: string;
   member_status: string;
   phone: string | null;
@@ -139,10 +140,23 @@ export interface PendingPaymentItem {
 
 export interface MemberDetailOut {
   member: MemberDirectoryItem;
+  profile: MemberProfile;
   subscription: MemberSubscriptionOut | null;
   payments: PaymentOut[];
   pending_payments: PendingPaymentItem[];
   trainer_assignments: TrainerAssignment[];
+}
+
+export interface MemberProfile {
+  display_name: string | null;
+  phone: string | null;
+  photo_url: string | null;
+  emergency_contact: string | null;
+  goals: string | null;
+  health_notes: string | null;
+  id_document_type: string | null;
+  id_document_last4: string | null;
+  summary: string;
 }
 
 export interface TrainerAssignment {
@@ -401,6 +415,11 @@ export interface ProfileOut {
   date_of_birth: string | null;
   gender: string | null;
   photo_url: string | null;
+  goals: string | null;
+  health_notes: string | null;
+  id_document_type: string | null;
+  id_document_last4: string | null;
+  summary: string | null;
 }
 
 // ------------------------------------------------------------------ audit

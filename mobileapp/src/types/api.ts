@@ -175,6 +175,11 @@ export interface ProfileOut {
   date_of_birth?: string | null;
   gender?: string | null;
   photo_url?: string | null;
+  goals?: string | null;
+  health_notes?: string | null;
+  id_document_type?: string | null;
+  id_document_last4?: string | null;
+  summary?: string | null;
 }
 
 export interface ProfileUpdateRequest {
@@ -185,6 +190,11 @@ export interface ProfileUpdateRequest {
   occupation?: string | null;
   education?: string | null;
   emergency_contact?: string | null;
+  photo_url?: string | null;
+  goals?: string | null;
+  health_notes?: string | null;
+  id_document_type?: string | null;
+  id_document_last4?: string | null;
 }
 
 export interface CashLogPayload {

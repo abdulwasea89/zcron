@@ -35,7 +35,7 @@ from app.models.payment import Payment
 from app.models.plan import MembershipPlan
 from app.models.subscription import Subscription
 from app.models.user import User
-from app.schemas.members import PendingPaymentItem
+from app.schemas.members import MemberProfileUpdate, PendingPaymentItem
 from app.services import verification_service as verif
 from app.services.audit_service import record_audit
 from app.services.notifications_service import create_notification
@@ -63,6 +63,46 @@ async def _get_member(session: AsyncSession, org_id: str, member_id: str) -> Org
     if member is None or member.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Member not found.")
     return member
+
+
+async def update_member_profile(
+    session: AsyncSession, *, org_id: str, member_id: str,
+    data: MemberProfileUpdate, actor_id: str,
+) -> OrganizationMember:
+    member = await _get_member(session, org_id, member_id)
+    changed: list[str] = []
+    for field in data.model_fields_set:
+        value = getattr(data, field)
+        if getattr(member, field) != value:
+            setattr(member, field, value)
+            changed.append(field)
+    if changed:
+        session.add(member)
+        # Profile fields may contain sensitive health information or ID metadata.
+        # Record which fields changed, never their values.
+        await record_audit(
+            session, action="member.profile_updated", organization_id=org_id,
+            actor_user_id=actor_id, entity_type="member", entity_id=member.id,
+            metadata={"fields": sorted(changed)},
+        )
+    return member
+
+
+def profile_summary(
+    member: OrganizationMember, plan: MembershipPlan | None, *, include_private: bool = False,
+) -> str:
+    """Readable summary of current structured facts; no AI or health-note inference."""
+    parts = [f"{member.member_status.value.replace('_', ' ').capitalize()} member"]
+    if plan:
+        parts.append(f"on {plan.name}")
+    summary = " ".join(parts) + "."
+    if member.goals:
+        summary += f" Goal: {member.goals[:160]}{'…' if len(member.goals) > 160 else ''}."
+    if member.emergency_contact:
+        summary += " Emergency contact recorded."
+    if include_private and member.health_notes:
+        summary += " Private health notes recorded."
+    return summary
 
 
 async def change_status(

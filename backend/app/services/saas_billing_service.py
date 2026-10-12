@@ -269,6 +269,10 @@ async def _archive_org_data(session: AsyncSession, *, org: Organization) -> None
         m.phone = None
         m.emergency_contact = None
         m.photo_url = None
+        m.goals = None
+        m.health_notes = None
+        m.id_document_type = None
+        m.id_document_last4 = None
 
     await record_audit(session, action="saas.archived",
                        organization_id=org.id, entity_type="organization", entity_id=org.id)

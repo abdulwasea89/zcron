@@ -37,7 +37,8 @@ from app.schemas.auth import (
     SwitchOrgRequest,
 )
 
-from app.services import auth_service, mfa_service
+from app.services import auth_service, members_service, mfa_service
+from app.schemas.members import MemberProfileUpdate
 from app.schemas.common import Message
 
 router = APIRouter()
@@ -69,18 +70,35 @@ async def get_profile(
     session: AsyncSession = Depends(get_session),
 ):
     user = await session.get(User, ctx.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    member = (
+        await session.execute(select(OrganizationMember).where(
+            OrganizationMember.user_id == ctx.user_id,
+            OrganizationMember.organization_id == ctx.org_id,
+        ))
+    ).scalar_one_or_none()
+    return _profile_out(user, member)
+
+
+def _profile_out(user: User, member: OrganizationMember | None) -> ProfileOut:
     return ProfileOut(
         full_name=user.full_name,
         email=user.email,
-        phone=user.phone,
+        phone=member.phone if member and member.phone is not None else user.phone,
         address=user.address,
         city=user.city,
         occupation=user.occupation,
         education=user.education,
-        emergency_contact=user.emergency_contact,
+        emergency_contact=member.emergency_contact if member and member.emergency_contact is not None else user.emergency_contact,
         date_of_birth=str(user.date_of_birth) if user.date_of_birth else None,
         gender=user.gender.value if user.gender else None,
-        photo_url=None,
+        photo_url=member.photo_url if member else None,
+        goals=member.goals if member else None,
+        health_notes=member.health_notes if member else None,
+        id_document_type=member.id_document_type if member else None,
+        id_document_last4=member.id_document_last4 if member else None,
+        summary=members_service.profile_summary(member, None, include_private=True) if member else None,
     )
 
 
@@ -93,25 +111,27 @@ async def update_profile(
     user = await session.get(User, ctx.user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    member = (
+        await session.execute(select(OrganizationMember).where(
+            OrganizationMember.user_id == ctx.user_id,
+            OrganizationMember.organization_id == ctx.org_id,
+        ))
+    ).scalar_one_or_none()
     for field in ("full_name", "phone", "address", "city", "occupation", "education", "emergency_contact"):
-        val = getattr(data, field, None)
-        if val is not None:
-            setattr(user, field, val)
+        if field in data.model_fields_set:
+            setattr(user, field, getattr(data, field))
     session.add(user)
+    member_fields = data.model_fields_set & MemberProfileUpdate.model_fields.keys()
+    if member is not None and member_fields:
+        profile_data = MemberProfileUpdate.model_validate(
+            {field: getattr(data, field) for field in member_fields}
+        )
+        member = await members_service.update_member_profile(
+            session, org_id=ctx.org_id, member_id=member.id,
+            data=profile_data, actor_id=ctx.user_id,
+        )
     await session.flush()
-    return ProfileOut(
-        full_name=user.full_name,
-        email=user.email,
-        phone=user.phone,
-        address=user.address,
-        city=user.city,
-        occupation=user.occupation,
-        education=user.education,
-        emergency_contact=user.emergency_contact,
-        date_of_birth=str(user.date_of_birth) if user.date_of_birth else None,
-        gender=user.gender.value if user.gender else None,
-        photo_url=None,
-    )
+    return _profile_out(user, member)
 
 
 @router.get("/my-organizations")

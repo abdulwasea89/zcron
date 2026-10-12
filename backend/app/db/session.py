@@ -56,6 +56,7 @@ async def init_db() -> None:
             # so add columns introduced to Lead since the database was created.
             # Production databases use Alembic migrations instead.
             await conn.run_sync(_upgrade_sqlite_leads_schema)
+            await conn.run_sync(_upgrade_sqlite_member_profile_schema)
 
 
 def _upgrade_sqlite_leads_schema(connection) -> None:
@@ -79,6 +80,21 @@ def _upgrade_sqlite_leads_schema(connection) -> None:
             connection.exec_driver_sql(f'ALTER TABLE leads ADD COLUMN "{name}" {definition}')
 
     connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_leads_lost_reason ON leads (lost_reason)")
+
+
+def _upgrade_sqlite_member_profile_schema(connection) -> None:
+    """Keep existing local SQLite member rows readable without resetting data."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    if "organization_members" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("organization_members")}
+    for name in ("goals", "health_notes", "id_document_type", "id_document_last4"):
+        if name not in existing:
+            connection.exec_driver_sql(
+                f'ALTER TABLE organization_members ADD COLUMN "{name}" VARCHAR'
+            )
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

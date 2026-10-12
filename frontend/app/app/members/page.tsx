@@ -455,7 +455,7 @@ export default function MembersPage() {
                     <tr key={m.member_id} className={`${TR} transition-colors hover:bg-foreground/[0.02]`}>
                       <td className={`${TD} ${CELL_FIRST} py-2.5`}>
                         <div className="flex items-center gap-3">
-                          <Avatar name={m.display_name || m.full_name || m.email} size="sm" />
+                          <Avatar name={m.display_name || m.full_name || m.email} size="sm" photoUrl={m.photo_url} />
                           <div>
                             <div className="font-medium text-[var(--foreground)]">
                               <button

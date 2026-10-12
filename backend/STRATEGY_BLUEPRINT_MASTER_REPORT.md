@@ -148,7 +148,7 @@ the practical product meaning of the full matrix.
 | Department | Built | Partial / improvement | Not built / broken | Strategic implication |
 |---|---|---|---|---|
 | Sales and leads | Lead profile, pipeline board/history, referral attribution, validated manual/source-tagged capture, normalized contacts, tenant-scoped duplicate prevention, editable source attribution, trial-class and tour booking, attendance/no-show/cancellation tracking, consent-gated day 0/1/3/7 follow-up emails, controlled lost reasons, explainable lead score | Manual capture remains the only working intake path; follow-up email copy is fixed rather than configurable; booking confirmations/reminders to leads are absent | External channel capture, instant reply, automated qualification, speed-to-lead reporting, missed-call text-back | Trial/tour booking, follow-up, loss analysis, and profile-readiness scoring work in the web lead view; full Lead Concierge automation remains incomplete |
-| Memberships | Signup, invitations, approval enrollment, plans, activation, statuses | Profiles, plan variants, freeze, reminders, segmentation | Promotions, family/multi-payer, member plan changes, transfer, cancellation/save offers | Good operational base; lifecycle completion is still required |
+| Memberships | Signup, invitations, approval enrollment, plans, activation, statuses, member profiles with goals and private notes | Plan variants, freeze, reminders, segmentation | Promotions, family/multi-payer, member plan changes, transfer, cancellation/save offers | Good operational base; lifecycle completion is still required |
 | Front desk | Tasks, walk-ins, guest log, day passes, lockers, status cards | QR/manual check-in and offline check-in sync | Hardware integrations and full offline application behavior | One of the strongest product areas |
 | Finance | Cash reconciliation, receipts, Stripe flows | Recurring cards, dunning, tax, revenue views, refunds | Regional payment rails, P&L, credits, chargeback packs, accounting exports | Financial records are useful, but recovery and localisation remain weak |
 | Receipt verification | Upload/review/audit pipeline | Threshold routing and review shell | Real OCR, image authenticity, perceptual duplicates | Central behavior is stubbed and cannot be marketed as production AI verification |
@@ -195,9 +195,9 @@ missed-call text-back.
 
 | Status | Blueprint-derived items | Code-only items | Total |
 |---|---:|---:|---:|
-| Built | 18 | 15 | 33 |
+| Built | 19 | 15 | 34 |
 | Improvement | 4 | 0 | 4 |
-| Partial | 70 | 3 | 73 |
+| Partial | 69 | 3 | 72 |
 | Broken / stubbed | 1 | 0 | 1 |
 | Not built | 59 | 0 | 59 |
 | **Total** | **152** | **18** | **170** |
@@ -730,7 +730,7 @@ This section embeds the complete Blueprint feature inventory so this report is i
 | 7 | Lost-reason tracking and lead scoring | P1 | ✓ | ✓ | ✓ | — | ✅ Built | Marking a lead Lost requires a controlled reason; `/app/leads` shows a 0–100 explainable profile-completeness score with per-factor breakdown, not a predictive conversion claim |
 | 8 | Speed-to-lead reporting; missed-call text-back | P1 | ✓ | — | — | — | ❌ Not built | — |
 | 9 | Corporate and group memberships; referral tracking | P1–P2 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Corporate contracts/invoices and team seat management exist (`models/company.py`, `company_contract.py`, `invoices_service.py`, `/app/companies`). Referral program supports member codes, signup attribution, qualification after successful payment, dual rewards, admin tracking/manual fulfillment, mobile share/status, and joined Lead attribution (`services/referrals_service.py`, `/app/referrals`, mobile dashboard). Rewards are recorded and manually delivered; no automatic wallet credit/discount. Not available for office B2B tenants or invite-only enrollment. |
-| 10 | Member profile: photo, ID (where legal), contact, emergency contact, goals, health notes | P0 | ✓ | ✓ | ✓ | — | ⚠️ Partial | `membership.py:40 photo_url`, `:41 emergency_contact`, `user.py:35 emergency_contact`. Missing: ID, goals, health notes, auto-generated summary |
+| 10 | Member profile: photo, ID (where legal), contact, emergency contact, goals, health notes | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Organization-scoped photo URL, contact, emergency contact, goals, private health notes, optional ID type/final four, and a deterministic profile summary. Owner/manager edit via `/members/{id}/profile` and `/app/members`; members edit their own profile on mobile. Health notes and ID metadata are hidden from front desk. Audit records changed field names without sensitive values; archive clears private fields. Photo is linked by HTTPS URL; full ID numbers and document images are intentionally not stored. |
 | 11 | Plans: daily to yearly, family, student, off-peak, class packs, credits | P0 | ✓ | ✓ | ✓ | ✓ | ⚠️ Partial | `PlanBillingType` = recurring / one_time_pack / drop_in; duration + price free-form so most variants expressible. Missing: credits, family linkage |
 | 12 | Joining fees, discounts, promo codes | P0 | ✓ | — | — | — | ❌ Not built | 0 matches for `discount\|coupon\|promo\|joining_fee` in `backend/app`. No promotion engine at all |
 | 13 | Freeze/pause (travel, illness, seasonal) | P0 | ✓ | ✓ | ✓ | — | ⚠️ Partial | `MemberStatus.FROZEN`; `members_service.py:83 freeze` / `:85 unfreeze` — staff actions only. Missing: member-requested freeze, approve flow, auto-detect from messages |

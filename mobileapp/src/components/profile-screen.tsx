@@ -65,6 +65,11 @@ export function ProfileScreen() {
   const [occupation, setOccupation] = useState("");
   const [education, setEducation] = useState("");
   const [emergency, setEmergency] = useState("");
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [goals, setGoals] = useState("");
+  const [healthNotes, setHealthNotes] = useState("");
+  const [idType, setIdType] = useState("");
+  const [idLast4, setIdLast4] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [prevProfile, setPrevProfile] = useState<ProfileOut | null | undefined>(profile.data);
@@ -76,6 +81,11 @@ export function ProfileScreen() {
     setOccupation(profile.data?.occupation ?? "");
     setEducation(profile.data?.education ?? "");
     setEmergency(profile.data?.emergency_contact ?? "");
+    setPhotoUrl(profile.data?.photo_url ?? "");
+    setGoals(profile.data?.goals ?? "");
+    setHealthNotes(profile.data?.health_notes ?? "");
+    setIdType(profile.data?.id_document_type ?? "");
+    setIdLast4(profile.data?.id_document_last4 ?? "");
   }
 
   const [prevOrg, setPrevOrg] = useState<OrganizationOut | null | undefined>(org.data);
@@ -91,7 +101,14 @@ export function ProfileScreen() {
     city === (profile.data.city ?? "") &&
     occupation === (profile.data.occupation ?? "") &&
     education === (profile.data.education ?? "") &&
-    emergency === (profile.data.emergency_contact ?? "");
+    emergency === (profile.data.emergency_contact ?? "") &&
+    (user?.role !== "member" || (
+      photoUrl === (profile.data.photo_url ?? "") &&
+      goals === (profile.data.goals ?? "") &&
+      healthNotes === (profile.data.health_notes ?? "") &&
+      idType === (profile.data.id_document_type ?? "") &&
+      idLast4 === (profile.data.id_document_last4 ?? "")
+    ));
 
   const clearFieldError = (field: string) => setFieldErrors((prev) => ({ ...prev, [field]: "" }));
 
@@ -126,6 +143,13 @@ export function ProfileScreen() {
       occupation: occupation.trim() || null,
       education: education.trim() || null,
       emergency_contact: emergency.trim() || null,
+      ...(user?.role === "member" ? {
+        photo_url: photoUrl.trim() || null,
+        goals: goals.trim() || null,
+        health_notes: healthNotes.trim() || null,
+        id_document_type: idType.trim() || null,
+        id_document_last4: idLast4.trim() || null,
+      } : {}),
     };
 
     setSaving(true);
@@ -257,6 +281,18 @@ export function ProfileScreen() {
           />
         </FieldGroup>
       </View>
+
+      {user?.role === "member" && (
+        <View className="mb-6">
+          <FieldGroup title="Membership profile" caption="Share only what you want your gym to know. Owners and managers can see your private health notes.">
+            <Field label="Photo URL" placeholder="https://…" value={photoUrl} onChangeText={setPhotoUrl} autoCapitalize="none" keyboardType="url" />
+            <Field label="Goals" placeholder="What are you working toward?" value={goals} onChangeText={setGoals} multiline maxLength={1000} />
+            <Field label="Health notes" placeholder="Anything staff should know?" value={healthNotes} onChangeText={setHealthNotes} multiline maxLength={2000} />
+            <Field label="ID document type" placeholder="Only if local rules permit" value={idType} onChangeText={setIdType} maxLength={60} />
+            <Field label="ID final four" placeholder="Last 4 characters only" value={idLast4} onChangeText={setIdLast4} maxLength={4} autoCapitalize="characters" />
+          </FieldGroup>
+        </View>
+      )}
 
       {error && (
         <View className="mb-4">

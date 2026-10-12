@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 
 from app.core.constants import Gender
 from app.schemas.common import TokenPair
+from app.schemas.members import MemberProfileUpdate
 
 # --- Shared validation patterns (mirrored on the frontend) ---------------
 # Person/place names: letters (incl. accented Latin), spaces, . ' - — no digits.
@@ -248,13 +249,16 @@ class ProfileOut(BaseModel):
     date_of_birth: str | None = None
     gender: str | None = None
     photo_url: str | None = None
+    goals: str | None = None
+    health_notes: str | None = None
+    id_document_type: str | None = None
+    id_document_last4: str | None = None
+    summary: str | None = None
 
 
-class ProfileUpdate(BaseModel):
+class ProfileUpdate(MemberProfileUpdate):
     full_name: str | None = None
-    phone: str | None = None
     address: str | None = None
     city: str | None = None
     occupation: str | None = None
     education: str | None = None
-    emergency_contact: str | None = None

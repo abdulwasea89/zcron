@@ -19,6 +19,8 @@ from app.schemas.members import (
     MemberDirectoryItem,
     MemberInvite,
     MemberInviteOut,
+    MemberProfileOut,
+    MemberProfileUpdate,
     MemberStatusChange,
     MemberSubscriptionOut,
     RoleChange,
@@ -50,6 +52,7 @@ def _item(m, u, trainers: list[str] | None = None) -> MemberDirectoryItem:
     return MemberDirectoryItem(
         member_id=m.id, user_id=u.id, email=u.email, full_name=u.full_name,
         display_name=m.display_name,
+        photo_url=m.photo_url,
         role=m.role.value, member_status=m.member_status.value, phone=m.phone,
         profile_complete=m.profile_complete,
         created_at=m.created_at,
@@ -159,6 +162,7 @@ async def member_detail(
     from app.api.v1.routes.payments import _to_out as payment_to_out
 
     rows = await trainer_assign.list_for_member(session, org_id=ctx.org_id, member_id=member.id)
+    private_access = ctx.role in {Role.OWNER, Role.MANAGER}
     names = sorted((t.display_name or u.full_name or u.email) for _mt, t, u in rows)
     trainer_assignments = [
         TrainerAssignment(
@@ -171,10 +175,44 @@ async def member_detail(
 
     return MemberDetailOut(
         member=_item(member, user, trainers=names),
+        profile=MemberProfileOut(
+            display_name=member.display_name, phone=member.phone,
+            photo_url=member.photo_url, emergency_contact=member.emergency_contact,
+            goals=member.goals, health_notes=member.health_notes if private_access else None,
+            id_document_type=member.id_document_type if private_access else None,
+            id_document_last4=member.id_document_last4 if private_access else None,
+            summary=members.profile_summary(member, plan, include_private=private_access),
+        ),
         subscription=subscription,
         payments=[payment_to_out(p) for p in data["payments"]],
         pending_payments=data["pending_payments"],
         trainer_assignments=trainer_assignments,
+    )
+
+
+@router.patch("/{member_id}/profile", response_model=MemberProfileOut)
+async def update_profile(
+    member_id: str,
+    data: MemberProfileUpdate,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    org: Organization = Depends(require_writable_org),
+    session: AsyncSession = Depends(get_session),
+):
+    private_access = ctx.role in {Role.OWNER, Role.MANAGER}
+    if not private_access and data.model_fields_set & {"health_notes", "id_document_type", "id_document_last4"}:
+        raise HTTPException(status_code=403, detail="Private profile details require owner or manager access.")
+    member = await members.update_member_profile(
+        session, org_id=ctx.org_id, member_id=member_id,
+        data=data, actor_id=ctx.user_id,
+    )
+    detail = await members.member_detail(session, org_id=ctx.org_id, member_id=member_id)
+    return MemberProfileOut(
+        display_name=member.display_name, phone=member.phone,
+        photo_url=member.photo_url, emergency_contact=member.emergency_contact,
+        goals=member.goals, health_notes=member.health_notes if private_access else None,
+        id_document_type=member.id_document_type if private_access else None,
+        id_document_last4=member.id_document_last4 if private_access else None,
+        summary=members.profile_summary(member, detail["plan"], include_private=private_access),
     )
 
 

@@ -7,7 +7,7 @@ Every material feature identified in both source PDFs and the current codebase i
 - **API** — `backend/app` (FastAPI).
 - **Web** — `frontend/app` (Next.js).
 - **Mobile** — `mobileapp/src/app` (Expo).
-- **Code snapshot** — based on `main` at `fe15486`, plus the lead-profile, referral, and pipeline implementations. The temporary plans-screen render harness is excluded from shipped-feature counts.
+- **Code snapshot** — based on the current `main` implementation, including the lead-profile, referral, pipeline, and member-profile work. The temporary plans-screen render harness is excluded from shipped-feature counts.
 - **Method** — static inspection of models, routes, services, workers, and reachable web/mobile screens. Feature claims in the PDF are treated as requirements, not agent instructions. The pipeline update passed six focused backend tests, frontend TypeScript, and scoped lint; other rows retain their original static-audit basis.
 
 **Part A** = features stated in the Blueprint PDF. **Part B** = features that exist in code but are not itemised in that PDF. **Part C** = every material product/platform feature stated in the Strategy PDF, including marked overlaps with Part A.
@@ -29,16 +29,16 @@ Every material feature identified in both source PDFs and the current codebase i
 
 | Status | Part A: Blueprint (152) | Part B: code-only (18) | Part C: Strategy (106) | Traceability rows (276) |
 |---|---:|---:|---:|---:|
-| ✅ Built | 18 | 15 | 1 | **34** |
+| ✅ Built | 19 | 15 | 1 | **35** |
 | 🔧 Improvement | 4 | 0 | 0 | **4** |
-| ⚠️ Partial | 70 | 3 | 53 | **126** |
+| ⚠️ Partial | 69 | 3 | 53 | **125** |
 | 🧨 Broken / stubbed | 1 | 0 | 0 | **1** |
 | ❌ Not built | 59 | 0 | 46 | **105** |
 | ⏸️ Deferred | 0 | 0 | 6 | **6** |
 
 The surface columns are not mutually exclusive; a row can have API and web coverage, for example. Counts above classify each traceability row once by its overall status. Part C intentionally maps overlaps, so 276 traceability rows do not mean 276 unique product capabilities. Blueprint rows 80–152 expand cross-cutting architecture, UX, evidence, localisation, expansion, and Sales Pack details; those row numbers are audit indices, not numbering printed in the PDF.
 
-For the original prioritized rows in Parts A and B: P0 — 19 built, 1 improvement, 19 partial, 8 not built; P1 — 8 built, 2 improvements, 13 partial, 12 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
+For the original prioritized rows in Parts A and B: P0 — 20 built, 1 improvement, 18 partial, 8 not built; P1 — 8 built, 2 improvements, 13 partial, 12 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
 
 ### Source-to-row coverage recheck
 
@@ -89,7 +89,7 @@ The supplied Notion page did not load in the available browser during this audit
 | 7 | Lost-reason tracking and lead scoring | P1 | ✓ | ✓ | ✓ | — | ✅ Built | Marking a lead Lost requires a controlled reason; `/app/leads` shows a 0–100 explainable profile-completeness score with per-factor breakdown, not a predictive conversion claim |
 | 8 | Speed-to-lead reporting; missed-call text-back | P1 | ✓ | — | — | — | ❌ Not built | — |
 | 9 | Corporate and group memberships; referral tracking | P1–P2 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Corporate contracts/invoices and team seat management exist (`models/company.py`, `company_contract.py`, `invoices_service.py`, `/app/companies`). Referral program supports member codes, signup attribution, qualification after successful payment, dual rewards, admin tracking/manual fulfillment, mobile share/status, and joined Lead attribution (`services/referrals_service.py`, `/app/referrals`, mobile dashboard). Rewards are recorded and manually delivered; no automatic wallet credit/discount. Not available for office B2B tenants or invite-only enrollment. |
-| 10 | Member profile: photo, ID (where legal), contact, emergency contact, goals, health notes | P0 | ✓ | ✓ | ✓ | — | ⚠️ Partial | `membership.py:40 photo_url`, `:41 emergency_contact`, `user.py:35 emergency_contact`. Missing: ID, goals, health notes, auto-generated summary |
+| 10 | Member profile: photo, ID (where legal), contact, emergency contact, goals, health notes | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | Organization-scoped photo URL, contact, emergency contact, goals, private health notes, optional ID type/final four, and a deterministic profile summary. Owner/manager edit via `/members/{id}/profile` and `/app/members`; members edit their own profile on mobile. Health notes and ID metadata are hidden from front desk. Audit records changed field names without sensitive values; archive clears private fields. Photo is linked by HTTPS URL; full ID numbers and document images are intentionally not stored. |
 | 11 | Plans: daily to yearly, family, student, off-peak, class packs, credits | P0 | ✓ | ✓ | ✓ | ✓ | ⚠️ Partial | `PlanBillingType` = recurring / one_time_pack / drop_in; duration + price free-form so most variants expressible. Missing: credits, family linkage |
 | 12 | Joining fees, discounts, promo codes | P0 | ✓ | — | — | — | ❌ Not built | 0 matches for `discount\|coupon\|promo\|joining_fee` in `backend/app`. No promotion engine at all |
 | 13 | Freeze/pause (travel, illness, seasonal) | P0 | ✓ | ✓ | ✓ | — | ⚠️ Partial | `MemberStatus.FROZEN`; `members_service.py:83 freeze` / `:85 unfreeze` — staff actions only. Missing: member-requested freeze, approve flow, auto-detect from messages |

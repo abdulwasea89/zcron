@@ -39,6 +39,10 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
     phone: str | None = None
     photo_url: str | None = None
     emergency_contact: str | None = None
+    goals: str | None = None
+    health_notes: str | None = None
+    id_document_type: str | None = None
+    id_document_last4: str | None = None
     profile_complete: bool = False
 
     # Lifecycle

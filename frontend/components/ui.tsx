@@ -717,7 +717,7 @@ export function Separator({ className }: { className?: string }) {
 }
 
 /* ── Avatar (neutral hairline tile — names stay in the sans column) ────── */
-export function Avatar({ name, size = "md", className }: { name: string; size?: "sm" | "md" | "lg"; className?: string }) {
+export function Avatar({ name, size = "md", className, photoUrl }: { name: string; size?: "sm" | "md" | "lg"; className?: string; photoUrl?: string | null }) {
   const initials = name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   const sizes: Record<string, string> = {
     sm: "h-8 w-8 text-[10px]",
@@ -727,13 +727,13 @@ export function Avatar({ name, size = "md", className }: { name: string; size?: 
   return (
     <div
       className={cx(
-        "inline-flex items-center justify-center rounded-full border border-foreground/10 bg-foreground/[0.05] font-medium tracking-wide text-foreground",
+        "inline-flex items-center justify-center overflow-hidden rounded-full border border-foreground/10 bg-foreground/[0.05] font-medium tracking-wide text-foreground",
         sizes[size],
         className,
       )}
       title={name}
     >
-      {initials}
+      {photoUrl ? <img src={photoUrl} alt={name} loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : initials}
     </div>
   );
 }

@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/sheet";
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { api, ApiError } from "@/lib/api";
+import { MemberProfileCard } from "@/components/members/MemberProfileCard";
 import { money, statusTone, titleCase } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { AttendanceOut, MemberDetailOut, MemberDirectoryItem, PendingPaymentItem } from "@/lib/types";
@@ -256,7 +257,7 @@ export function MemberDetailSheet({
       >
         <SheetContent style={{ "--sheet-max-w": "820px" } as React.CSSProperties}>
           <SheetHeader className="flex items-center gap-4 py-4">
-            <Avatar name={name || "?"} size="lg" />
+            <Avatar name={name || "?"} size="lg" photoUrl={data?.profile.photo_url} />
             <div className="min-w-0 flex-1">
               <SheetTitle className="truncate text-[17px]">{name || "Member"}</SheetTitle>
               {m && (
@@ -301,7 +302,7 @@ export function MemberDetailSheet({
                   <Card>
                     <CardHeader title="Member details" subtitle="Profile and contact information" />
                     <div className="flex items-center gap-3 px-5 pt-5">
-                      <Avatar name={name} size="lg" />
+                      <Avatar name={name} size="lg" photoUrl={data.profile.photo_url} />
                       <div className="min-w-0">
                         <p className="font-medium text-[var(--foreground)]">{name}</p>
                         <p className="text-xs text-[var(--muted)]">
@@ -410,6 +411,14 @@ export function MemberDetailSheet({
                     )}
                   </Card>
                 </div>
+
+                <MemberProfileCard
+                  key={m.member_id}
+                  memberId={m.member_id}
+                  profile={data.profile}
+                  canManage={canManage}
+                  onSaved={() => load(m.member_id)}
+                />
 
                 {/* Visits (#18) */}
                 <Card>
