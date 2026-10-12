@@ -127,9 +127,15 @@ export function OrgSwitcher({ currentOrgName, currentOrgId, plan, compact }: Org
       >
         <Tile name={currentOrgName} />
         {!compact && (
-          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground">
-            {currentOrgName}
-          </span>
+          <>
+            <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground">
+              {currentOrgName}
+            </span>
+            <Icon
+              d="M19.5 8.25l-7.5 7.5-7.5-7.5"
+              className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+            />
+          </>
         )}
       </button>
 

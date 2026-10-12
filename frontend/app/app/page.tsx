@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { Badge, Card, CardHeader, StatCard } from "@/components/ui";
+import { Badge } from "@/components/ui";
+import { WorkspaceAction } from "@/components/WorkspaceAction";
 import { backend } from "@/lib/backend";
 import {
   fmtDate,
@@ -41,6 +42,9 @@ const CHECKLIST_LABELS: Record<ChecklistFlag, string> = {
 
 /** Where each onboarding step sends you. Unknown codes fall back to Settings. */
 const STEP_HREF: Record<string, string> = {
+  stripe: "/app/settings",
+  staff: "/app/staff",
+  invoices: "/app/invoices",
   gym_registered: "/app/settings",
   saas_active: "/app/billing",
   stripe_connected: "/app/settings",
@@ -87,7 +91,7 @@ const ICONS = {
 function ProgressBar({ value, tone = "brand" }: { value: number; tone?: "brand" | "success" }) {
   const pct = Math.max(0, Math.min(100, value));
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.08]">
+    <div role="progressbar" aria-label="Progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-1 w-full overflow-hidden rounded-full bg-foreground/[0.08]">
       <div
         className={`h-full rounded-full ${tone === "success" ? "bg-success" : "bg-brand"}`}
         style={{ width: `${pct}%` }}
@@ -96,63 +100,19 @@ function ProgressBar({ value, tone = "brand" }: { value: number; tone?: "brand" 
   );
 }
 
-/** One label/value row used inside the plan card. */
-function PlanRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-[13px] text-muted-foreground">{label}</span>
-      <span className="text-[13px] font-medium text-foreground">{children}</span>
-    </div>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  icon,
-  accent,
-  href,
-}: {
-  label: string;
-  value: string;
-  icon: string;
-  accent?: boolean;
-  href: string;
-}) {
-  return (
-    <Link href={href} className="group block">
-      <StatCard
-        joined
-        accent={accent}
-        label={label}
-        value={value}
-        icon={<Icon d={icon} className="h-4 w-4" />}
-        className="h-full transition-colors group-hover:bg-foreground/[0.03]"
-      />
-    </Link>
-  );
-}
-
 function ActivityRow({ p, currency }: { p: PaymentOut; currency: string }) {
-  const refunded = p.refunded_amount > 0;
   return (
-    <li className="flex items-center gap-3 px-5 py-3">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground/[0.05] text-[11px] font-medium uppercase text-muted-foreground">
-        {p.method.slice(0, 2)}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium text-foreground">{titleCase(p.method)}</p>
-        <p className="truncate text-[12px] text-muted-foreground">
-          {titleCase(p.kind)} · {fmtDateTime(p.paid_at ?? p.created_at)}
-        </p>
+    <li className="overview-payment-row">
+      <div className="overview-payment-main">
+        <span className="overview-payment-mark"><Icon d={ICONS.revenue} className="h-4 w-4" /></span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{titleCase(p.method)}</p>
+          <p className="overview-payment-meta truncate">{titleCase(p.kind)} · {fmtDateTime(p.paid_at ?? p.created_at)}</p>
+        </div>
       </div>
       <div className="text-right">
-        <p className="text-[13px] font-medium tabular-nums text-foreground">
-          {money(p.amount, p.currency || currency)}
-        </p>
-        <p className="text-[11px] text-muted-foreground">
-          {refunded ? `-${money(p.refunded_amount, p.currency || currency)} refunded` : titleCase(p.status)}
-        </p>
+        <p className="text-sm font-medium tabular-nums">{money(p.amount, p.currency || currency)}</p>
+        <p className="overview-payment-meta">{p.refunded_amount > 0 ? `-${money(p.refunded_amount, p.currency || currency)} refunded` : titleCase(p.status)}</p>
       </div>
     </li>
   );
@@ -174,6 +134,7 @@ export default async function DashboardPage() {
   const isAcademy = industry === "academy";
 
   const today = new Date().toLocaleDateString("en-US", {
+    timeZone: org?.timezone || "UTC",
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -194,7 +155,7 @@ export default async function DashboardPage() {
       : [
           { label: "Active members", value: metrics ? String(metrics.active_members) : "—", icon: ICONS.members, href: "/app/members" },
           { label: "Today's revenue", value: metrics ? money(metrics.today_revenue, currency) : "—", icon: ICONS.revenue, href: "/app/payments", accent: true },
-          { label: "Check-ins today", value: metrics ? String(metrics.today_check_ins) : "—", icon: ICONS.checkin, href: "/app/classes" },
+          { label: "Check-ins today", value: metrics ? String(metrics.today_check_ins) : "—", icon: ICONS.checkin, href: "/app/attendance" },
           { label: "Pending approvals", value: metrics ? String(metrics.pending_approvals) : "—", icon: ICONS.approvals, href: "/app/approvals" },
         ];
 
@@ -232,9 +193,6 @@ export default async function DashboardPage() {
   if (isOffice && (metrics?.outstanding_invoices ?? 0) > 0) {
     attention.push({ label: "Outstanding invoices", value: money(metrics!.outstanding_invoices ?? 0, currency), href: "/app/invoices", tone: "danger" });
   }
-  if (remaining > 0) {
-    attention.push({ label: "Setup steps left", value: String(remaining), href: "#setup", tone: "info" });
-  }
 
   // ── Quick actions ───────────────────────────────────────────────────────
   const quickActions: { label: string; href: string; icon: string }[] = isOffice
@@ -269,22 +227,12 @@ export default async function DashboardPage() {
       : statusTone(saas?.saas_status ?? "active");
 
   return (
-    <>
-      <PageHeader
-        title={greeting}
-        subtitle={`${org?.name ?? "Your workspace"} · ${today}`}
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            {org && <Badge tone={gymStatusTone(org.gym_status)}>{gymStatusLabel(org.gym_status)}</Badge>}
-            {saas && (
-              <Badge tone={saasBadgeTone}>
-                {titleCase(saas.saas_tier)} · {titleCase(saas.saas_status)}
-              </Badge>
-            )}
-          </div>
-        }
-      />
-
+    <div className="overview">
+      <div className="overview-topline">
+        <div><span className="truncate">{org?.name ?? "Workspace"}</span><span aria-hidden="true">/</span><span className="text-foreground">Overview</span></div>
+        <div>{org && <Badge tone={gymStatusTone(org.gym_status)}>{gymStatusLabel(org.gym_status)}</Badge>}<Link href="/app/analytics">Analytics ↗</Link></div>
+      </div>
+      <PageHeader title={greeting} subtitle={today} />
       {/* ── Subscription alerts ─────────────────────────────────────────── */}
       {saas?.saas_status === "past_due" && !saas.read_only && (
         <div className="mb-4 rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger)]">
@@ -305,190 +253,71 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* ── KPI strip ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-px overflow-hidden border border-foreground/10 bg-[var(--border)] lg:grid-cols-4">
+
+      <nav aria-label="Quick actions" className="overview-toolbar">
+        {quickActions.map((q, index) => <WorkspaceAction key={q.href} href={q.href} primary={index === 0}><Icon d={q.icon} className="h-4 w-4" />{q.label}</WorkspaceAction>)}
+      </nav>
+
+      <section aria-label="Workspace metrics" className="overview-metrics">
         {stats.map((s) => (
-          <StatTile key={s.label} label={s.label} value={s.value} icon={s.icon} href={s.href} accent={s.accent} />
+          <Link key={s.label} href={s.href} className="overview-metric">
+            <span className="overview-metric-label"><Icon d={s.icon} className="h-4 w-4 shrink-0" />{s.label}</span>
+            <p className="overview-metric-value">{s.value}</p>
+          </Link>
         ))}
-      </div>
+      </section>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* ── Left column ─────────────────────────────────────────────────── */}
-        <div className="space-y-6 lg:contents lg:space-y-0">
-          {/* Setup checklist */}
-          <Card className="scroll-mt-6 lg:col-span-2 lg:row-start-1">
-            <span id="setup" />
-            <CardHeader
-              title="Setup checklist"
-              subtitle={
-                remaining === 0
-                  ? allSetCopy
-                  : `${remaining} item${remaining === 1 ? "" : "s"} left before you're fully live.`
-              }
-              action={
-                <span className="text-[12px] font-medium tabular-nums text-muted-foreground">
-                  {doneSteps}/{totalSteps}
-                </span>
-              }
-            />
-            <div className="px-5 pt-4">
-              <ProgressBar value={setupPct} tone={remaining === 0 ? "success" : "brand"} />
-            </div>
-            <ul className="mt-3 divide-y divide-[var(--border)]">
-              {checklistItems.length === 0 && (
-                <li className="px-5 py-4 text-sm text-muted-foreground">Could not load checklist.</li>
-              )}
-              {checklistItems.map((item, i) => {
-                const isNext = nextStep?.key === item.key;
-                return (
-                  <li
-                    key={item.key}
-                    className={`flex items-center gap-3 px-5 py-3 transition-colors ${isNext ? "bg-brand/[0.04]" : "hover:bg-foreground/[0.03]"}`}
-                  >
-                    <span
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                        item.done
-                          ? "bg-[var(--success-bg)] text-[var(--success)]"
-                          : isNext
-                            ? "bg-brand text-brand-foreground"
-                            : "border border-[var(--border)] bg-[var(--surface)] text-muted-foreground"
-                      }`}
-                    >
-                      {item.done ? (
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                      ) : (
-                        i + 1
-                      )}
-                    </span>
-                    <span className={`flex-1 text-[13px] ${item.done ? "text-muted-foreground line-through" : isNext ? "font-medium text-foreground" : "text-foreground"}`}>
-                      {item.label}
-                    </span>
-                    {!item.done && (
-                      <Link
-                        href={STEP_HREF[item.key] ?? "/app/settings"}
-                        className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-brand hover:underline"
-                      >
-                        {isNext ? "Start" : "Open"}
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                      </Link>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
-
-          {/* Recent activity */}
-          <Card className="lg:col-span-2 lg:row-start-2">
-            <CardHeader
-              title="Recent activity"
-              subtitle="Latest payments in this workspace"
-              action={
-                <Link href="/app/payments" className="text-[12px] font-medium text-brand hover:underline">
-                  View all
-                </Link>
-              }
-            />
-            {recent.length === 0 ? (
-              <p className="px-5 py-8 text-center text-sm text-muted-foreground">
-                No payments recorded yet.
-              </p>
-            ) : (
-              <ul className="divide-y divide-[var(--border)]">
-                {recent.map((p) => (
-                  <ActivityRow key={p.id} p={p} currency={currency} />
-                ))}
-              </ul>
-            )}
-          </Card>
+      <section id="setup" className="overview-setup" aria-labelledby="setup-title">
+        <div className="overview-setup-main">
+          <Icon d={ICONS.checkin} className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="overview-setup-copy">
+            <h2 id="setup-title">{checklist === null ? "Setup status unavailable" : nextStep ? "Finish setting up your workspace" : "Your workspace is ready"}</h2>
+            <p>{checklist === null ? "Please try again later." : nextStep ? `${doneSteps} of ${totalSteps} complete · Next: ${nextStep.label}` : allSetCopy}</p>
+          </div>
+          {nextStep && <WorkspaceAction href={STEP_HREF[nextStep.key] ?? "/app/settings"}>Continue setup <span aria-hidden="true">→</span></WorkspaceAction>}
         </div>
-
-        {/* ── Right column ────────────────────────────────────────────────── */}
-        <div className="space-y-6 lg:contents lg:space-y-0">
-          {/* Plan & usage */}
-          <Card className="flex flex-col lg:col-start-3 lg:row-start-1">
-            <CardHeader
-              title="Your plan"
-              action={
-                <Link href="/app/billing" className="text-[12px] font-medium text-brand hover:underline">
-                  Manage
-                </Link>
-              }
-            />
-            <div className="flex flex-1 flex-col justify-between gap-6 px-5 py-5">
-              <div>
-                <div className="mb-2 flex items-baseline justify-between gap-3">
-                  <span className="text-[13px] text-muted-foreground">Members</span>
-                  <span className="text-[13px] font-medium tabular-nums text-foreground">
-                    {saas ? `${saas.current_member_count}${saas.member_cap ? ` / ${saas.member_cap}` : ""}` : "—"}
-                  </span>
-                </div>
-                {memberCapPct !== null ? (
-                  <ProgressBar value={memberCapPct} />
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">Unlimited members</p>
-                )}
-              </div>
-              <div className="space-y-3 border-t border-[var(--border)] pt-4">
-                <PlanRow label="Tier">{saas ? titleCase(saas.saas_tier) : "—"}</PlanRow>
-                <PlanRow label="Status">
-                  <Badge tone={saasBadgeTone}>{saas ? titleCase(saas.saas_status) : "—"}</Badge>
-                </PlanRow>
-                <PlanRow label="Renews">{saas?.current_period_end ? fmtDate(saas.current_period_end) : "—"}</PlanRow>
-              </div>
-            </div>
-          </Card>
-
-          {/* Needs attention */}
-          <Card className="lg:col-start-3 lg:row-start-2">
-            <CardHeader title="Needs attention" />
-            {attention.length === 0 ? (
-              <div className="flex items-center gap-3 px-5 py-6">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--success-bg)] text-[var(--success)]">
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                </span>
-                <p className="text-[13px] text-muted-foreground">You&apos;re all caught up.</p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-[var(--border)]">
-                {attention.map((a) => (
-                  <li key={a.label}>
-                    <Link
-                      href={a.href}
-                      className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-foreground/[0.03]"
-                    >
-                      <span className="text-[13px] text-foreground">{a.label}</span>
-                      <span className="flex items-center gap-2">
-                        <Badge tone={a.tone}>{a.value}</Badge>
-                        <svg className="h-3.5 w-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
-          {/* Quick actions */}
-          <Card className="overflow-hidden lg:col-span-3 lg:row-start-3">
-            <CardHeader title="Quick actions" />
-            <div className="grid grid-cols-2 gap-px bg-[var(--border)] sm:grid-cols-3">
-              {quickActions.map((q) => (
-                <Link
-                  key={q.href}
-                  href={q.href}
-                  className="group flex flex-col gap-3 bg-card p-4 transition-colors hover:bg-foreground/[0.03]"
-                >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-foreground/[0.05] text-muted-foreground transition-colors group-hover:bg-brand/10 group-hover:text-brand">
-                    <Icon d={q.icon} className="h-4 w-4" />
-                  </span>
-                  <span className="text-[13px] font-medium leading-snug text-foreground">{q.label}</span>
-                </Link>
+        {checklistItems.length > 0 && (
+          <details>
+            <summary>Setup checklist · {remaining === 0 ? "Complete" : `${remaining} remaining`}</summary>
+            <div className="my-3 max-w-xs"><ProgressBar value={setupPct} tone={remaining === 0 ? "success" : "brand"} /></div>
+            <ul className="overview-checklist">
+              {checklistItems.map((item) => (
+                <li key={item.key}>
+                  <span aria-label={item.done ? "Complete" : "Incomplete"} className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border text-[11px] ${item.done ? "border-transparent bg-success text-background" : "border-[var(--border-strong)]"}`}>{item.done && "✓"}</span>
+                  <span className={`overview-checklist-label ${item.done ? "text-muted-foreground" : ""}`}>{item.label}</span>
+                  {!item.done && <WorkspaceAction href={STEP_HREF[item.key] ?? "/app/settings"} label={`Open: ${item.label}`}>Open <span aria-hidden="true">↗</span></WorkspaceAction>}
+                </li>
               ))}
-            </div>
-          </Card>
+            </ul>
+          </details>
+        )}
+      </section>
+
+      <div className="overview-columns">
+        <section className="overview-section" aria-labelledby="payments-title">
+          <div className="overview-section-heading"><h2 id="payments-title">Recent payments</h2><Link href="/app/payments">View all ↗</Link></div>
+          <div className="overview-payment-head" aria-hidden="true"><span>Payment</span><span>Amount / status</span></div>
+          {payments === null ? <p className="overview-empty">Payments couldn’t be loaded. Please try again.</p> : recent.length === 0 ? <p className="overview-empty">No payments yet. Recorded payments will appear here.</p> : <ul>{recent.map((p) => <ActivityRow key={p.id} p={p} currency={currency} />)}</ul>}
+        </section>
+        <div>
+          <section className="overview-section" aria-labelledby="attention-title">
+            <div className="overview-section-heading"><h2 id="attention-title">Needs attention</h2></div>
+            {!metrics ? <p className="overview-empty">Pending reviews couldn’t be loaded.</p> : attention.length === 0 ? (
+              <div className="overview-review"><Icon d={ICONS.checkin} className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="text-muted-foreground">All caught up. No pending reviews.</span></div>
+            ) : <ul>{attention.map((a) => <li key={a.label}><Link className="overview-review" href={a.href}><span>{a.label}</span><Badge tone={a.tone}>{a.value}</Badge><span aria-hidden="true">↗</span></Link></li>)}</ul>}
+          </section>
+          <section className="overview-section" aria-labelledby="subscription-title">
+            <div className="overview-section-heading"><h2 id="subscription-title">Workspace plan</h2><Link href="/app/billing">Manage ↗</Link></div>
+            <dl className="overview-properties">
+              <dt>Plan</dt><dd>{saas ? titleCase(saas.saas_tier) : "Unavailable"}</dd>
+              <dt>Status</dt><dd>{saas ? <Badge tone={saasBadgeTone}>{titleCase(saas.saas_status)}</Badge> : "—"}</dd>
+              <dt>Members</dt><dd>{saas ? `${saas.current_member_count} / ${saas.member_cap ?? "Unlimited"}` : "—"}</dd>
+              <dt>Renews</dt><dd>{saas?.current_period_end ? fmtDate(saas.current_period_end) : "—"}</dd>
+            </dl>
+            {memberCapPct !== null && <ProgressBar value={memberCapPct} />}
+          </section>
         </div>
       </div>
-    </>
+    </div>
   );
 }

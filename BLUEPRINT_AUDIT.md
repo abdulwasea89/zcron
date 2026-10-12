@@ -1,15 +1,16 @@
 # Acron Feature Audit — Full Table
 
-Every feature identified in the PDF blueprint and the current codebase inventory, with its implementation surface and status.
+Every material feature identified in both source PDFs and the current codebase inventory, with its implementation surface and status.
 
-- **PDF** — `AI-Native CRM  Global Product Blueprint_V3.pdf`: 79 department-level feature rows; the blueprint's AI, autonomy, agent, localisation, evidence, expansion, and screen requirements are expanded into 49 additional audit items here.
+- **PDF** — `AI-Native CRM  Global Product Blueprint_V3.pdf`: 79 department-level feature rows plus 73 cross-cutting, UX, safety, evidence, expansion, and detailed Sales Pack requirements.
+- **Strategy PDF** — `Zhilo_Labs_AI_Business_OS_Strategy_Report.pdf`: 106 product/platform requirement rows, including explicit mappings where it restates or strengthens a Blueprint feature.
 - **API** — `backend/app` (FastAPI).
 - **Web** — `frontend/app` (Next.js).
 - **Mobile** — `mobileapp/src/app` (Expo).
 - **Code snapshot** — based on `main` at `fe15486`, plus the lead-profile, referral, and pipeline implementations. The temporary plans-screen render harness is excluded from shipped-feature counts.
 - **Method** — static inspection of models, routes, services, workers, and reachable web/mobile screens. Feature claims in the PDF are treated as requirements, not agent instructions. The pipeline update passed six focused backend tests, frontend TypeScript, and scoped lint; other rows retain their original static-audit basis.
 
-**Part A** = features stated in the PDF. **Part B** = features that exist in the code but are not itemised in the PDF (auth, multi-org, realtime, idempotency, verticals, …).
+**Part A** = features stated in the Blueprint PDF. **Part B** = features that exist in code but are not itemised in that PDF. **Part C** = every material product/platform feature stated in the Strategy PDF, including marked overlaps with Part A.
 
 ### Status definitions
 
@@ -20,22 +21,45 @@ Every feature identified in the PDF blueprint and the current codebase inventory
 | ⚠️ **Partial** | Some meaningful parts work, but a material requirement in the row is missing |
 | 🧨 **Broken / stubbed** | Code is present, but a central promised behavior is a placeholder or cannot perform its purpose |
 | ❌ **Not built** | No usable implementation exists; an enum, comment, or unused schema alone does not count |
+| ⏸️ **Deferred** | Valid later-stage feature that the Strategy Report explicitly says should not delay validation |
 
 ---
 
 ## Summary
 
-| Status | Part A: PDF items (128) | Part B: code-only items (18) | All (146) |
-|---|---:|---:|---:|
-| ✅ Built | 15 | 15 | **30** |
-| 🔧 Improvement | 4 | 0 | **4** |
-| ⚠️ Partial | 55 | 3 | **58** |
-| 🧨 Broken / stubbed | 1 | 0 | **1** |
-| ❌ Not built | 53 | 0 | **53** |
+| Status | Part A: Blueprint (152) | Part B: code-only (18) | Part C: Strategy (106) | Traceability rows (276) |
+|---|---:|---:|---:|---:|
+| ✅ Built | 15 | 15 | 1 | **31** |
+| 🔧 Improvement | 4 | 0 | 0 | **4** |
+| ⚠️ Partial | 70 | 3 | 53 | **126** |
+| 🧨 Broken / stubbed | 1 | 0 | 0 | **1** |
+| ❌ Not built | 62 | 0 | 46 | **108** |
+| ⏸️ Deferred | 0 | 0 | 6 | **6** |
 
-The surface columns are not mutually exclusive; a row can have API and web coverage, for example. Counts above classify each feature row once by its overall status. The 49 cross-cutting PDF items are audit rows 80–128; those row numbers are audit indices, not numbering printed in the PDF.
+The surface columns are not mutually exclusive; a row can have API and web coverage, for example. Counts above classify each traceability row once by its overall status. Part C intentionally maps overlaps, so 276 traceability rows do not mean 276 unique product capabilities. Blueprint rows 80–152 expand cross-cutting architecture, UX, evidence, localisation, expansion, and Sales Pack details; those row numbers are audit indices, not numbering printed in the PDF.
 
-By priority (both parts; Part B priorities are assigned here, the PDF marks only Part A): P0 — 17 built, 1 improvement, 19 partial, 10 not built; P1 — 7 built, 2 improvements, 13 partial, 13 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. The 49 cross-cutting items carry no PDF priority.
+For the original prioritized rows in Parts A and B: P0 — 17 built, 1 improvement, 19 partial, 10 not built; P1 — 7 built, 2 improvements, 13 partial, 13 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
+
+### Source-to-row coverage recheck
+
+| Source document section | Audit rows | Coverage result |
+|---|---|---|
+| Blueprint §1.1–§1.13 department feature tables | 1–79 | Every printed feature-table row represented |
+| Blueprint §2 AI architecture, autonomy, agents, examples, messaging economics | 80–98, 130–137, 151 | Layers, agents, controls, economics, explanations, tone, undo, voice handling, and prompt safety represented |
+| Blueprint §3 users, core screens, daily/front-desk/member flows, UX requirements | 122–138, 151–152 | All named screens and material interaction/performance requirements represented |
+| Blueprint §5 differentiation | 99–128, 130–138, 152 | Customer brain, action engine, channels, payments, compliance, ROI, trust, evidence, and pricing controls represented |
+| Blueprint §6 localisation | 99–108 | Country Packs, channels, payments, laws, language/RTL, currency, tax, culture, and PPP represented |
+| Blueprint §7 stack/guardrails/metrics | 80–108, 135–137 | Product-facing architecture and guardrails represented; vendor choices are not counted as features |
+| Blueprint §8 Evidence Vault | 109–118, 138–140 | Storage, recovery, exports, alerts, privacy, evidence events, and safety UX represented |
+| Blueprint §9 domains and Sales-Company Pack | 119–121, 141–150 | Generic engine, pack model, and every Sales Pack feature group represented |
+| Blueprint §11 build order | Existing Part A rows | Repeats earlier requirements; no duplicate feature rows added solely for phases |
+| Strategy Chapter 1 differentiation opportunities | S008–S009, S022–S026, S033, S041, S072, S103–S105 | Simulation, collaboration, cross-system work, verified outcomes, templates, and history represented |
+| Strategy Chapters 2–3 pillars and P0/P1/P2 roadmap | S001–S051, S101, S104 | Every named pillar and roadmap module represented |
+| Strategy Chapter 4 Flow builder | S052–S073, S102, S106 | Node types, natural-language lifecycle, simulation, limits, recovery, editor UX, and payment validation represented |
+| Strategy Chapter 5 showcase workflows | S074–S080 | All seven workflows represented |
+| Strategy Chapter 6 architecture and engineering rules | S081–S095, S103, S106 | Ledger, durable execution, policy gateway, tools, evidence, integrations, six rules, and evaluation suite represented |
+| Strategy Chapter 7 owner experience | S096–S100 | Navigation, role workspaces, and trustworthy Ask action sequence represented |
+| Strategy Chapters 8–14 | Section 19 of `backend/STRATEGY_BLUEPRINT_MASTER_REPORT.md` | Pricing, GTM, moat, expansion, operating roadmap, metrics, and decision rules are company requirements rather than software features |
 
 ### Confirmed broken or stubbed behavior
 
@@ -52,11 +76,11 @@ The supplied Notion page did not load in the available browser during this audit
 
 ---
 
-## Part A — Blueprint features (PDF, rows 1–128)
+## Part A — Blueprint features (PDF, rows 1–152)
 
 | # | Feature | Pri | PDF | API | Web | Mobile | Status | Evidence / gap |
 |---|---|---|---|---|---|---|---|---|
-| 1 | Lead capture from WhatsApp, SMS, Instagram, Facebook, LINE, WeChat, web forms, calls, walk-ins | P0 | ✓ | ✓ | — | — | ⚠️ Partial | Manual staff-entered and source-tagged lead intake is available at `/app/leads`; no public web form or WhatsApp/SMS/social channel connectors |
+| 1 | Lead capture from WhatsApp, SMS, Instagram, Facebook, LINE, WeChat, web forms, calls, walk-ins | P0 | ✓ | ✓ | ✓ | — | ⚠️ Partial | Manual/source-tagged intake at `/app/leads` now uses a controlled source vocabulary, normalized email/phone data, tenant-scoped duplicate rejection, editable attribution, and previous/new audit values. No provider-driven public form, WhatsApp, SMS, or social channel connectors are implemented. |
 | 2 | Lead profile: goal, budget, preferred times, preferences | P0 | ✓ | ✓ | — | — | ✅ Built | Tenant-scoped profile fields editable in `/app/leads`, with field provenance, searchable prospects, and pipeline stage tracking; does not include AI extraction or conversation linking |
 | 3 | Pipeline: New → Contacted → Trial booked → Visited → Joined / Lost | P0 | ✓ | ✓ | ✓ | — | ✅ Built | Board/list views, six stages, search/filter/counts, accessible stage controls, and paginated actor/timestamp history at `/app/leads` and `GET /leads/{id}/history`. Referral conversions share audited transitions; legacy unknown previous stages are labeled. Trial/visit automation remains separate. |
 | 4 | Instant first reply 24/7 | P0 | ✓ | — | — | — | ❌ Not built | No auto-reply, no FAQ knowledge base |
@@ -184,6 +208,30 @@ The supplied Notion page did not load in the available browser during this audit
 | 126 | Money: collections, dues, cash drawer, P&L, recovered this month | — | ✓ | — | ✓ | — | ⚠️ Partial | Collections/dues/cash drawer ✅ (`frontend/app/app/cash`, `payments`, `analytics`). No P&L (row 29), no "recovered this month" |
 | 127 | Ask: natural-language questions in any language, action buttons in the answer | — | ✓ | ✓ | ✓ | — | ✅ Built | Assistant with LangGraph + 40 specialists, streaming (`frontend/app/api/assistant/stream`), approval-gated write actions |
 | 128 | Wins: feed of members saved, money recovered, leads converted | — | ✓ | — | — | — | ❌ Not built | 0 matches for wins feed. Shares root cause with row 64 and layer 86 |
+| 129 | Paper-register photo import with immediate expired-member and unpaid-dues opportunity scan | — | ✓ | — | — | — | ❌ Not built | Spreadsheet/CSV import exists, but no paper-register image import or instant opportunity analysis |
+| 130 | Explain every AI suggestion with a visible “Why?” line, source evidence, and value at stake | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Retention risks expose reasons and some assistant answers explain results; no uniform source-linked explanation contract |
+| 131 | Undo everywhere with a clear owner-controlled autonomy dial | — | ✓ | ✓ | — | — | ⚠️ Partial | Selected actions can be reversed and approvals exist; there is no universal undo or configurable trust dial |
+| 132 | Learn the gym's voice from past conversations and owner edits, including culture-specific tone | — | ✓ | — | — | — | ❌ Not built | Tone is not learned from approved edits or historical conversations |
+| 133 | Zero-inbox completion state showing “All done for today” | — | ✓ | — | — | — | ❌ Not built | Inbox/task states exist, but no unified daily completion state is implemented |
+| 134 | Front-desk UX for inexpensive tablets/old desktops, large controls, sub-second check-in, and instant Today loading | — | ✓ | ✓ | ✓ | ✓ | ⚠️ Partial | Responsive check-in surfaces exist; device/performance budgets and measured sub-second guarantees do not |
+| 135 | Messaging economics controls: consolidate replies, classify utility/marketing templates, pace sends, and estimate broadcast cost | — | ✓ | ✓ | — | — | ⚠️ Partial | Campaign records and generic limits exist; no provider-aware template category, consolidation, pacing, or reliable cost estimator |
+| 136 | Guided import with AI-assisted cleaning, duplicate merge, and low-quality-data handling | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | CSV import and lead duplicate rejection exist; guided cleaning and merge workflows are incomplete |
+| 137 | Mask personally identifiable information before sending prompts to AI providers | — | ✓ | — | — | — | ❌ Not built | No central prompt-redaction/PII-masking gateway was found |
+| 138 | Evidence Vault UX: per-record History, Download Evidence, Recycle Bin, safety score, and deletion receipts | — | ✓ | ✓ | — | — | ⚠️ Partial | Audit history and selected exports exist; the complete user-facing evidence suite does not |
+| 139 | Block bulk deletes until owner approval and generate an Evidence Pack for every affected record | — | ✓ | — | — | — | ❌ Not built | No bulk-delete approval threshold or per-record evidence-pack workflow exists |
+| 140 | Preserve signed-document evidence, renewal/cancellation delivery proof, removed-staff ownership snapshots, and daily signed checkpoints | — | ✓ | — | — | — | ❌ Not built | These automatic evidence events and proofs are not implemented |
+| 141 | Sales Pack intake from official messaging numbers, SMS, email, forms, ads, calls, imports, and listing portals | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Manual lead intake/import and source fields exist; official provider and listing-portal ingestion do not |
+| 142 | Sales Pack routing by round robin, territory, product, or language with SLA timers and no-response reassignment | — | ✓ | — | — | — | ❌ Not built | No configurable sales routing or SLA engine exists |
+| 143 | Sales Pack pipeline with custom stages, value, close date, and conversation-driven AI stage updates | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | A fixed lead pipeline and audited transitions exist; custom stages/value/close date/AI updates do not |
+| 144 | Sales Pack AI for call/meeting summaries, multilingual voice transcription, follow-up drafts, deal risk, and “who to call today” | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | General assistant and inbox drafts exist; call ingestion, transcription, deal risk, and ranked sales queue are incomplete |
+| 145 | Sales Pack quotes, invoices, deposits, payment links, and multi-currency handling | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Membership invoices/payments exist; sales quotes/deposits and true multi-currency deal flows do not |
+| 146 | Sales Pack team targets, leaderboards, activity, commissions, and coaching insights | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | Staff activity/payroll commissions exist; sales targets, leaderboards, and coaching insights are incomplete |
+| 147 | Field-sales location check-ins, voice visit notes, and route planning | — | ✓ | — | — | — | ❌ Not built | Attendance check-ins are not field-sales visits; no route planning or voice visit-note flow exists |
+| 148 | Sales lead ownership history and conversations locked in Evidence Vault, retained when representatives leave | — | ✓ | ✓ | — | — | ⚠️ Partial | Lead source/history and user audit records exist; immutable rep ownership/conversation preservation does not |
+| 149 | Sales manager daily brief for new, untouched, and stalled leads with forecast | — | ✓ | ✓ | ✓ | — | ⚠️ Partial | General owner briefing and lead stages exist; no complete sales-specific forecast brief |
+| 150 | Configurable Industry Pack contract for vocabulary, schema, signals, playbooks, dashboards, integrations, and compliance | — | ✓ | ✓ | ✓ | ✓ | ⚠️ Partial | Industry labels/modules/schemas exist for hard-coded verticals; installable configuration-only packs do not |
+| 151 | Front-desk voice notes transformed by AI into clean outbound messages | — | ✓ | — | — | — | ❌ Not built | No voice-note capture, transcription, cleanup, and review/send flow exists |
+| 152 | Messaging-native lead/member self-service in the customer's usual app without requiring an app download | — | ✓ | ✓ | ✓ | ✓ | ⚠️ Partial | Native mobile self-service and an internal inbox exist; no complete WhatsApp/SMS/LINE/WeChat self-service flow |
 
 ---
 
@@ -233,4 +281,148 @@ The supplied Notion page did not load in the available browser during this audit
 
 ---
 
-*Authoritative inventory: 128 PDF-derived items plus 18 code-only capabilities. Status counts are row-level and use the definitions above. The Notion page remains unverified.*
+*The Blueprint and code-only inventory above is followed by the complete Strategy Report feature inventory below. Overlapping requirements remain explicitly marked so they are not mistaken for separate underlying capabilities.*
+
+---
+
+## Part C — Strategy Report features (rows S001–S106)
+
+Status meanings remain the same as the Blueprint audit: `Built` is usable
+end-to-end, `Partial` has meaningful implementation but an incomplete flow or
+surface, and `Not built` has no production-capable implementation. `Deferred`
+means the Strategy Report itself says not to build it before validation.
+
+### C1 Cases, context, control, evidence, and outcomes
+
+| ID | Requirement | Pri | Relation | Status | Current evidence or exact gap |
+|---|---|---|---|---|---|
+| S001 | First-class operational case with a measurable business objective | P0 | Strategy-only | Not built | Tasks, approvals, and alerts exist, but there is no case aggregate |
+| S002 | Case stores source evidence, owner/agent, allowed actions, deadline, resolution criteria, and outcome | P0 | Strategy-only | Not built | No shared case schema or lifecycle exists |
+| S003 | Case shows situation and value at risk | P0 | Both: B64/B122 | Partial | Retention and revenue-at-risk data exist but are not attached to cases |
+| S004 | Close a case only after evidence verifies its resolution | P0 | Strategy-only | Not built | Existing tasks can complete without verified business outcome evidence |
+| S005 | Simple Mode creates workflows from plain-language intent | P1 | Strategy-only | Not built | Assistant can answer and propose selected writes, not define workflows |
+| S006 | Advanced Mode provides a connected visual workflow canvas | P2 | Both: B121 | Not built | No Flow Studio or workflow graph editor exists |
+| S007 | Owner reviews recipients, conditions, messages, budgets, and approvals before activation | P1 | Strategy-only | Not built | No workflow draft/review/publish lifecycle exists |
+| S008 | Simulate workflows on historical data with no side effects | P1 | Strategy-only | Not built | No replay-safe simulation runtime exists |
+| S009 | Inspect workflow execution history and troubleshoot failed nodes | P1 | Both: B76 | Not built | Feature logs exist, but no shared run/step trace exists |
+| S010 | Business context links customer, membership, attendance, trainer, messages, and payments | P0 | Both: B56/B125 | Partial | Structured records exist but no unified source-linked context graph/timeline |
+| S011 | Store observed facts, model estimates, and recommendations as different evidence classes | P0 | Strategy-only | Not built | No common provenance/confidence model enforces this distinction |
+| S012 | Policy-aware next-best-action recommendation | P1 | Both: B78 | Partial | Assistant and retention rules suggest actions, but do not rank through one policy layer |
+| S013 | Formal L0 observe, L1 safe auto-act, L2 approval, and L3 human-only levels | P0 | Both: B87–B91 | Partial | Some automatic and approval-gated paths exist; no common autonomy classification |
+| S014 | Enforce autonomy permissions in backend services, not in prompts | P0 | Strategy-only | Partial | RBAC and write tools enforce selected paths, but not every automated action |
+| S015 | Workflow-wide emergency stop | P0 | Strategy-only | Not built | No workflow/agent kill switch exists |
+| S016 | Per-customer and workflow message-frequency limits | P0 | Both: B91/B103 | Not built | No cross-channel frequency policy exists |
+| S017 | Spending, action, tool-call, time, and execution-deadline caps | P0 | Strategy-only | Not built | No finite run-budget model exists |
+| S018 | Approval expiry and fail-closed timeout | P0 | Strategy-only | Not built | Selected approvals exist without a shared expiry policy |
+| S019 | Pause actions for one workflow, organization, or location | P0 | Strategy-only | Not built | No common pause scope exists |
+| S020 | Tamper-evident audit events | P1 | Both: B112 | Not built | Audit rows are not hash-chained or externally checkpointed |
+| S021 | Preserve workflow definitions and versions used for every action | P1 | Strategy-only | Not built | No workflow definition/version records exist |
+| S022 | Cryptographically attributable approval signatures | P1 | Strategy-only | Not built | Approver IDs may exist on domain approvals, but no signed approval evidence |
+| S023 | Configurable financial evidence exports | P1 | Both: B111/B115 | Partial | Invoice/report exports exist; no case/workflow evidence export package |
+| S024 | Evidence retention schedules, redaction, lawful erasure, and scoped access | P0 | Both: B69–B73/B118 | Partial | RBAC exists; retention, redaction, DSAR, and lawful erasure workflows do not |
+| S025 | Outcome comparison against baseline or suitable control group | P1 | Strategy-only | Not built | No counterfactual or control-group analysis exists |
+| S026 | Track conversion, retention, contribution margin, time saved, complaints, and message costs | P0 | Both: B64/B66/B86 | Partial | Some conversion/revenue/NPS data exists; no workflow-linked cost/outcome model |
+| S027 | Country Pack as the deployable localization unit | P1 | Both: B99 | Not built | Country, currency, and timezone are fields, not an enforceable pack |
+| S028 | Country Pack binds language, providers, gateways, currency, timezone, policies, and local workflows | P1 | Both: B99–B108 | Not built | No pack contract or runtime enforcement exists |
+
+### C2 Commercial product scope and platform expansion
+
+| ID | Requirement | Pri | Relation | Status | Current evidence or exact gap |
+|---|---|---|---|---|---|
+| S029 | Core CRM: leads, contacts, membership status, searchable history | P0 | Both: B1/B56 | Partial | Core records and search exist; customer history remains fragmented |
+| S030 | Unified timeline of conversations, visits, billing events, and staff actions | P0 | Both: B125 | Partial | Member views show visits/payments but not one complete timeline |
+| S031 | Integration layer with webhooks, CSV import, and one or two supported incumbent systems | P0 | Both: B2/B100 | Partial | Webhooks/CSV exist; no supported incumbent gym-system connector |
+| S032 | Shared inbox, authorized outbound follow-up, and reply tracking | P0 | Both: B123 | Partial | Inbox stores conversations/drafts; no production external provider loop |
+| S033 | Five configurable workflow templates | P0 | Strategy-only | Not built | Feature-specific workers are not reusable configurable templates |
+| S034 | AI summaries, drafts, classification, and action suggestions | P0 | Both: B77–B83 | Partial | Drafts/assistant/some classification exist; source-grounding is inconsistent |
+| S035 | Owner Today dashboard, staff tasks, and approval inbox | P0 | Both: B59/B122 | Partial | Dashboard/tasks/approvals exist but are not one ranked case queue |
+| S036 | Deduplication, retries, message limits, and execution logs | P0 | Both: B76 | Partial | Idempotency and some retries/logs exist; shared message/run controls do not |
+| S037 | Roles, channel consent, workflow permissions, and human handoffs | P0 | Both: B67–B71/B89 | Partial | RBAC and selected approvals exist; consent and workflow policy are missing |
+| S038 | Lead conversion, renewal outcomes, hours saved, and estimated financial impact | P0 | Both: B8/B64/B66 | Partial | Some conversion/revenue metrics exist; time saved and credible impact do not |
+| S039 | Flow Studio branching, reusable steps, and versioning | P1 | Strategy-only | Not built | No shared workflow definition format or editor exists |
+| S040 | AI Workflow Copilot creates and debugs workflows in natural language | P1 | Strategy-only | Not built | Current assistant does not author or debug workflow definitions |
+| S041 | Long-running, resumable workflows with approvals and checkpoints | P1 | Strategy-only | Not built | Scheduled workers do not preserve durable run checkpoints |
+| S042 | Advanced cancellation prevention, failed-payment handling, and retention cases | P1 | Both: B31–B37/B93 | Partial | Rules and reminders exist; no case-based recovery loop |
+| S043 | Staff work queues, deadlines, escalation, and performance tracking | P1 | Both: B47/B50/B53 | Partial | Tasks and payroll/attendance metrics exist; common escalation/performance loop does not |
+| S044 | Multi-location permissions, policy inheritance, and standardized workflows | P1 | Both: B63 | Not built | Organization switching is not location hierarchy or policy inheritance |
+| S045 | Marketplace of verified industry workflow templates/modules | P2 | Both: B121 | Deferred | No marketplace; Strategy says it must follow validated workflows |
+| S046 | Industry Pack SDK for fitness, salons, education, and home services | P2 | Both: B119–B121 | Deferred | Three hard-coded industries exist; no installable pack SDK |
+| S047 | Developer platform with APIs, SDKs, signed webhooks, and integrations | P2 | Strategy-only | Partial | REST API and verified inbound Stripe webhooks exist; no public SDK/integration platform |
+| S048 | Delegated AI staff interface across specialized permissioned agents | P2 | Both: B77–B85 | Partial | Specialized assistant graph exists; durable delegated work and uniform policy do not |
+| S049 | Predictive retention and demand optimization after sufficient data | P2 | Both: B33/B45 | Deferred | Current risk logic is deterministic; Strategy delays predictive models until evidence exists |
+| S050 | Franchise management with central policy, regional oversight, and branch analytics | P2 | Both: B63 | Deferred | No franchise hierarchy exists |
+| S051 | Region-specific deployments and enterprise controls | P2 | Strategy-only | Deferred | No data-residency deployment/control plane exists |
+
+### C3 Workflow engine contract and lifecycle
+
+| ID | Requirement | Pri | Relation | Status | Current evidence or exact gap |
+|---|---|---|---|---|---|
+| S052 | Strict typed input/output contract for every workflow node | P0 | Strategy-only | Not built | Service schemas exist, but there is no workflow-node contract system |
+| S053 | Trigger nodes: lead, payment failure, expiry, check-in, schedule, webhook | P0 | Both | Partial | Domain events/workers cover several triggers but not through one engine |
+| S054 | Data nodes: customer, membership, history, and availability lookup | P0 | Strategy-only | Not built | Services can query data; no reusable workflow data nodes exist |
+| S055 | Condition nodes: branch, compare, filter, consent, duplicate | P0 | Strategy-only | Partial | Business rules exist; consent and reusable typed condition nodes do not |
+| S056 | AI nodes: classify, summarize, draft, structured extraction | P0 | Both: B77–B85 | Partial | Several AI functions exist but are not reusable workflow nodes |
+| S057 | Action nodes: message, task, booking, CRM update, payment-link request | P0 | Both: B85 | Partial | Tasks/bookings/updates exist; external messaging/payment-link action set is incomplete |
+| S058 | Control nodes: wait, retry, approval, stop, escalation, error branch | P0 | Strategy-only | Partial | Workers retry and approvals exist in places; no common control-node runtime |
+| S059 | Measurement nodes: outcome, baseline, expense, and report | P0 | Strategy-only | Not built | No workflow-linked measurement node contract exists |
+| S060 | Parse natural language into a structured workflow specification | P1 | Strategy-only | Not built | No workflow specification generator exists |
+| S061 | Identify required events and integrations during workflow creation | P1 | Strategy-only | Not built | No workflow dependency resolver exists |
+| S062 | Present proposed workflow with editable conditions | P1 | Strategy-only | Not built | No workflow draft UI exists |
+| S063 | Detect missing permissions and unsupported actions before publication | P1 | Strategy-only | Partial | Route/tool authorization exists, but no workflow preflight validator |
+| S064 | Run dry-run simulation before activation | P1 | Strategy-only | Not built | No side-effect-free workflow simulator exists |
+| S065 | Require explicit approval before workflow activation | P1 | Strategy-only | Not built | No draft-to-active workflow lifecycle exists |
+| S066 | Publish an immutable versioned workflow | P1 | Strategy-only | Not built | No workflow records or immutable versions exist |
+| S067 | Explain any node using its inputs, decision, and outcome | P1 | Strategy-only | Not built | No shared execution trace exists |
+| S068 | Pin active runs to their starting version unless explicitly migrated | P1 | Strategy-only | Not built | No run/version model exists |
+| S069 | Dedicated manager approval inbox outside the editor | P0 | Both: B89 | Partial | Approval screens exist, but not a unified workflow action inbox |
+| S070 | Run limits for actions, costs, deadlines, and customer frequency | P0 | Strategy-only | Not built | No workflow budget/limit policy exists |
+| S071 | Retry safe failures and route exhausted/unsafe failures to a human | P0 | Strategy-only | Partial | Some jobs retry; no common failure classification and escalation path |
+| S072 | Business-specific templates instead of an empty canvas | P0 | Strategy-only | Partial | Fixed domain workers embody workflows but are not configurable templates |
+| S073 | Kill switch prevents new workflow or agent actions immediately | P0 | Strategy-only | Not built | No workflow/agent action circuit breaker exists |
+
+### C4 Seven showcase workflows
+
+| ID | Requirement | Pri | Relation | Status | Current evidence or exact gap |
+|---|---|---|---|---|---|
+| S074 | Trial-to-paid: capture, qualify, schedule, confirm, attend, follow up, verify purchase | P0 | Both: B1–B8 | Partial | Lead/pipeline and membership records exist; trial and channel automation do not |
+| S075 | Retention: detect baseline decline, review context, intervene, observe return | P0 | Both: B31–B37 | Partial | Detection and messages/tasks exist; case, provider replies, and verified incremental result do not |
+| S076 | Payment recovery: verified failure, permitted outreach/link, provider verification, closure | P0 | Both: B23/B25/B93 | Partial | Payment events and dunning pieces exist; member recovery workflow is incomplete |
+| S077 | Complaint resolution: classify, gather policy/context, assign, respond, track, request feedback | P1 | Both: B44/B97 | Partial | NPS/theme clustering and tasks exist; no complaint case lifecycle |
+| S078 | Staff accountability: assign, monitor deadline, remind once, escalate, record completion | P1 | Both: B47/B50 | Partial | Tasks/deadlines exist; deduplicated reminder/escalation workflow does not |
+| S079 | Campaign optimization: source to booking/purchase, spend, conversion, and recommendations | P1 | Both: B38–B41 | Partial | Campaign/segment data exists; spend-to-confirmed-outcome optimization is incomplete |
+| S080 | Multi-location operations: aggregate authorized branch signals and route exceptions | P1 | Both: B63 | Not built | No branch hierarchy, scoped aggregation, or location-manager routing exists |
+
+### C5 Architecture, safety rules, evaluation, and owner UX
+
+| ID | Requirement | Pri | Relation | Status | Current evidence or exact gap |
+|---|---|---|---|---|---|
+| S081 | Append-only business event ledger with transactional outbox | P0 | Both: B109 | Not built | Domain/audit rows exist; no unified ledger/outbox transaction exists |
+| S082 | Durable engine for schedules, waits, retries, approvals, and checkpoints | P0 | Strategy-only | Not built | Background jobs exist without durable workflow state |
+| S083 | Central policy/tool gateway for authorization, validation, approvals, limits, and idempotency | P0 | Strategy-only | Partial | Dependencies, RBAC, tool wrappers, and idempotency exist but are not one gateway |
+| S084 | Typed AI tools with explicit state and checkpoints | P0 | Strategy-only | Partial | Typed assistant tools exist; resumable state/checkpoints do not |
+| S085 | Semantic retrieval with PostgreSQL/pgvector only when justified | P2 | Strategy-only | Deferred | Correctly absent until a validated retrieval requirement exists |
+| S086 | Retention-controlled object storage for files and evidence | P1 | Both: B113/B114 | Partial | File/storage abstractions exist; WORM and enforceable retention do not |
+| S087 | Structured logs, traces, execution metrics, and alerting | P0 | Both: B76 | Partial | Application logs/metrics exist; workflow-level traces and alerts do not |
+| S088 | Approved external integrations for gym systems, messaging, payments, and calendars | P0 | Both: B2/B100/B101 | Partial | Stripe/email/push exist; gym-system, two-way messaging, and calendar connectors are missing |
+| S089 | LLMs mutate state only through validated application tools | P0 | Strategy-only | Built | Assistant write actions route through typed application tools and approval gates |
+| S090 | Every external/state-changing action is idempotent | P0 | Both: A17 | Partial | Framework is strong but is not uniformly required on every state-changing endpoint |
+| S091 | Financial settlement comes only from verified payment records | P0 | Both: B23/B84 | Partial | Stripe flows verify provider events; receipt interpretation remains stubbed and must not confirm settlement alone |
+| S092 | Every workflow is versioned and reconstructable | P0 | Strategy-only | Not built | No workflow version/execution provenance model exists |
+| S093 | Tenant isolation at database, service, and tool layers | P0 | Both | Partial | Service/JWT scoping is broad; complete RLS/tool-layer proof is not established |
+| S094 | Every agent has finite tool-call, time, money, and action budgets | P0 | Strategy-only | Not built | No agent budget object or enforcement exists |
+| S095 | Automated adversarial evaluations for wrong customer, discount, injection, hallucination, opt-out, webhook, and conflict failures | P0 | Strategy-only | Not built | Normal tests exist; no dedicated safety/evaluation suite covers this matrix |
+| S096 | Navigation centered on Today, Customers, Cases, Flows, Approvals, and Evidence | P1 | Strategy-only | Partial | Customers and approvals exist; cases, flows, evidence, and ranked Today are incomplete |
+| S097 | Role-specific owner, manager, and automation-specialist workspaces | P1 | Strategy-only | Partial | Role-based navigation exists, but not the three Strategy workspaces |
+| S098 | Ask interface returns filtered, source-linked operational lists | P0 | Both: B127 | Partial | Ask is capable, but evidence links and uniform source grounding are incomplete |
+| S099 | Ask interface prepares a reviewable action batch | P0 | Both: B127 | Partial | Selected proposal actions exist; general batch review does not |
+| S100 | Ask executes only authorized, consent-checked actions and returns a result summary | P0 | Both: B127 | Partial | Authorization/approval exists for selected tools; consent and uniform execution summaries do not |
+| S101 | Native management suite covering complete scheduling, billing, attendance, and facility operations | P2 | Both: B42–B58 | Partial | Broad native operations exist, but scheduling depth, POS/inventory, access hardware, and facility maintenance remain incomplete |
+| S102 | Production Flow Studio nodes have configuration panels, connection handles, schemas, validation, and execution traces | P1 | Strategy-only | Not built | No production visual workflow editor or node-inspection experience exists |
+| S103 | Complex cross-system workflows coordinate messaging, attendance, CRM, booking, and verified payment data | P0 | Strategy-only | Partial | Each domain exists in varying depth, but no shared workflow engine coordinates them end-to-end |
+| S104 | AI analytics answers natural-language questions grounded in live business data | P1 | Both: B65/B127 | Partial | Ask-anything analytics exists; production grounding, evidence links, and complete live-domain coverage remain incomplete |
+| S105 | Mistaken automated actions have defined rollback or remediation procedures | P0 | Strategy-only | Not built | Selected domain reversals exist, but no platform-wide remediation contract or operator flow exists |
+| S106 | Payment workflow nodes validate amounts against billing records and authorized rules, never arbitrary model output | P0 | Strategy-only | Partial | Payment services validate structured records, but no typed workflow payment node or uniform AI boundary exists |
+
+---
+
+*Authoritative inventory after source-to-row recheck: 152 Blueprint-derived rows, 18 code-only rows, and 106 Strategy Report feature rows. Strategy overlaps are traceability rows, not additional unique capabilities. The Notion page remains unverified.*
