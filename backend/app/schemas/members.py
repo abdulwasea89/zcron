@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.schemas.payments import PaymentOut
 
@@ -102,6 +102,43 @@ class MemberStatusChange(BaseModel):
 
     action: str
     reason: str | None = None
+
+
+class FreezeRequestCreate(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+    requested_until: datetime | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def clean_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Please explain why you need to pause your membership.")
+        return value
+
+
+class FreezeRequestDecision(BaseModel):
+    approve: bool
+    note: str | None = Field(default=None, max_length=500)
+
+
+class FreezeRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    member_id: str
+    reason: str
+    requested_until: datetime | None
+    source: str
+    status: str
+    created_at: datetime
+    reviewed_at: datetime | None
+    decision_note: str | None
+
+
+class FreezeRequestQueueOut(FreezeRequestOut):
+    member_name: str
+    member_email: str
 
 
 class RoleChange(BaseModel):

@@ -6,6 +6,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { Glyph } from "@/components/Glyph";
 import { TABLE, THEAD_ROW, TH, TR, TR_INTERACTIVE, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { ListToolbar } from "@/components/ListToolbar";
+import { ListFilterSheet } from "@/components/ListFilterSheet";
+import { NONE } from "@/components/FieldSelect";
 import { RowMenu } from "@/components/RowMenu";
 import { PlanFields } from "@/components/plans/PlanFields";
 import { PromotionsPanel } from "@/components/plans/PromotionsPanel";
@@ -166,8 +168,11 @@ export default function PlansPage() {
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<PlanOut | null>(null);
-  const [filter, setFilter] = useState<"active" | "archived">("active");
+  const [filter, setFilter] = useState<"active" | "archived" | "promotions">("active");
   const [search, setSearch] = useState("");
+  const [billingFilter, setBillingFilter] = useState(NONE);
+  const [visibilityFilter, setVisibilityFilter] = useState(NONE);
+  const [featuredFilter, setFeaturedFilter] = useState(NONE);
   const [viewing, setViewing] = useState<PlanOut | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [industry, setIndustry] = useState<string>("gym");
@@ -243,17 +248,19 @@ export default function PlansPage() {
 
   const filtered = useMemo(() => {
     if (statusFiltered === null) return null;
-    if (!search.trim()) return statusFiltered;
     const q = search.toLowerCase();
-    return statusFiltered.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.billing_type.toLowerCase().includes(q) ||
-        p.audience.toLowerCase().includes(q) ||
-        p.visibility.toLowerCase().includes(q) ||
-        p.status.toLowerCase().includes(q)
+    return statusFiltered.filter((p) =>
+      (!q || p.name.toLowerCase().includes(q) || p.billing_type.toLowerCase().includes(q) || p.audience.toLowerCase().includes(q) || p.visibility.toLowerCase().includes(q) || p.status.toLowerCase().includes(q)) &&
+      (billingFilter === NONE || p.billing_type === billingFilter) &&
+      (visibilityFilter === NONE || p.visibility === visibilityFilter) &&
+      (featuredFilter === NONE || (featuredFilter === "featured" ? p.featured : !p.featured))
     );
-  }, [statusFiltered, search]);
+  }, [statusFiltered, search, billingFilter, visibilityFilter, featuredFilter]);
+
+  const activePlanFilterCount = [billingFilter, visibilityFilter, featuredFilter].filter((v) => v !== NONE).length;
+  function clearPlanFilters() {
+    setBillingFilter(NONE); setVisibilityFilter(NONE); setFeaturedFilter(NONE);
+  }
 
   const newPlan = () => { setEditing(null); setShowForm(true); };
   const openPlan = (p: PlanOut) => { setViewing(p); };
@@ -386,18 +393,32 @@ export default function PlansPage() {
             label: "Archived",
             count: plans?.filter((p) => p.status === "archived").length,
           },
+          ...(isGym ? [{ value: "promotions" as const, label: "Promo codes" }] : []),
         ]}
         value={filter}
         onChange={setFilter}
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search plans…"
+        hideSearch={filter === "promotions"}
+        children={filter !== "promotions" ? (
+          <ListFilterSheet title="Filter plans" description="Narrow plans by billing, visibility, and featured status." activeCount={activePlanFilterCount} resultCount={filtered?.length ?? 0} onClear={clearPlanFilters}>
+            <FieldSelect label="Billing type" value={billingFilter} onChange={setBillingFilter}>
+              <SelectItem value={NONE}>All billing types</SelectItem>
+              {Array.from(new Set((plans ?? []).map((p) => p.billing_type))).sort().map((value) => <SelectItem key={value} value={value}>{titleCase(value)}</SelectItem>)}
+            </FieldSelect>
+            <FieldSelect label="Visibility" value={visibilityFilter} onChange={setVisibilityFilter}>
+              <SelectItem value={NONE}>All visibility</SelectItem>
+              {Array.from(new Set((plans ?? []).map((p) => p.visibility))).sort().map((value) => <SelectItem key={value} value={value}>{titleCase(value)}</SelectItem>)}
+            </FieldSelect>
+            <FieldSelect label="Featured" value={featuredFilter} onChange={setFeaturedFilter}>
+              <SelectItem value={NONE}>All plans</SelectItem><SelectItem value="featured">Featured only</SelectItem><SelectItem value="standard">Standard plans</SelectItem>
+            </FieldSelect>
+          </ListFilterSheet>
+        ) : undefined}
       />
 
-      {/* Flat workspace, not a card: no outer border, no header rule, no
-          per-row boxes. Rows are held together by a single hairline under each
-          one and by the shared column rhythm — the eye should read rows, not
-          cells. */}
+      {filter === "promotions" && isGym ? <PromotionsPanel plans={plans ?? []} /> : (
       <div className="mt-3 overflow-x-auto">
         {filtered === null ? (
           <Spinner label="Loading offers..." />
@@ -429,8 +450,8 @@ export default function PlansPage() {
             )
           ) : (
             <EmptyState
-              title={search ? `No plans matching "${search}"` : `No ${filter} plans`}
-              hint={search ? "Try a different name." : filter === "archived" ? "Archive a plan to see it here." : undefined}
+              title={search ? `No plans matching "${search}"` : activePlanFilterCount ? "No plans match these filters" : `No ${filter} plans`}
+              hint={search || activePlanFilterCount ? "Adjust your search or filters and try again." : filter === "archived" ? "Archive a plan to see it here." : undefined}
               icon={<SearchIcon />}
             />
           )
@@ -537,7 +558,7 @@ export default function PlansPage() {
           </table>
         )}
       </div>
-      {isGym && plans !== null && <PromotionsPanel plans={plans} />}
+      )}
     </>
   );
 }

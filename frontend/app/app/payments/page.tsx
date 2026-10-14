@@ -15,6 +15,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ListToolbar } from "@/components/ListToolbar";
+import { ListFilterSheet } from "@/components/ListFilterSheet";
+import { FieldSelect, NONE } from "@/components/FieldSelect";
+import { SelectItem } from "@/components/ui/select";
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { api, ApiError } from "@/lib/api";
 import { money, statusTone, titleCase } from "@/lib/format";
@@ -25,6 +28,9 @@ export default function PaymentsPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [method, setMethod] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(NONE);
+  const [kindFilter, setKindFilter] = useState(NONE);
+  const [refundFilter, setRefundFilter] = useState(NONE);
   const [refundFor, setRefundFor] = useState<PaymentOut | null>(null);
 
   async function load() {
@@ -68,6 +74,11 @@ export default function PaymentsPage() {
   const q = search.trim().toLowerCase();
   const filtered = all.filter((p) => {
     if (method !== "all" && p.method !== method) return false;
+    if (statusFilter !== NONE && p.status !== statusFilter) return false;
+    if (kindFilter !== NONE && p.kind !== kindFilter) return false;
+    if (refundFilter === "refundable" && !refundable(p)) return false;
+    if (refundFilter === "refunded" && p.refunded_amount <= 0) return false;
+    if (refundFilter === "not_refunded" && p.refunded_amount > 0) return false;
     if (!q) return true;
     return (
       p.kind.toLowerCase().includes(q) ||
@@ -77,6 +88,8 @@ export default function PaymentsPage() {
       String(p.amount).includes(q)
     );
   });
+  const activePaymentFilterCount = [statusFilter, kindFilter, refundFilter].filter((v) => v !== NONE).length;
+  function clearPaymentFilters() { setStatusFilter(NONE); setKindFilter(NONE); setRefundFilter(NONE); }
 
   return (
     <>
@@ -119,6 +132,21 @@ export default function PaymentsPage() {
         search={search}
         onSearch={(v) => setSearch(v)}
         searchPlaceholder="Search payments…"
+        children={(
+          <ListFilterSheet title="Filter payments" description="Narrow the ledger by transaction type and refund status." activeCount={activePaymentFilterCount} resultCount={filtered.length} onClear={clearPaymentFilters}>
+            <FieldSelect label="Payment status" value={statusFilter} onChange={setStatusFilter}>
+              <SelectItem value={NONE}>Any status</SelectItem>
+              {Array.from(new Set(all.map((p) => p.status))).sort().map((value) => <SelectItem key={value} value={value}>{titleCase(value)}</SelectItem>)}
+            </FieldSelect>
+            <FieldSelect label="Transaction type" value={kindFilter} onChange={setKindFilter}>
+              <SelectItem value={NONE}>Any type</SelectItem>
+              {Array.from(new Set(all.map((p) => p.kind))).sort().map((value) => <SelectItem key={value} value={value}>{titleCase(value)}</SelectItem>)}
+            </FieldSelect>
+            <FieldSelect label="Refund status" value={refundFilter} onChange={setRefundFilter}>
+              <SelectItem value={NONE}>Any refund status</SelectItem><SelectItem value="refundable">Can be refunded</SelectItem><SelectItem value="refunded">Has refund</SelectItem><SelectItem value="not_refunded">No refund</SelectItem>
+            </FieldSelect>
+          </ListFilterSheet>
+        )}
       />
 
       {/* Table surface: hairline border, square corners, flat background. */}

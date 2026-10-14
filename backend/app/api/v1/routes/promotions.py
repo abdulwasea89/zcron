@@ -57,3 +57,15 @@ async def update_promotion_status(
     promo.active = data.active
     session.add(promo)
     return promo
+
+
+@router.delete("/{promotion_id}", status_code=204, dependencies=[Depends(require_writable_org)])
+async def delete_promotion(
+    promotion_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.CREATE_EDIT_PLANS)),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    promo = await session.get(Promotion, promotion_id)
+    if promo is None or promo.organization_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Promo code not found.")
+    await session.delete(promo)

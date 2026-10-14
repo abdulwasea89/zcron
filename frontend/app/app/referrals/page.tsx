@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { ListToolbar } from "@/components/ListToolbar";
+import { ListFilterSheet } from "@/components/ListFilterSheet";
+import { FieldSelect, NONE } from "@/components/FieldSelect";
+import { SelectItem } from "@/components/ui/select";
 import { Alert, Button, EmptyState, Input, Spinner } from "@/components/ui";
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useModuleGate } from "@/hooks/useModuleGate";
@@ -33,6 +36,8 @@ export default function ReferralsPage() {
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [referralFilter, setReferralFilter] = useState<"all" | "qualified" | "pending">("all");
+  const [rewardFilter, setRewardFilter] = useState(NONE);
+  const [signupFilter, setSignupFilter] = useState(NONE);
   const [showProgram, setShowProgram] = useState(false);
 
   const load = useCallback(async () => {
@@ -72,9 +77,13 @@ export default function ReferralsPage() {
   const filteredReferrals = overview.referrals.filter((referral) => {
     const matchesFilter = referralFilter === "all" ||
       (referralFilter === "qualified" ? referral.status === "qualified" : referral.status !== "qualified");
-    return matchesFilter && `${referral.referrer_name} ${referral.referrer_email} ${referral.referred_name} ${referral.referred_email} ${referral.status}`
+    const matchesReward = rewardFilter === NONE || referral.rewards.some((reward) => reward.status === rewardFilter);
+    const matchesSignup = signupFilter === NONE || Boolean(referral.referred_email) === (signupFilter === "complete");
+    return matchesFilter && matchesReward && matchesSignup && `${referral.referrer_name} ${referral.referrer_email} ${referral.referred_name} ${referral.referred_email} ${referral.status}`
       .toLowerCase().includes(search.trim().toLowerCase());
   });
+  const activeReferralFilterCount = [rewardFilter, signupFilter].filter((v) => v !== NONE).length;
+  function clearReferralFilters() { setRewardFilter(NONE); setSignupFilter(NONE); }
 
   return (
     <main className="w-full">
@@ -110,6 +119,16 @@ export default function ReferralsPage() {
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search referrals…"
+        children={(
+          <ListFilterSheet title="Filter referrals" description="Find referrals by reward delivery and signup progress." activeCount={activeReferralFilterCount} resultCount={filteredReferrals.length} onClear={clearReferralFilters}>
+            <FieldSelect label="Reward delivery" value={rewardFilter} onChange={setRewardFilter}>
+              <SelectItem value={NONE}>Any reward status</SelectItem><SelectItem value="pending">Reward pending</SelectItem><SelectItem value="fulfilled">Reward delivered</SelectItem>
+            </FieldSelect>
+            <FieldSelect label="Signup details" value={signupFilter} onChange={setSignupFilter}>
+              <SelectItem value={NONE}>All signups</SelectItem><SelectItem value="complete">Email captured</SelectItem><SelectItem value="incomplete">Signup in progress</SelectItem>
+            </FieldSelect>
+          </ListFilterSheet>
+        )}
       />
       <div className="mt-3 overflow-x-auto">
         <table className={`${TABLE} min-w-[760px]`}>
@@ -129,8 +148,8 @@ export default function ReferralsPage() {
           </tr>)}</tbody>
         </table>
         {filteredReferrals.length === 0 && <EmptyState
-          title={overview.referrals.length === 0 ? "No referrals yet" : search ? "No matching referrals" : "No referrals in this view"}
-          hint={overview.referrals.length === 0 ? "Once the program is active, members can share their referral code from the mobile dashboard." : "Try another status or search term."}
+          title={overview.referrals.length === 0 ? "No referrals yet" : search || activeReferralFilterCount ? "No matching referrals" : "No referrals in this view"}
+          hint={overview.referrals.length === 0 ? "Once the program is active, members can share their referral code from the mobile dashboard." : "Adjust the status, filters, or search and try again."}
         />}
       </div>
     </main>

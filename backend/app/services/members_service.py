@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import secrets
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from fastapi import HTTPException
@@ -30,15 +32,18 @@ from app.core.industry import MoneyMode, get_industry
 from app.core.security import hash_password
 from app.integrations.email import EmailDeliveryError, send_email, send_email_safe
 from app.models.membership import OrganizationMember
+from app.models.freeze_request import MembershipFreezeRequest
 from app.models.organization import Organization
 from app.models.payment import Payment
 from app.models.plan import MembershipPlan
 from app.models.subscription import Subscription
 from app.models.user import User
-from app.schemas.members import MemberProfileUpdate, PendingPaymentItem
+from app.schemas.members import FreezeRequestCreate, MemberProfileUpdate, PendingPaymentItem
 from app.services import verification_service as verif
 from app.services.audit_service import record_audit
 from app.services.notifications_service import create_notification
+from app.services.notifications_service import notify_org_owners
+from app.models.base import utcnow
 
 
 async def directory(
@@ -121,9 +126,13 @@ async def change_status(
         member.banned = False
         member.member_status = MemberStatus.EXPIRED
     elif action == "freeze":
-        member.member_status = MemberStatus.FROZEN
+        if member.member_status not in {MemberStatus.ACTIVE, MemberStatus.GRACE}:
+            raise HTTPException(status_code=409, detail="Only active memberships can be frozen.")
+        await _freeze_member(session, member, frozen_until=None)
     elif action == "unfreeze":
-        member.member_status = MemberStatus.ACTIVE
+        if member.member_status != MemberStatus.FROZEN:
+            raise HTTPException(status_code=409, detail="Member is not frozen.")
+        await _unfreeze_member(session, member)
     elif action == "cancel":
         member.member_status = MemberStatus.CANCELLED
     else:
@@ -136,6 +145,220 @@ async def change_status(
     await record_audit(session, action=f"member.{action}", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="member", entity_id=member.id, metadata={"reason": reason})
     return member
+
+
+async def _freeze_member(
+    session: AsyncSession, member: OrganizationMember, *, frozen_until: datetime | None,
+) -> None:
+    member.status_before_freeze = member.member_status
+    member.member_status = MemberStatus.FROZEN
+    session.add(member)
+    subs = (await session.execute(
+        select(Subscription).where(
+            Subscription.organization_id == member.organization_id,
+            Subscription.member_id == member.id,
+            Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE]),
+        ).order_by(Subscription.started_at.desc())
+    )).scalars().all()
+    for sub in subs:
+        sub.status_before_freeze = sub.status
+        sub.status = SubscriptionStatus.FROZEN
+        sub.frozen_at = utcnow()
+        sub.frozen_until = frozen_until
+        session.add(sub)
+
+
+async def _unfreeze_member(
+    session: AsyncSession, member: OrganizationMember, *, resumed_at: datetime | None = None,
+) -> None:
+    member.member_status = member.status_before_freeze or MemberStatus.ACTIVE
+    member.status_before_freeze = None
+    session.add(member)
+    subs = (await session.execute(
+        select(Subscription).where(
+            Subscription.organization_id == member.organization_id,
+            Subscription.member_id == member.id,
+            Subscription.status == SubscriptionStatus.FROZEN,
+        )
+    )).scalars().all()
+    now = resumed_at or utcnow()
+    for sub in subs:
+        effective_resume = min(now, sub.frozen_until) if sub.frozen_until else now
+        if sub.frozen_at and sub.current_period_end:
+            frozen_duration = effective_resume - sub.frozen_at
+            if frozen_duration.total_seconds() > 0:
+                sub.current_period_end += frozen_duration
+        sub.status = sub.status_before_freeze or SubscriptionStatus.ACTIVE
+        sub.status_before_freeze = None
+        sub.frozen_at = None
+        sub.frozen_until = None
+        session.add(sub)
+
+
+async def create_freeze_request(
+    session: AsyncSession, *, org_id: str, user_id: str, data: FreezeRequestCreate,
+) -> MembershipFreezeRequest:
+    member = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.organization_id == org_id,
+        OrganizationMember.user_id == user_id,
+        OrganizationMember.role == Role.MEMBER,
+    ))).scalar_one_or_none()
+    if member is None:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    if member.member_status not in {MemberStatus.ACTIVE, MemberStatus.GRACE}:
+        raise HTTPException(status_code=409, detail="Only active memberships can request a pause.")
+    pending = (await session.execute(select(MembershipFreezeRequest).where(
+        MembershipFreezeRequest.organization_id == org_id,
+        MembershipFreezeRequest.member_id == member.id,
+        MembershipFreezeRequest.status == "pending",
+    ))).scalar_one_or_none()
+    if pending:
+        raise HTTPException(status_code=409, detail="You already have a pause request awaiting review.")
+    until = data.requested_until
+    if until is not None:
+        if until.tzinfo is not None:
+            until = until.astimezone(timezone.utc).replace(tzinfo=None)
+        now = utcnow()
+        if until <= now or until > now + timedelta(days=365):
+            raise HTTPException(status_code=422, detail="Choose an end date within the next 12 months.")
+    request = MembershipFreezeRequest(
+        organization_id=org_id, member_id=member.id, reason=data.reason.strip(),
+        requested_until=until, source="member", status="pending",
+    )
+    session.add(request)
+    await session.flush()
+    name = member.display_name or "A member"
+    await notify_org_owners(
+        session, org_id=org_id, category=NotificationKind.MEMBERSHIP,
+        title="Membership pause requested", body=f"{name} asked to pause their membership.",
+        data={"freeze_request_id": request.id, "member_id": member.id},
+    )
+    await record_audit(session, action="member.freeze_requested", organization_id=org_id,
+                       actor_user_id=user_id, entity_type="member", entity_id=member.id,
+                       metadata={"freeze_request_id": request.id, "source": "member"})
+    return request
+
+
+async def detect_freeze_request_from_message(
+    session: AsyncSession, *, org_id: str, member_id: str | None, body: str,
+) -> MembershipFreezeRequest | None:
+    """Create a review-only request for clear inbound membership-pause language."""
+    if not member_id or not re.search(
+        r"\b(?:freeze|pause|put\s+on\s+hold)\b.{0,50}\b(?:my\s+)?membership\b|"
+        r"\b(?:membership)\b.{0,50}\b(?:freeze|pause|hold)\b",
+        body, flags=re.IGNORECASE | re.DOTALL,
+    ):
+        return None
+    member = await _get_member(session, org_id, member_id)
+    if member.role != Role.MEMBER or member.member_status not in {MemberStatus.ACTIVE, MemberStatus.GRACE}:
+        return None
+    pending = (await session.execute(select(MembershipFreezeRequest).where(
+        MembershipFreezeRequest.organization_id == org_id,
+        MembershipFreezeRequest.member_id == member.id,
+        MembershipFreezeRequest.status == "pending",
+    ))).scalar_one_or_none()
+    if pending:
+        return None
+    request = MembershipFreezeRequest(
+        organization_id=org_id, member_id=member.id,
+        reason="A message appears to request a membership pause. Review the inbox conversation before deciding.",
+        source="inbox", status="pending",
+    )
+    session.add(request)
+    await session.flush()
+    await notify_org_owners(
+        session, org_id=org_id, category=NotificationKind.MEMBERSHIP,
+        title="Possible membership pause request",
+        body=f"A message from {member.display_name or 'a member'} may be asking to pause their membership.",
+        data={"freeze_request_id": request.id, "member_id": member.id},
+    )
+    await record_audit(session, action="member.freeze_request_detected", organization_id=org_id,
+                       entity_type="member", entity_id=member.id,
+                       metadata={"freeze_request_id": request.id, "source": "inbox"})
+    return request
+
+
+async def member_freeze_requests(
+    session: AsyncSession, *, org_id: str, user_id: str,
+) -> list[MembershipFreezeRequest]:
+    member = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.organization_id == org_id,
+        OrganizationMember.user_id == user_id,
+    ))).scalar_one_or_none()
+    if member is None:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    return list((await session.execute(select(MembershipFreezeRequest).where(
+        MembershipFreezeRequest.organization_id == org_id,
+        MembershipFreezeRequest.member_id == member.id,
+    ).order_by(MembershipFreezeRequest.created_at.desc()))).scalars().all())
+
+
+async def cancel_freeze_request(
+    session: AsyncSession, *, org_id: str, user_id: str, request_id: str,
+) -> MembershipFreezeRequest:
+    member = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.organization_id == org_id,
+        OrganizationMember.user_id == user_id,
+    ))).scalar_one_or_none()
+    request = await session.get(MembershipFreezeRequest, request_id)
+    if member is None or request is None or request.organization_id != org_id or request.member_id != member.id:
+        raise HTTPException(status_code=404, detail="Pause request not found.")
+    if request.status != "pending":
+        raise HTTPException(status_code=409, detail="Only pending pause requests can be withdrawn.")
+    request.status = "cancelled"
+    session.add(request)
+    await record_audit(session, action="member.freeze_request_cancelled", organization_id=org_id,
+                       actor_user_id=user_id, entity_type="member", entity_id=member.id,
+                       metadata={"freeze_request_id": request.id})
+    return request
+
+
+async def freeze_request_queue(
+    session: AsyncSession, *, org_id: str, status: str = "pending",
+) -> list[tuple[MembershipFreezeRequest, OrganizationMember, User]]:
+    rows = (await session.execute(
+        select(MembershipFreezeRequest, OrganizationMember, User)
+        .join(OrganizationMember, OrganizationMember.id == MembershipFreezeRequest.member_id)
+        .join(User, User.id == OrganizationMember.user_id)
+        .where(MembershipFreezeRequest.organization_id == org_id,
+               MembershipFreezeRequest.status == status)
+        .order_by(MembershipFreezeRequest.created_at.asc())
+    )).all()
+    return list(rows)
+
+
+async def decide_freeze_request(
+    session: AsyncSession, *, org_id: str, request_id: str, approve: bool,
+    note: str | None, actor_id: str,
+) -> MembershipFreezeRequest:
+    request = await session.get(MembershipFreezeRequest, request_id)
+    if request is None or request.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Pause request not found.")
+    if request.status != "pending":
+        raise HTTPException(status_code=409, detail="Pause request has already been reviewed.")
+    member = await _get_member(session, org_id, request.member_id)
+    if approve:
+        if member.member_status not in {MemberStatus.ACTIVE, MemberStatus.GRACE}:
+            raise HTTPException(status_code=409, detail="This membership can no longer be paused.")
+        await _freeze_member(session, member, frozen_until=request.requested_until)
+    request.status = "approved" if approve else "rejected"
+    request.reviewed_by = actor_id
+    request.reviewed_at = utcnow()
+    request.decision_note = note.strip() if note else None
+    session.add(request)
+    await create_notification(
+        session, org_id=org_id, recipient_user_id=member.user_id,
+        category=NotificationKind.MEMBERSHIP,
+        title="Membership pause approved" if approve else "Membership pause declined",
+        body=("Your membership is now paused." if approve else
+              f"Your pause request was declined.{f' Note: {request.decision_note}' if request.decision_note else ''}"),
+        data={"freeze_request_id": request.id, "status": request.status},
+    )
+    await record_audit(session, action=f"member.freeze_request_{request.status}",
+                       organization_id=org_id, actor_user_id=actor_id,
+                       entity_type="member", entity_id=member.id,
+                       metadata={"freeze_request_id": request.id, "note": request.decision_note})
+    return request
 
 
 async def change_role(

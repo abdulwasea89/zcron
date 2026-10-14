@@ -15,6 +15,9 @@ from app.schemas.members import (
     ApprovalDecision,
     ClientAssignment,
     EmailUpdate,
+    FreezeRequestDecision,
+    FreezeRequestOut,
+    FreezeRequestQueueOut,
     FamilyLinkRequest,
     FamilyMemberOut,
     MemberDetailOut,
@@ -130,6 +133,40 @@ async def approval_queue(
     rows = await members.approval_queue(session, org_id=ctx.org_id)
     names = await _trainer_names(session, ctx.org_id)
     return [_item(m, u, trainers=names.get(m.id)) for m, u in rows]
+
+
+@router.get("/freeze-requests", response_model=list[FreezeRequestQueueOut])
+async def freeze_request_queue(
+    status: str = "pending",
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    if status not in {"pending", "approved", "rejected", "cancelled"}:
+        raise HTTPException(status_code=422, detail="Invalid pause request status.")
+    rows = await members.freeze_request_queue(session, org_id=ctx.org_id, status=status)
+    return [FreezeRequestQueueOut(
+        id=request.id, member_id=member.id, reason=request.reason,
+        requested_until=request.requested_until, source=request.source, status=request.status,
+        created_at=request.created_at, reviewed_at=request.reviewed_at,
+        decision_note=request.decision_note, member_name=member.display_name or user.full_name or user.email,
+        member_email=user.email,
+    ) for request, member, user in rows]
+
+
+@router.post("/freeze-requests/{request_id}/decision", response_model=FreezeRequestOut,
+             dependencies=[Depends(require_writable_org)])
+async def decide_freeze_request(
+    request_id: str,
+    data: FreezeRequestDecision,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    if ctx.role not in {Role.OWNER, Role.MANAGER}:
+        raise HTTPException(status_code=403, detail="Owner or manager access required.")
+    return await members.decide_freeze_request(
+        session, org_id=ctx.org_id, request_id=request_id, approve=data.approve,
+        note=data.note, actor_id=ctx.user_id,
+    )
 
 
 @router.get("/{member_id}", response_model=MemberDetailOut)

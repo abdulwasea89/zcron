@@ -7,10 +7,11 @@ Payment requires an Idempotency-Key header (Security Rule #2).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_client_ip, get_session, get_tenant
+from app.api.deps import get_client_ip, get_session, get_tenant, require_writable_org
+from app.core.constants import Role
 from app.core.tenancy import IDEMPOTENCY_HEADER, TenantContext
 from app.models.user import User
 from app.schemas.auth import LoginResponse
@@ -30,15 +31,51 @@ from app.schemas.memberships import (
     SignupVerify,
 )
 from app.services import memberships_service as members
+from app.services import members_service as member_admin
 from app.services.memberships_service import _org_by_code
 from app.services.pricing_service import quote_member_payment
 from app.schemas.promotions import PriceQuoteOut
 from app.models.plan import MembershipPlan
-from fastapi import HTTPException
 from sqlmodel import select
 from app.models.membership import OrganizationMember
+from app.schemas.members import FreezeRequestCreate, FreezeRequestOut
 
 router = APIRouter()
+
+
+@router.get("/me/freeze-requests", response_model=list[FreezeRequestOut])
+async def my_freeze_requests(
+    ctx: TenantContext = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+):
+    if ctx.role != Role.MEMBER:
+        raise HTTPException(status_code=403, detail="Member access required.")
+    return await member_admin.member_freeze_requests(session, org_id=ctx.org_id, user_id=ctx.user_id)
+
+
+@router.post("/me/freeze-requests", response_model=FreezeRequestOut, status_code=201,
+             dependencies=[Depends(require_writable_org)])
+async def request_membership_pause(
+    data: FreezeRequestCreate,
+    ctx: TenantContext = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+):
+    if ctx.role != Role.MEMBER:
+        raise HTTPException(status_code=403, detail="Member access required.")
+    return await member_admin.create_freeze_request(session, org_id=ctx.org_id, user_id=ctx.user_id, data=data)
+
+
+@router.delete("/me/freeze-requests/{request_id}", response_model=FreezeRequestOut,
+               dependencies=[Depends(require_writable_org)])
+async def withdraw_membership_pause(
+    request_id: str,
+    ctx: TenantContext = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+):
+    if ctx.role != Role.MEMBER:
+        raise HTTPException(status_code=403, detail="Member access required.")
+    return await member_admin.cancel_freeze_request(session, org_id=ctx.org_id, user_id=ctx.user_id,
+                                                    request_id=request_id)
 
 
 @router.post("/signup/start", response_model=SignupStartOut)

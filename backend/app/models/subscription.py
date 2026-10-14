@@ -32,6 +32,8 @@ class Subscription(UUIDModel, TimestampModel, table=True):
     current_period_end: datetime | None = None
     grace_until: datetime | None = None
     frozen_until: datetime | None = None
+    frozen_at: datetime | None = None
+    status_before_freeze: SubscriptionStatus | None = None
     cancelled_at: datetime | None = None
 
     # For one-time packs: remaining class credits

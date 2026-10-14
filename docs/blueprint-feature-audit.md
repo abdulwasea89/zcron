@@ -15,8 +15,8 @@
 
 | | Section 1 (79) | Cross-cutting (49) | Total (128) |
 |---|---|---|---|
-| ✅ Built | 10 | 4 | **14** |
-| ⚠️ Partial | 37 | 21 | **58** |
+| ✅ Built | 11 | 4 | **15** |
+| ⚠️ Partial | 36 | 21 | **57** |
 | ❌ Not built | 32 | 24 | **56** |
 
 By priority (Section 1 only):
@@ -60,8 +60,8 @@ By priority (Section 1 only):
 | 10 | Member profile: photo, ID (where legal), contact, emergency contact, goals, health notes | P0 | ⚠️ | `membership.py:40 photo_url`, `:41 emergency_contact`, `user.py:35 emergency_contact`. Missing: ID, goals, health notes, auto-generated summary | backend + web |
 | 11 | Plans: daily to yearly, family, student, off-peak, class packs, credits | P0 | ⚠️ | `PlanBillingType` = recurring / one_time_pack / drop_in; duration + price free-form so most variants expressible. Missing: credits, family linkage | backend + web + mobile |
 | 12 | Joining fees, discounts, promo codes | P0 | ❌ | 0 matches for `discount\|coupon\|promo\|joining_fee` in `backend/app`. No promotion engine at all | none |
-| 13 | Freeze/pause (travel, illness, seasonal) | P0 | ⚠️ | `MemberStatus.FROZEN`; `members_service.py:83 freeze` / `:85 unfreeze` — staff actions only. Missing: member-requested freeze, approve flow, auto-detect from messages | backend + web |
-| 14 | Renewals and expiry reminders | P0 | ⚠️ | Post-expiry grace reminders only (`workers/notifications.py:33`, days 1/2/3). Missing: pre-expiry T-7/T-3/T-1 cadence | backend |
+| 13 | Freeze/pause (travel, illness, seasonal) | P0 | ✅ | Backend pause-request API and owner/manager review in the web member directory are implemented. Approved pauses preserve prior member/subscription status, extend billing time, and resume on schedule. Linked-member inbox messages with explicit pause language create review-only requests. Mobile is not counted as delivered; provider-wide email/SMS/WhatsApp detection remains unintegrated. | backend + web |
+| 14 | Renewals and expiry reminders | P0 | ✅ | Hourly membership worker sends idempotent email and in-app renewal reminders at T-7/T-3/T-1, plus grace reminders on days 1/2/3 after expiry. Reminder records are unique per subscription, billing-period end, and stage, so hourly sweeps do not resend them. | backend |
 | 15 | Upgrades, downgrades, transfers, cancellation with save offer | P1 | ❌ | `saas_billing_service.py:74 upgrade` / `:90 downgrade` / `:116 cancel` are **SaaS-tier only**. `memberships_service.py` is signup/activation — no member plan change, transfer, save offer (verified: no such function exists) | none |
 | 16 | Family and multi-payer accounts; segmentation and tags | P1–P2 | ⚠️ | Segments are dynamic and computed: `campaign_service.py:82 _resolve_segment` (status, plan, days-since-visit). Missing: family accounts, multi-payer, tags | backend |
 
@@ -180,7 +180,7 @@ By priority (Section 1 only):
 
 | # | Feature | Pri | Status | Evidence / gap | Surface |
 |---|---|---|---|---|---|
-| 74 | Messaging-first member self-service: renew, pay, freeze, book | P0 | ⚠️ **(Δ)** | Member app can **book** (`mobileapp/(member)/classes.tsx:60-140` — idempotent `POST /classes/book`, `DEL /classes/bookings/{id}`) and **view dues/history** (`payments.tsx` → `GET /payments/my`). Missing: renew, freeze self-service (freeze is staff-only, `members_service.py:83`), messaging/AI concierge | mobile + backend |
+| 74 | Messaging-first member self-service: renew, pay, freeze, book | P0 | ⚠️ **(Δ)** | Member app can book (`(member)/classes.tsx`), view dues/history (`(member)/payments.tsx`), and request/withdraw a membership pause (`(member)/membership-pause.tsx`; `POST/GET/DELETE /memberships/me/freeze-requests`). Owner/manager approval is available in the web member directory. Missing: renewal self-service and messaging/AI concierge. | mobile + backend + web |
 | 75 | Web portal or PWA: card, QR, dues, history | P1 | ⚠️ **(Δ)** | Earlier audit said "No `mobile/` directory" — **`mobileapp/` exists**: Expo app, 44 screens under `mobileapp/src/app/`, member dues + payment history real (`payments.tsx`). Missing: digital member card, QR code (0 matches for `qr`/`member_card` in mobileapp) | mobile + backend |
 | 76 | Branded app, workout log, streaks, rewards | P2 | ⚠️ | Branded Expo app exists (`mobileapp/app.json`, industry-aware tabs in `(member)/_layout.tsx:31-70`). Backend streaks/challenges complete. Missing: workout log, streak/reward UI (0 matches in mobileapp screens) | mobile + backend |
 | 77 | Import from spreadsheets and competitor exports | P0 | ⚠️ **(Δ)** | Backend only: `routes/members.py:331 POST /members/import` → `members_service.py:324 bulk_import_csv`. **No UI in web or mobile** (0 matches for import/CSV in `frontend/app` or `mobileapp/src`). No competitor-format importer (0 matches for `competitor`) | backend only |
@@ -196,7 +196,7 @@ By priority (Section 1 only):
 | # | Layer | Status | Evidence / gap | Surface |
 |---|---|---|---|---|
 | 80 | L1 Event ledger: append-only timeline per person, nothing overwritten | ⚠️ | `AuditLog` + append-only attendance records. No per-person raw event stream (messages, notes, calls) as source of truth | backend |
-| 81 | L2 Understanding: LLM + rules extract intent, goal, objection, sentiment, payment details, freeze requests, any language | ⚠️ | LLM live in assistant (`agent/model.py:32 ChatGroq`). No inbound-message extraction pipeline — messages are never parsed into structured facts | backend |
+| 81 | L2 Understanding: LLM + rules extract intent, goal, objection, sentiment, payment details, freeze requests, any language | ⚠️ | LLM live in assistant (`agent/model.py:32 ChatGroq`). Linked-member inbox messages with explicit membership-pause wording create a review-only freeze request through deterministic phrase matching. General intent/entity extraction across arbitrary messages and external channels remains missing. | backend |
 | 82 | L3 Customer model: structured state + history — plan, expiry, dues, visit baseline, risk, goal, trainer, summary | ✅ | Snapshot + `plan_summaries.py` one-paragraph summary; risk from `retention_service.py`; visit baseline computed | backend |
 | 83 | L4 Signal engine: deterministic triggers + ML risk scoring (expiry, absence, visit drop, unpaid dues, unanswered lead) | ⚠️ | Deterministic triggers (workers) + weighted score (`retention_service.py:166-245`). **No ML**; no unanswered-lead signal (no leads) | backend |
 | 84 | L5 Decision layer: next best action, draft, value estimate, owner assignment, autonomy level | ⚠️ | Assistant proposes writes via `_proposal()` with draft text. No ranked next-best-action engine, no value estimate, no owner assignment, no autonomy level | backend |
@@ -208,7 +208,7 @@ By priority (Section 1 only):
 | # | Level | Status | Evidence / gap | Surface |
 |---|---|---|---|---|
 | 87 | L0 Observe: update summary, compute risk, tag lead — always automatic | ⚠️ | Risk computation and summaries run automatically in workers. No lead tagging (no leads) | backend |
-| 88 | L1 Auto-act (safe): FAQ reply, receipt, renewal reminder, class reminder, first lead reply — automatic, template-bound, reversible | ⚠️ | Grace reminders, onboarding messages, celebration messages auto-send on schedule. No FAQ reply, no first-lead reply | backend |
+| 88 | L1 Auto-act (safe): FAQ reply, receipt, renewal reminder, class reminder, first lead reply — automatic, template-bound, reversible | ⚠️ | Pre-expiry renewal and grace reminders, onboarding messages, and celebrations auto-send on schedule. No FAQ reply, no first-lead reply | backend |
 | 89 | L2 Approve first: discounts, win-back offers, complaint replies, freezes, bulk campaigns — one-tap approval | ⚠️ | Real human-in-the-loop gate: `agent/tools/write.py` 8 approval-gated writes via `_proposal()` / `_rejected()`. No one-tap approval UI for the full set | backend + web |
 | 90 | L3 Human only: refunds, price changes, medical topics, angry customers, cash mismatches — AI briefs a human | ❌ | Not distinguished from L2. No risk classification, no fail-closed timeout | none |
 | 91 | Owner trust ladder: move any action type between levels; promote to L1 after seeing results; AI-disclosure setting per country | ❌ | No L0–L3 tiers, no owner-controlled promotion dial, no AI-disclosure setting (`AI Act Art. 50`) | none |
@@ -218,7 +218,7 @@ By priority (Section 1 only):
 | # | Agent | Status | Evidence / gap | Surface |
 |---|---|---|---|---|
 | 92 | Lead Concierge — instant reply, qualification, trial booking, follow-up | ❌ | No lead entity, no inbound auto-reply | none |
-| 93 | Renewal & Collections — expiry reminders, dunning, payment links, proof matching | ⚠️ | Grace reminders (days 1/2/3), payment-proof pipeline, SaaS dunning ladder. Missing: payment links to members, member escalation ladder | backend |
+| 93 | Renewal & Collections — expiry reminders, dunning, payment links, proof matching | ⚠️ | Pre-expiry reminders (T-7/T-3/T-1), grace reminders (days 1/2/3), payment-proof pipeline, and SaaS dunning ladder. Missing: payment links to members and a member escalation ladder | backend |
 | 94 | Retention Coach — onboarding, absence check-ins, milestones, save offers | ✅ | Onboarding journey + inactivity ladder + win-back + celebrations all built with routes and daily workers | backend |
 | 95 | Front-Desk Copilot — check-in context, draft replies | ⚠️ | Check-in status card (row 18) + inbox AI draft (`inbox_service.py`). Missing: context summary at check-in beyond status flags | backend + web |
 | 96 | Owner Analyst — morning brief, Q&A, explanations | ✅ | `POST /assistant/briefing` + ask-anything with 40 specialists (`routes/assistant.py:331`) | backend + web |
@@ -283,7 +283,7 @@ The prose audit at the repo root remains the methodology record. This file is th
 
 | Row | Was | Now | Why |
 |---|---|---|---|
-| **74** Messaging-first member self-service | ❌ | **⚠️** | `mobileapp/` was missed entirely. Member can book classes (idempotent) and view dues/history via real API calls |
+| **74** Messaging-first member self-service | ❌ | **⚠️** | Member app supports class booking, dues/history, and pause request/withdrawal. Web owners/managers can review pause requests. Renewal self-service and messaging/AI concierge remain missing. |
 | **75** Web portal / PWA | ❌ | **⚠️** | Audit said "No `mobile/` directory" — the directory is named `mobileapp/` (44 screens). Dues + history real. Member-facing card/QR still absent (staff-facing QR in `MemberDetailSheet.tsx:602` counts for row 17, not here) |
 | **76** Branded app | ⚠️ (thin) | **⚠️** (evidenced) | Expo app confirmed (`mobileapp/app.json`); no workout log, no streaks UI confirmed |
 | **77** Import | ⚠️ "CSV import built" | **⚠️** (backend only) | Route + service exist; **zero UI** in web or mobile. Surface corrected |
@@ -307,9 +307,9 @@ Ordered by leverage:
 2. **Promotion engine** (row 12, P0) — discounts, promo codes, joining fees. Small surface (`Plan`/`Subscription`/`Payment`), direct revenue impact.
 3. **Lead pipeline + trial booking** (rows 1–8: P0 ×6, P1 ×2) — closes the largest hole; reuses `Conversation` and `Notification`.
 4. **Real OCR** (row 27) — implement `_real_extract`. Until then "AI receipt verification" is a claim the code does not support.
-5. **Member app completion** (rows 74–76) — renew + freeze self-service, member card/QR, workout log. The app shell already exists.
+5. **Member app completion** (rows 74–76) — renewal self-service, member card/QR, workout log. Membership-pause requests now work end-to-end; the app shell already exists.
 6. **Consent + audit hash chain + soft delete** (rows 68, 110, 112) — cheap; prerequisite for selling into any regulated market.
 7. **Member dunning ladder** (row 25) — extend `send_grace_reminders` with the escalating cadence that already exists for SaaS.
-8. **Pre-expiry reminders** (row 14, P0) — T-7/T-3/T-1 cadence.
+8. **Member dunning and payment links** (row 93) — add payment links and escalation controls to the reminder cadence now implemented in row 14.
 9. **Waitlist + no-shows** (rows 49–50) — booking exists; these are additive.
 10. **Multi-location** (row 66) — `location_id` on membership/payment/attendance. Cheap now, expensive later.

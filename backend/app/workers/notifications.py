@@ -15,6 +15,7 @@ from app.core.security import now_utc
 from app.integrations.email import send_email_safe as send_email
 from app.integrations.push import send_push
 from app.models.membership import OrganizationMember
+from app.models.membership_reminder import MembershipReminder
 from app.models.subscription import Subscription
 from app.models.user import User
 
@@ -32,36 +33,99 @@ async def notify_member(
 
 
 async def send_grace_reminders(session: AsyncSession, *, org_id: str) -> int:
-    """Email/push members in grace (Section 9.5: reminders on days 1, 2, day-3 morning)."""
+    """Send one reminder on each of the first three days after expiry."""
 
     subs = (
         await session.execute(
             select(Subscription).where(
                 Subscription.organization_id == org_id,
                 Subscription.status == SubscriptionStatus.GRACE,
+                Subscription.current_period_end.is_not(None),
             )
         )
-    ).scalars()
+    ).scalars().all()
     sent = 0
+    today = now_utc().date()
     for sub in subs:
-        days_left = 0
-        if sub.grace_until:
-            days_left = max(0, (sub.grace_until - now_utc()).days)
-        await notify_member(session, member_id=sub.member_id, title="Payment due",
-                            body=f"Your membership payment is due. {days_left} day(s) left.")
-        # In-app alert mirrors the email (Section 9.5).
+        days_overdue = (today - sub.current_period_end.date()).days
+        if days_overdue not in {1, 2, 3} or (sub.grace_until and now_utc() > sub.grace_until):
+            continue
+        stage = f"grace_{days_overdue}"
+        if await _reminder_exists(session, sub, stage):
+            continue
+        await _record_reminder(session, sub, stage)
+        title = "Membership payment due"
+        body = f"Your membership expired {days_overdue} day(s) ago. Please contact your gym to renew."
+        await notify_member(session, member_id=sub.member_id, title=title, body=body)
         member = await session.get(OrganizationMember, sub.member_id)
         if member is not None:
             from app.services.notifications_service import create_notification
 
             await create_notification(
                 session, org_id=org_id, recipient_user_id=member.user_id,
-                category=NotificationKind.MEMBERSHIP, title="Payment due",
-                body=f"Your membership payment is due. {days_left} day(s) left.",
-                data={"subscription_id": sub.id},
+                category=NotificationKind.MEMBERSHIP, title=title, body=body,
+                data={"subscription_id": sub.id, "reminder_stage": stage},
             )
         sent += 1
     return sent
+
+
+async def send_pre_expiry_reminders(session: AsyncSession, *, org_id: str) -> int:
+    """Send idempotent renewal reminders 7, 3, and 1 day before period end."""
+
+    now = now_utc()
+    today = now.date()
+    subs = (await session.execute(select(Subscription).where(
+        Subscription.organization_id == org_id,
+        Subscription.status == SubscriptionStatus.ACTIVE,
+        Subscription.current_period_end.is_not(None),
+        Subscription.current_period_end >= now,
+    ))).scalars().all()
+    sent = 0
+    for sub in subs:
+        days_left = (sub.current_period_end.date() - today).days
+        if days_left not in {7, 3, 1}:
+            continue
+        stage = f"pre_expiry_{days_left}"
+        if await _reminder_exists(session, sub, stage):
+            continue
+        await _record_reminder(session, sub, stage)
+        date_label = sub.current_period_end.strftime("%b %d, %Y").replace(" 0", " ")
+        title = "Membership renewal coming up"
+        body = f"Your membership ends in {days_left} day(s) ({date_label}). Contact your gym to renew."
+        await notify_member(session, member_id=sub.member_id, title=title, body=body)
+        member = await session.get(OrganizationMember, sub.member_id)
+        if member is None:
+            continue
+        from app.services.notifications_service import create_notification
+
+        await create_notification(
+            session, org_id=org_id, recipient_user_id=member.user_id,
+            category=NotificationKind.MEMBERSHIP, title=title, body=body,
+            data={"subscription_id": sub.id, "reminder_stage": stage},
+        )
+        sent += 1
+    return sent
+
+
+async def _reminder_exists(
+    session: AsyncSession, sub: Subscription, stage: str,
+) -> bool:
+    return (await session.execute(select(MembershipReminder.id).where(
+        MembershipReminder.subscription_id == sub.id,
+        MembershipReminder.period_end == sub.current_period_end,
+        MembershipReminder.stage == stage,
+    ))).first() is not None
+
+
+async def _record_reminder(session: AsyncSession, sub: Subscription, stage: str) -> None:
+    session.add(MembershipReminder(
+        organization_id=sub.organization_id,
+        subscription_id=sub.id,
+        period_end=sub.current_period_end,
+        stage=stage,
+    ))
+    await session.flush()
 
 
 async def expire_due_memberships(session: AsyncSession, *, org_id: str) -> int:
@@ -91,3 +155,48 @@ async def expire_due_memberships(session: AsyncSession, *, org_id: str) -> int:
                 await sync_family_status(session, org_id, member.id, MemberStatus.EXPIRED)
             expired += 1
     return expired
+
+
+async def unfreeze_due_memberships(session: AsyncSession, *, org_id: str) -> int:
+    """Resume approved membership pauses when their requested end date arrives."""
+
+    now = now_utc()
+    subs = (await session.execute(select(Subscription).where(
+        Subscription.organization_id == org_id,
+        Subscription.status == SubscriptionStatus.FROZEN,
+        Subscription.frozen_until.is_not(None),
+        Subscription.frozen_until <= now,
+    ))).scalars().all()
+    member_ids = {sub.member_id for sub in subs}
+    resumed = 0
+    from app.services.members_service import _unfreeze_member
+
+    for member_id in member_ids:
+        member = await session.get(OrganizationMember, member_id)
+        if member is None or member.organization_id != org_id or member.member_status != MemberStatus.FROZEN:
+            continue
+        member_subs = (await session.execute(select(Subscription).where(
+            Subscription.organization_id == org_id,
+            Subscription.member_id == member_id,
+            Subscription.status == SubscriptionStatus.FROZEN,
+        ))).scalars().all()
+        # A member can have multiple entitlements. Resume them together only
+        # when every frozen entitlement has reached its end date.
+        if not member_subs or any(not sub.frozen_until or sub.frozen_until > now for sub in member_subs):
+            continue
+        until_values = [sub.frozen_until for sub in member_subs if sub.frozen_until]
+        resume_at = min(until_values) if until_values else now
+        await _unfreeze_member(session, member, resumed_at=resume_at)
+        from app.services.family_service import sync_family_status
+
+        await sync_family_status(session, org_id, member.id, member.member_status)
+        from app.services.notifications_service import create_notification
+
+        await create_notification(
+            session, org_id=org_id, recipient_user_id=member.user_id,
+            category=NotificationKind.MEMBERSHIP, title="Membership pause ended",
+            body="Your membership pause has ended and your membership is active again.",
+            data={"member_id": member.id},
+        )
+        resumed += 1
+    return resumed

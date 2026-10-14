@@ -21,6 +21,7 @@ export function ListToolbar<T extends string>({
   searchRef,
   onSearchKeyDown,
   children,
+  hideSearch = false,
 }: {
   tabs: CategoryTab<T>[];
   value: T;
@@ -32,11 +33,12 @@ export function ListToolbar<T extends string>({
   onSearchKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   /** Extra filters, placed left of the search field. */
   children?: ReactNode;
+  hideSearch?: boolean;
 }) {
   return (
     <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
       <CategoryTabs variant="underline" tabs={tabs} value={value} onChange={onChange} />
-      <div className="flex items-center gap-2">
+      {!hideSearch && <div className="flex flex-wrap items-center justify-end gap-2">
         {children}
         <Input
           ref={searchRef}
@@ -52,7 +54,7 @@ export function ListToolbar<T extends string>({
           }
           className="w-full sm:w-[280px]"
         />
-      </div>
+      </div>}
     </div>
   );
 }

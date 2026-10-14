@@ -3,6 +3,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { ListToolbar } from "@/components/ListToolbar";
+import { ListFilterSheet } from "@/components/ListFilterSheet";
+import { FieldSelect, NONE } from "@/components/FieldSelect";
+import { SelectItem } from "@/components/ui/select";
 import { TABLE, THEAD_ROW, TH, TR, TR_INTERACTIVE, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Alert, Button, EmptyState, Input, Spinner } from "@/components/ui";
@@ -75,6 +78,10 @@ export default function LeadsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"active" | "joined" | "lost">("active");
+  const [sourceFilter, setSourceFilter] = useState(NONE);
+  const [scoreFilter, setScoreFilter] = useState(NONE);
+  const [contactFilter, setContactFilter] = useState(NONE);
+  const [consentFilter, setConsentFilter] = useState(NONE);
   const [showCreate, setShowCreate] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -104,8 +111,14 @@ export default function LeadsPage() {
 
   const filtered = useMemo(() => (leads ?? []).filter((lead) =>
     (filter === "active" ? !["joined", "lost"].includes(lead.stage) : lead.stage === filter) &&
-    `${lead.name} ${lead.email ?? ""} ${lead.phone ?? ""} ${lead.source}`.toLowerCase().includes(query.toLowerCase().trim())
-  ), [leads, filter, query]);
+    `${lead.name} ${lead.email ?? ""} ${lead.phone ?? ""} ${lead.source}`.toLowerCase().includes(query.toLowerCase().trim()) &&
+    (sourceFilter === NONE || lead.source === sourceFilter) &&
+    (scoreFilter === NONE || (scoreFilter === "high" ? lead.lead_score >= 70 : scoreFilter === "medium" ? lead.lead_score >= 40 && lead.lead_score < 70 : lead.lead_score < 40)) &&
+    (contactFilter === NONE || (contactFilter === "email" ? Boolean(lead.email) : Boolean(lead.phone))) &&
+    (consentFilter === NONE || lead.email_followup_consent === (consentFilter === "yes"))
+  ), [leads, filter, query, sourceFilter, scoreFilter, contactFilter, consentFilter]);
+  const activeLeadFilterCount = [sourceFilter, scoreFilter, contactFilter, consentFilter].filter((v) => v !== NONE).length;
+  function clearLeadFilters() { setSourceFilter(NONE); setScoreFilter(NONE); setContactFilter(NONE); setConsentFilter(NONE); }
   const selected = (leads ?? []).find((lead) => lead.id === selectedId) ?? null;
 
   function selectLead(lead: Lead) {
@@ -193,10 +206,27 @@ export default function LeadsPage() {
           { value: "lost", label: "Lost", count: (leads ?? []).filter((lead) => lead.stage === "lost").length },
         ]}
         value={filter} onChange={setFilter} search={query} onSearch={setQuery} searchPlaceholder="Search leads…"
+        children={(
+          <ListFilterSheet title="Filter leads" description="Focus on a source, lead quality, or contact readiness." activeCount={activeLeadFilterCount} resultCount={filtered.length} onClear={clearLeadFilters}>
+            <FieldSelect label="Lead source" value={sourceFilter} onChange={setSourceFilter}>
+              <SelectItem value={NONE}>All sources</SelectItem>
+              {SOURCES.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+            </FieldSelect>
+            <FieldSelect label="Lead score" value={scoreFilter} onChange={setScoreFilter}>
+              <SelectItem value={NONE}>Any score</SelectItem><SelectItem value="high">High · 70–100</SelectItem><SelectItem value="medium">Medium · 40–69</SelectItem><SelectItem value="low">Low · under 40</SelectItem>
+            </FieldSelect>
+            <FieldSelect label="Contact detail" value={contactFilter} onChange={setContactFilter}>
+              <SelectItem value={NONE}>Any contact detail</SelectItem><SelectItem value="email">Has email</SelectItem><SelectItem value="phone">Has phone</SelectItem>
+            </FieldSelect>
+            <FieldSelect label="Email follow-up permission" value={consentFilter} onChange={setConsentFilter}>
+              <SelectItem value={NONE}>Any permission status</SelectItem><SelectItem value="yes">Permission granted</SelectItem><SelectItem value="no">No permission</SelectItem>
+            </FieldSelect>
+          </ListFilterSheet>
+        )}
       />
       <div className="mt-3 overflow-x-auto">
         {leads === null ? <Spinner label="Loading leads…" /> : filtered.length === 0 ?
-          <EmptyState title={query ? "No matching leads" : `No ${filter} leads`} hint={query ? "Try another name or contact detail." : "Add a lead to start tracking prospects."} /> :
+          <EmptyState title={query || activeLeadFilterCount ? "No matching leads" : `No ${filter} leads`} hint={query || activeLeadFilterCount ? "Adjust your search or filters and try again." : "Add a lead to start tracking prospects."} /> :
           <table className={`${TABLE} min-w-[720px]`}>
             <thead><tr className={THEAD_ROW}>
               <th className={`${TH} ${CELL_FIRST}`}>Name</th>

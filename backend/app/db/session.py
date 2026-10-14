@@ -59,6 +59,7 @@ async def init_db() -> None:
             await conn.run_sync(_upgrade_sqlite_member_profile_schema)
             await conn.run_sync(_upgrade_sqlite_plan_variants_schema)
             await conn.run_sync(_upgrade_sqlite_promotions_schema)
+            await conn.run_sync(_upgrade_sqlite_freeze_schema)
 
 
 def _upgrade_sqlite_promotions_schema(connection) -> None:
@@ -72,6 +73,23 @@ def _upgrade_sqlite_promotions_schema(connection) -> None:
             "plan_price_amount": "FLOAT", "joining_fee_amount": "FLOAT NOT NULL DEFAULT 0",
             "discount_amount": "FLOAT NOT NULL DEFAULT 0", "promo_code": "VARCHAR",
         },
+    }.items():
+        if table not in inspector.get_table_names():
+            continue
+        existing = {column["name"] for column in inspector.get_columns(table)}
+        for name, sql_type in columns.items():
+            if name not in existing:
+                connection.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {sql_type}')
+
+
+def _upgrade_sqlite_freeze_schema(connection) -> None:
+    """Add freeze lifecycle metadata to existing local SQLite databases."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    for table, columns in {
+        "organization_members": {"status_before_freeze": "VARCHAR"},
+        "subscriptions": {"frozen_at": "DATETIME", "status_before_freeze": "VARCHAR"},
     }.items():
         if table not in inspector.get_table_names():
             continue

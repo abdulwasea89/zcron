@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ListToolbar } from "@/components/ListToolbar";
+import { ListFilterSheet } from "@/components/ListFilterSheet";
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { api, ApiError } from "@/lib/api";
 import type { TaskOut, MemberDirectoryItem } from "@/lib/types";
@@ -36,6 +37,8 @@ export default function TasksPage() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [search, setSearch] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState(NONE);
+  const [deadlineFilter, setDeadlineFilter] = useState(NONE);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<TaskOut | null>(null);
   const [deleting, setDeleting] = useState<TaskOut | null>(null);
@@ -80,14 +83,19 @@ export default function TasksPage() {
   const filtered = (tasks ?? []).filter((t) => {
     if (filter === "active" && t.done) return false;
     if (filter === "completed" && !t.done) return false;
-    if (!q) return true;
     const assignee = t.assignee_member_id ? memberById[t.assignee_member_id] ?? "" : "";
-    return (
-      t.title.toLowerCase().includes(q) ||
-      (t.description ?? "").toLowerCase().includes(q) ||
-      assignee.toLowerCase().includes(q)
-    );
+    const matchesSearch = !q || t.title.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q) || assignee.toLowerCase().includes(q);
+    const matchesAssignee = assigneeFilter === NONE || (assigneeFilter === "__unassigned__" ? !t.assignee_member_id : t.assignee_member_id === assigneeFilter);
+    const deadline = t.deadline ? new Date(t.deadline) : null;
+    const daysUntilDue = deadline ? (deadline.getTime() - Date.now()) / 86_400_000 : null;
+    const matchesDeadline = deadlineFilter === NONE ||
+      (deadlineFilter === "overdue" ? Boolean(!t.done && daysUntilDue !== null && daysUntilDue < 0) :
+        deadlineFilter === "week" ? Boolean(!t.done && daysUntilDue !== null && daysUntilDue >= 0 && daysUntilDue <= 7) :
+          deadlineFilter === "no_deadline" ? !deadline : Boolean(!t.done && daysUntilDue !== null && daysUntilDue > 7));
+    return matchesSearch && matchesAssignee && matchesDeadline;
   });
+  const activeTaskFilterCount = [assigneeFilter, deadlineFilter].filter((v) => v !== NONE).length;
+  function clearTaskFilters() { setAssigneeFilter(NONE); setDeadlineFilter(NONE); }
 
   // Create task
   async function submit(e: React.FormEvent) {
@@ -343,6 +351,17 @@ export default function TasksPage() {
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search tasks…"
+        children={(
+          <ListFilterSheet title="Filter tasks" description="Focus on ownership and upcoming deadlines." activeCount={activeTaskFilterCount} resultCount={filtered.length} onClear={clearTaskFilters}>
+            <FieldSelect label="Assigned to" value={assigneeFilter} onChange={setAssigneeFilter}>
+              <SelectItem value={NONE}>Anyone</SelectItem><SelectItem value="__unassigned__">Unassigned</SelectItem>
+              {members.map((member) => <SelectItem key={member.member_id} value={member.member_id}>{member.display_name || member.full_name || member.email}</SelectItem>)}
+            </FieldSelect>
+            <FieldSelect label="Deadline" value={deadlineFilter} onChange={setDeadlineFilter}>
+              <SelectItem value={NONE}>Any deadline</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="week">Due in the next 7 days</SelectItem><SelectItem value="later">Due later</SelectItem><SelectItem value="no_deadline">No deadline</SelectItem>
+            </FieldSelect>
+          </ListFilterSheet>
+        )}
       />
 
       {/* Flat workspace, not a card: rows are held by hairlines. */}
@@ -351,9 +370,9 @@ export default function TasksPage() {
           <Spinner label="Loading tasks..." />
         ) : filtered.length === 0 ? (
           <EmptyState
-            title="No tasks found"
-            hint={filter !== "all" ? "Try a different filter." : "Create your first task to get started."}
-            action={filter === "all" ? <Button onClick={() => { resetForm(); setShowForm(true); }}>+ New task</Button> : undefined}
+            title={search || activeTaskFilterCount ? "No matching tasks" : "No tasks found"}
+            hint={search || activeTaskFilterCount ? "Adjust your search or filters and try again." : filter !== "all" ? "Try a different status tab." : "Create your first task to get started."}
+            action={filter === "all" && !search && !activeTaskFilterCount ? <Button onClick={() => { resetForm(); setShowForm(true); }}>+ New task</Button> : undefined}
           />
         ) : (
           <div className="overflow-x-auto">

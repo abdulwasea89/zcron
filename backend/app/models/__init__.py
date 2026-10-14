@@ -14,6 +14,7 @@ from app.models.company import Company
 from app.models.company_contract import CompanyContract
 from app.models.conversation import Conversation
 from app.models.conversation_message import ConversationMessage
+from app.models.freeze_request import MembershipFreezeRequest
 from app.models.gamification import GymChallenge, MemberChallengeProgress, MemberStreak
 from app.models.idempotency_key import IdempotencyKey
 from app.models.inactivity_ladder import InactivityLadderProgress, InactivityLadderRung
@@ -22,6 +23,7 @@ from app.models.invoice import Invoice
 from app.models.lead import Lead, LeadBooking, LeadFollowUp
 from app.models.member_trainer import MemberTrainer
 from app.models.membership import OrganizationMember
+from app.models.membership_reminder import MembershipReminder
 from app.models.notification import Notification
 from app.models.nps import NpsSurvey
 from app.models.onboarding import OnboardingJourney, OnboardingMilestoneProgress
@@ -54,6 +56,8 @@ __all__ = [
     "CompanyContract",
     "Conversation",
     "ConversationMessage",
+    "MembershipFreezeRequest",
+    "MembershipReminder",
     "GymChallenge",
     "IdempotencyKey",
     "InactivityLadderProgress",

@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ListToolbar } from "@/components/ListToolbar";
+import { ListFilterSheet } from "@/components/ListFilterSheet";
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { api, ApiError } from "@/lib/api";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -39,6 +40,8 @@ export default function ClassesPage() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"upcoming" | "past" | "cancelled">("upcoming");
   const [search, setSearch] = useState("");
+  const [trainerFilter, setTrainerFilter] = useState(NONE);
+  const [capacityFilter, setCapacityFilter] = useState(NONE);
   const [showForm, setShowForm] = useState(false);
   const [cancelling, setCancelling] = useState<ClassSessionOut | null>(null);
 
@@ -107,10 +110,14 @@ export default function ClassesPage() {
   const q = search.trim().toLowerCase();
   const filtered = all.filter((s) => {
     if (!inTab(s, filter)) return false;
-    if (!q) return true;
     const trainer = s.trainer_member_id ? trainerById[s.trainer_member_id] ?? "" : "";
-    return s.title.toLowerCase().includes(q) || trainer.toLowerCase().includes(q);
+    const matchesSearch = !q || s.title.toLowerCase().includes(q) || trainer.toLowerCase().includes(q);
+    const matchesTrainer = trainerFilter === NONE || (trainerFilter === "__unassigned__" ? !s.trainer_member_id : s.trainer_member_id === trainerFilter);
+    const matchesCapacity = capacityFilter === NONE || (capacityFilter === "full" ? s.booked_count >= s.capacity : s.booked_count < s.capacity);
+    return matchesSearch && matchesTrainer && matchesCapacity;
   });
+  const activeClassFilterCount = [trainerFilter, capacityFilter].filter((v) => v !== NONE).length;
+  function clearClassFilters() { setTrainerFilter(NONE); setCapacityFilter(NONE); }
 
   const tabs = [
     { value: "upcoming" as const, label: "Upcoming", count: all.filter((s) => inTab(s, "upcoming")).length },
@@ -419,6 +426,17 @@ export default function ClassesPage() {
         search={search}
         onSearch={(v) => setSearch(v)}
         searchPlaceholder="Search classes…"
+        children={(
+          <ListFilterSheet title="Filter classes" description="Narrow sessions by trainer and available capacity." activeCount={activeClassFilterCount} resultCount={filtered.length} onClear={clearClassFilters}>
+            <FieldSelect label="Trainer" value={trainerFilter} onChange={setTrainerFilter}>
+              <SelectItem value={NONE}>Any trainer</SelectItem><SelectItem value="__unassigned__">Unassigned</SelectItem>
+              {trainers.map((trainer) => <SelectItem key={trainer.member_id} value={trainer.member_id}>{trainer.display_name || trainer.full_name || trainer.email}</SelectItem>)}
+            </FieldSelect>
+            <FieldSelect label="Booking capacity" value={capacityFilter} onChange={setCapacityFilter}>
+              <SelectItem value={NONE}>Any capacity</SelectItem><SelectItem value="available">Has open spots</SelectItem><SelectItem value="full">Fully booked</SelectItem>
+            </FieldSelect>
+          </ListFilterSheet>
+        )}
       />
 
       {/* Flat workspace, not a card: rows are held by hairlines. */}

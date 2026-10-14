@@ -160,6 +160,11 @@ async def record_inbound(
         )
     )
     await session.flush()
+    from app.services.members_service import detect_freeze_request_from_message
+
+    await detect_freeze_request_from_message(
+        session, org_id=org_id, member_id=conv.member_id, body=body,
+    )
     await record_audit(
         session, action="inbox.received", organization_id=org_id,
         entity_type="inbox_conversation", entity_id=conv.id,

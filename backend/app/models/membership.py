@@ -49,6 +49,7 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
     # Lifecycle
     joined_at: datetime | None = None
     banned: bool = False
+    status_before_freeze: MemberStatus | None = None
 
     # ---- Staff compensation (trainer/front desk), Section 15.1 ----
     fixed_monthly_salary: float = 0.0

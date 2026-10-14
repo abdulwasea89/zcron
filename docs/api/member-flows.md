@@ -23,7 +23,14 @@ Steps 1-4 same as open, but member created as pending_approval
 - GET /members — directory listing
 - GET /members/approval-queue — pending approvals
 - POST /members/{id}/status — ban/unban/freeze/unfreeze/cancel
+- GET /members/freeze-requests — owner/manager queue of pending pause requests
+- POST /members/freeze-requests/{request_id}/decision — approve or decline a pause request
 - PATCH /members/{id}/role — change role
 - PATCH /members/{id}/email — update email
 - DELETE /members/{id} — hard delete (owner only)
+
+## Membership Pause Requests
+- GET /memberships/me/freeze-requests — list the signed-in member's requests
+- POST /memberships/me/freeze-requests — submit a pause request for gym review
+- DELETE /memberships/me/freeze-requests/{request_id} — withdraw a pending request
 - POST /members/import — bulk CSV import
