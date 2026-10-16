@@ -60,6 +60,7 @@ async def init_db() -> None:
             await conn.run_sync(_upgrade_sqlite_plan_variants_schema)
             await conn.run_sync(_upgrade_sqlite_promotions_schema)
             await conn.run_sync(_upgrade_sqlite_freeze_schema)
+            await conn.run_sync(_upgrade_sqlite_attendance_card_schema)
 
 
 def _upgrade_sqlite_promotions_schema(connection) -> None:
@@ -179,3 +180,25 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+def _upgrade_sqlite_attendance_card_schema(connection) -> None:
+    """Add local-dev RFID assignment support to existing SQLite workspaces."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    if "organization_members" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("organization_members")}
+    if "attendance_card_uid" not in columns:
+        connection.exec_driver_sql(
+            'ALTER TABLE organization_members ADD COLUMN "attendance_card_uid" VARCHAR'
+        )
+    connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_organization_members_attendance_card_uid "
+        "ON organization_members (attendance_card_uid)"
+    )
+    connection.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_org_member_attendance_card_uid "
+        "ON organization_members (organization_id, attendance_card_uid)"
+    )

@@ -600,6 +600,7 @@ async def list_roster(
             "member_email": u.email,
             "member_status": _status_value(m),
             "phone": m.phone,
+            "has_attendance_card": bool(m.attendance_card_uid),
         }
         for m, u in rows
     ]
@@ -654,6 +655,7 @@ async def search_members(
             "member_name": _name(m, u),
             "member_email": u.email,
             "phone": m.phone,
+            "has_attendance_card": bool(m.attendance_card_uid),
             "member_status": status["membership_status"],
             "payment_due": status["payment_due"],
             "amount_due": status["amount_due"],

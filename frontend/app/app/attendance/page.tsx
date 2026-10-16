@@ -16,6 +16,7 @@ import {
 import { useRealtimeEvent } from "@/components/Realtime";
 import { QrScanner } from "@/components/attendance/QrScanner";
 import { useModuleGate } from "@/hooks/useModuleGate";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { api, ApiError } from "@/lib/api";
 import { money, titleCase } from "@/lib/format";
 import type {
@@ -112,6 +113,8 @@ function relTime(iso: string, now: number): string {
 
 export default function AttendancePage() {
   const { ready } = useModuleGate("attendance");
+  const currentUser = useCurrentUser();
+  const canManageCards = currentUser?.role === "owner" || currentUser?.role === "manager";
 
   const [summary, setSummary] = useState<AttendanceSummary | null>(null);
   const [today, setToday] = useState<AttendanceOut[] | null>(null);
@@ -124,6 +127,11 @@ export default function AttendancePage() {
   const [error, setError] = useState("");
   const [lastCheckIn, setLastCheckIn] = useState<{ name: string; res: CheckInOut } | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [cardUid, setCardUid] = useState("");
+  const [cardBusy, setCardBusy] = useState(false);
+  const [assigningMember, setAssigningMember] = useState<string | null>(null);
+  const [assignUid, setAssignUid] = useState("");
+  const cardInputRef = useRef<HTMLInputElement>(null);
   const [now, setNow] = useState(() => Date.now());
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -358,6 +366,58 @@ export default function AttendancePage() {
     [online, loadToday, loadSummary],
   );
 
+  const onCardCheckIn = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const uid = cardUid.trim();
+    if (!uid || !online || cardBusy) return;
+    setCardBusy(true);
+    setError("");
+    try {
+      const res = await api.post<CheckInOut>("/attendance/card/check-in", { card_uid: uid }, {
+        "Idempotency-Key": crypto.randomUUID(),
+      });
+      setLastCheckIn({ name: res.member_name || "Member", res });
+      setCardUid("");
+      void loadToday();
+      void loadSummary();
+      cardInputRef.current?.focus();
+    } catch (e) {
+      setError((e as ApiError).message || "Could not check in this card.");
+    } finally {
+      setCardBusy(false);
+    }
+  }, [cardUid, online, cardBusy, loadToday, loadSummary]);
+
+  const saveCard = useCallback(async (memberId: string) => {
+    const uid = assignUid.trim();
+    if (!uid) return;
+    setBusyId(memberId);
+    setError("");
+    try {
+      await api.put(`/attendance/members/${memberId}/card`, { card_uid: uid });
+      setAssigningMember(null);
+      setAssignUid("");
+      await refreshRoster();
+    } catch (e) {
+      setError((e as ApiError).message || "Could not link this card.");
+    } finally {
+      setBusyId(null);
+    }
+  }, [assignUid, refreshRoster]);
+
+  const removeCard = useCallback(async (memberId: string) => {
+    setBusyId(memberId);
+    setError("");
+    try {
+      await api.del(`/attendance/members/${memberId}/card`);
+      await refreshRoster();
+    } catch (e) {
+      setError((e as ApiError).message || "Could not remove this card.");
+    } finally {
+      setBusyId(null);
+    }
+  }, [refreshRoster]);
+
   const onScan = useCallback(
     async (text: string) => {
       setScanning(false);
@@ -407,7 +467,25 @@ export default function AttendancePage() {
       <PageHeader
         title="Check-in"
         subtitle="Track arrivals and check members in."
-        action={<Button onClick={() => setScanning(true)}>Scan QR</Button>}
+        action={(
+          <div className="flex flex-wrap items-center gap-2">
+            <form onSubmit={onCardCheckIn} className="flex items-center gap-2 rounded-md border border-border bg-surface px-2 py-1">
+              <label htmlFor="attendance-card-uid" className="sr-only">Scan member card</label>
+              <input
+                id="attendance-card-uid"
+                ref={cardInputRef}
+                value={cardUid}
+                onChange={(event) => setCardUid(event.target.value)}
+                placeholder={online ? "Scan card and press Enter" : "Card scan needs internet"}
+                disabled={!online || cardBusy}
+                autoComplete="off"
+                className="h-7 w-48 bg-transparent px-1 text-xs text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
+              />
+              <Button type="submit" variant="secondary" loading={cardBusy} disabled={!cardUid.trim() || !online}>Check card</Button>
+            </form>
+            <Button variant="secondary" onClick={() => setScanning(true)}>Scan QR</Button>
+          </div>
+        )}
       />
 
       {error && (
@@ -493,7 +571,28 @@ export default function AttendancePage() {
               <td className={TD + " " + CELL + " py-3 text-[12px]"}>{m.member_email}</td>
               <td className={TD + " " + CELL + " py-3"}><Badge tone={statusTone(m.member_status)} size="sm">{titleCase(m.member_status)}</Badge></td>
               <td className={TD + " " + CELL + " py-3"}><div className="flex flex-wrap gap-1"><StatusBadges item={m} /></div></td>
-              <td className={TD + " " + CELL_LAST + " py-3"}><Button variant="secondary" disabled={busyId === m.member_id} onClick={() => checkIn(m.member_id, m.member_name || m.member_email, "manual")}>Check in</Button></td>
+              <td className={TD + " " + CELL_LAST + " py-3"}>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button variant="secondary" disabled={busyId === m.member_id} onClick={() => checkIn(m.member_id, m.member_name || m.member_email, "manual")}>Check in</Button>
+                  {canManageCards && (m.has_attendance_card || assigningMember === m.member_id ? (
+                    assigningMember === m.member_id ? (
+                      <form onSubmit={(event) => { event.preventDefault(); void saveCard(m.member_id); }} className="flex items-center gap-1">
+                        <label htmlFor={`assign-card-${m.member_id}`} className="sr-only">Scan card for {m.member_name || m.member_email}</label>
+                        <input id={`assign-card-${m.member_id}`} autoFocus value={assignUid} onChange={(event) => setAssignUid(event.target.value)} placeholder="Scan card UID" className="h-8 w-32 rounded border border-border bg-surface px-2 text-xs text-foreground" />
+                        <Button type="submit" variant="secondary" disabled={!assignUid.trim() || busyId === m.member_id}>Save</Button>
+                        <Button type="button" variant="ghost" onClick={() => { setAssigningMember(null); setAssignUid(""); }}>Cancel</Button>
+                      </form>
+                    ) : (
+                      <>
+                        <Button variant="ghost" disabled={!online} onClick={() => { setAssigningMember(m.member_id); setAssignUid(""); }}>Replace card</Button>
+                        <Button variant="ghost" disabled={!online || busyId === m.member_id} onClick={() => void removeCard(m.member_id)}>Remove card</Button>
+                      </>
+                    )
+                  ) : (
+                    <Button variant="ghost" disabled={!online} onClick={() => { setAssigningMember(m.member_id); setAssignUid(""); }}>Link card</Button>
+                  ))}
+                </div>
+              </td>
             </tr>)}</tbody>
           </table>
         )}

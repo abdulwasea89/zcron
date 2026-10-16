@@ -20,6 +20,18 @@ class CheckInCreate(BaseModel):
     note: str | None = None
 
 
+class AttendanceCardCheckIn(BaseModel):
+    """UID captured from a staff-operated card/RFID reader."""
+
+    card_uid: str = Field(min_length=3, max_length=128)
+
+
+class AttendanceCardAssign(BaseModel):
+    """Link a physical card to one member within the current organization."""
+
+    card_uid: str = Field(min_length=3, max_length=128)
+
+
 class CheckInOut(BaseModel):
     """The created (or replayed) visit plus status-on-check-in flags."""
 
@@ -92,6 +104,7 @@ class AttendanceMember(BaseModel):
     member_email: str
     member_status: str
     phone: str | None = None
+    has_attendance_card: bool = False
 
     payment_due: bool = False
     amount_due: float | None = None

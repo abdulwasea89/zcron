@@ -806,6 +806,7 @@ export interface AttendanceMember {
   member_email: string;
   member_status: string;
   phone: string | null;
+  has_attendance_card?: boolean;
   payment_due: boolean;
   amount_due: number | null;
   currency: string | null;

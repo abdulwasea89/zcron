@@ -21,6 +21,7 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
         # One membership per user per tenant (Security Rule #1). Guards the
         # check-then-insert race in invite/signup/import paths.
         UniqueConstraint("organization_id", "user_id", name="uq_organization_members_org_user"),
+        UniqueConstraint("organization_id", "attendance_card_uid", name="uq_org_member_attendance_card_uid"),
     )
 
     organization_id: str = Field(index=True, foreign_key="organizations.id")
@@ -37,6 +38,9 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
     # Member profile (Section 8.7)
     display_name: str | None = None  # org-scoped name, independent of User.full_name
     phone: str | None = None
+    # UID read by a staff-operated RFID/NFC keyboard-wedge reader. This is an
+    # identifier only; staff authentication and tenant scoping remain required.
+    attendance_card_uid: str | None = Field(default=None, index=True)
     photo_url: str | None = None
     emergency_contact: str | None = None
     goals: str | None = None
