@@ -67,5 +67,6 @@ class InboxMessage(UUIDModel, TimestampModel, table=True):
 
     # Provider message id (de-dupe on ingest) and the client idempotency key.
     external_id: str | None = Field(default=None, index=True)
-    delivery_status: str | None = Field(default="sent")
+    delivery_status: str | None = Field(default="received")
+    delivery_error: str | None = None
     idempotency_key: str | None = Field(default=None, index=True)

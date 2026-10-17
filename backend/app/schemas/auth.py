@@ -24,71 +24,11 @@ MAX_OWNER_AGE = 120
 
 
 class OwnerRegisterStart(BaseModel):
-    """Step 1 — owner account (Section 4.2). All profile fields required."""
+    """Create login credentials first; profile details are collected in setup."""
 
-    full_name: str = Field(max_length=100)
     email: EmailStr
     password: str
     confirm_password: str
-    cnic: str = Field(max_length=15)
-    phone: str = Field(max_length=20)
-    occupation: str = Field(max_length=100)
-    education: str = Field(max_length=100)
-    address: str = Field(max_length=200)
-    date_of_birth: date
-    gender: Gender
-    city: str = Field(max_length=85)
-    emergency_contact: str = Field(max_length=120)
-
-    @field_validator("full_name", "city")
-    @classmethod
-    def _valid_name(cls, v: str, info) -> str:
-        v = v.strip()
-        label = info.field_name.replace("_", " ").capitalize()
-        if len(v) < 2:
-            raise ValueError(f"{label} is too short")
-        if not NAME_RE.match(v):
-            raise ValueError(f"{label} may only contain letters, spaces, . ' and -")
-        return v
-
-    @field_validator("cnic")
-    @classmethod
-    def _valid_cnic(cls, v: str) -> str:
-        v = v.strip()
-        if not CNIC_RE.match(v):
-            raise ValueError("CNIC must be 13 digits (e.g. 42101-1234567-8)")
-        return v
-
-    @field_validator("phone")
-    @classmethod
-    def _valid_phone(cls, v: str) -> str:
-        cleaned = re.sub(r"[\s\-()]", "", v.strip())
-        if not PHONE_RE.match(cleaned):
-            raise ValueError("Enter a valid phone number (7–15 digits)")
-        return cleaned
-
-    @field_validator("occupation", "education", "address", "emergency_contact")
-    @classmethod
-    def _strip_text(cls, v: str, info) -> str:
-        v = v.strip()
-        minimums = {"occupation": 2, "education": 2, "address": 5, "emergency_contact": 5}
-        label = info.field_name.replace("_", " ").capitalize()
-        if len(v) < minimums.get(info.field_name, 1):
-            raise ValueError(f"{label} is too short")
-        return v
-
-    @field_validator("date_of_birth")
-    @classmethod
-    def _valid_dob(cls, v: date) -> date:
-        today = datetime.now(timezone.utc).date()
-        if v > today:
-            raise ValueError("Date of birth cannot be in the future")
-        age = today.year - v.year - ((today.month, today.day) < (v.month, v.day))
-        if age < MIN_OWNER_AGE:
-            raise ValueError(f"You must be at least {MIN_OWNER_AGE} years old")
-        if age > MAX_OWNER_AGE:
-            raise ValueError("Enter a valid date of birth")
-        return v
 
     @model_validator(mode="after")
     def _passwords_match(self) -> "OwnerRegisterStart":

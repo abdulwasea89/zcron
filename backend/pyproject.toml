@@ -12,6 +12,7 @@ dependencies = [
     "pydantic[email]>=2.10",
     "pydantic-settings>=2.7",
     "python-jose[cryptography]>=3.3",
+    "cryptography>=43.0",
     "passlib[argon2]>=1.7",
     "stripe>=11.0",
     "celery[redis]>=5.4",

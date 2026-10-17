@@ -116,6 +116,20 @@ async def get_tenant(
     if membership is None or membership.banned:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to organization")
 
+    org = await session.get(Organization, org_id)
+    if org is not None and not org.onboarding_complete:
+        allowed_during_setup = {
+            "/api/v1/organizations/me",
+            "/api/v1/auth/me/profile",
+            "/api/v1/organizations/onboarding/checkout",
+            "/api/v1/organizations/onboarding/confirm",
+        }
+        if request.url.path not in allowed_during_setup:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Complete workspace setup before using this workspace.",
+            )
+
     session_id = payload.get("session_id")
     if session_id:
         auth_session = await session.get(AuthSession, session_id)

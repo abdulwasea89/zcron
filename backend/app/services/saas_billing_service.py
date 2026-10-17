@@ -65,6 +65,7 @@ async def status(session: AsyncSession, *, org: Organization) -> dict:
         "current_member_count": count,
         "current_period_end": org.saas_current_period_end,
         "grace_until": org.saas_grace_until,
+        # Cancellation ends billing; it must not disable reads/profile access.
         "read_only": org.saas_status in {SaasStatus.READ_ONLY, SaasStatus.SUSPENDED},
         "retry_count": org.saas_retry_count,
         "state_changed_at": org.saas_state_changed_at,

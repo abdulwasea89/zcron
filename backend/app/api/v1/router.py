@@ -23,6 +23,8 @@ from app.api.v1.routes import (
     front_desk,
     industries,
     inbox,
+    inbox_channels,
+    inbox_webhooks,
     invoices,
     leads,
     initial,
@@ -66,6 +68,8 @@ api_router.include_router(classes.router, prefix="/classes", tags=["classes"])
 api_router.include_router(attendance.router, prefix="/attendance", tags=["attendance"])
 api_router.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
+api_router.include_router(inbox_channels.router, prefix="/inbox", tags=["inbox-channels"])
+api_router.include_router(inbox_webhooks.router, prefix="/inbox", tags=["inbox-webhooks"])
 api_router.include_router(front_desk.router, prefix="/front-desk", tags=["front-desk"])
 api_router.include_router(staff.router, prefix="/staff", tags=["staff"])
 api_router.include_router(payroll.router, prefix="/payroll", tags=["payroll"])

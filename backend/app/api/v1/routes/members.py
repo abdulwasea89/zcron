@@ -18,6 +18,9 @@ from app.schemas.members import (
     FreezeRequestDecision,
     FreezeRequestOut,
     FreezeRequestQueueOut,
+    MembershipChangeDecision,
+    MembershipChangeOut,
+    MembershipChangeQueueOut,
     FamilyLinkRequest,
     FamilyMemberOut,
     MemberDetailOut,
@@ -36,11 +39,50 @@ from app.schemas.organizations import BulkImportResult
 from app.services import member_trainers_service as trainer_assign
 from app.services import members_service as members
 from app.services import family_service as families
+from app.services import membership_changes_service as member_changes
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
 from app.models.user import User
 
 router = APIRouter()
+
+
+@router.get("/change-requests", response_model=list[MembershipChangeQueueOut])
+async def membership_change_queue(
+    status: str = "pending",
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    rows = await member_changes.queue(session, org_id=ctx.org_id, status=status)
+    return [MembershipChangeQueueOut(
+        id=req.id, member_id=member.id, subscription_id=req.subscription_id,
+        request_type=req.request_type, target_plan_id=req.target_plan_id,
+        reason=req.reason, status=req.status, save_offer=req.save_offer,
+        created_at=req.created_at, reviewed_at=req.reviewed_at, decision_note=req.decision_note,
+        offer_type=req.offer_type, offer_plan_id=req.offer_plan_id,
+        offer_discount_percent=req.offer_discount_percent, amount_due=req.amount_due,
+        effective_at=req.effective_at,
+        member_name=member.display_name or user.full_name or user.email, member_email=user.email,
+        current_plan_name=current.name, target_plan_name=target.name if target else None,
+    ) for req, member, user, current, target in rows]
+
+
+@router.post("/change-requests/{request_id}/decision", response_model=MembershipChangeOut,
+             dependencies=[Depends(require_writable_org)])
+async def decide_membership_change(
+    request_id: str, data: MembershipChangeDecision,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    if ctx.role not in {Role.OWNER, Role.MANAGER}:
+        raise HTTPException(status_code=403, detail="Owner or manager access required.")
+    return await member_changes.decide(
+        session, org_id=ctx.org_id, request_id=request_id, actor_id=ctx.user_id,
+        approve=data.approve, offer_pause=data.offer_pause, note=data.note,
+        offer_type=data.offer_type, offer_plan_id=data.offer_plan_id,
+        offer_discount_percent=data.offer_discount_percent,
+        offer_discount_months=data.offer_discount_months, effective_timing=data.effective_timing,
+    )
 
 
 async def _trainer_names(session: AsyncSession, org_id: str) -> dict[str, list[str]]:

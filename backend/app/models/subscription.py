@@ -35,9 +35,20 @@ class Subscription(UUIDModel, TimestampModel, table=True):
     frozen_at: datetime | None = None
     status_before_freeze: SubscriptionStatus | None = None
     cancelled_at: datetime | None = None
+    cancel_at_period_end: bool = False
+    auto_renew: bool = False
+    renewal_attempt_count: int = 0
+    next_renewal_attempt_at: datetime | None = None
+    scheduled_plan_id: str | None = Field(default=None, foreign_key="membership_plans.id")
+    scheduled_plan_at: datetime | None = None
+    save_discount_percent: float = 0.0
+    save_discount_expires_at: datetime | None = None
 
     # For one-time packs: remaining class credits
     classes_remaining: int | None = None
     credits_allowance: int | None = None  # snapshot of plan allowance; null = unlimited
 
     stripe_subscription_id: str | None = None
+
+    prepaid_value_minor: int | None = None
+    prepaid_value_at: datetime | None = None

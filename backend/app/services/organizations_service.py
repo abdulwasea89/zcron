@@ -60,6 +60,41 @@ def _industry_code_prefix(industry: str | None) -> str:
         return "GYM"
 
 
+async def start_owner_onboarding(session: AsyncSession, user: User, *, ip: str | None = None):
+    """Create a locked, unpaid workspace so the verified owner can enter setup."""
+    existing = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.user_id == user.id,
+        OrganizationMember.role == Role.OWNER,
+    ))).scalars().first()
+    if existing:
+        org = await session.get(Organization, existing.organization_id)
+        if org:
+            access, refresh = await auth_service.create_session(
+                session, user=user, org_id=org.id, role=Role.OWNER, ip=ip
+            )
+            return org, access, refresh
+
+    org = Organization(
+        name="Workspace setup", org_code=await _unique_org_code(session, "Workspace setup"),
+        industry="gym", saas_tier=SaasTier.STARTER, saas_status=SaasStatus.TRIALING,
+        member_cap=TIER_MEMBER_CAP[SaasTier.STARTER], checklist_plan_published=False,
+        checklist_enrollment_configured=False,
+        onboarding_complete=False,
+    )
+    session.add(org)
+    await session.flush()
+    owner = OrganizationMember(
+        organization_id=org.id, user_id=user.id, role=Role.OWNER,
+        member_status=MemberStatus.PENDING_PAYMENT, joined_at=now_utc(), profile_complete=False,
+    )
+    session.add(owner)
+    await session.flush()
+    access, refresh = await auth_service.create_session(
+        session, user=user, org_id=org.id, role=Role.OWNER, ip=ip
+    )
+    return org, access, refresh
+
+
 async def _unique_org_code(session: AsyncSession, name: str, *, industry: str | None = None) -> str:
     fallback = _industry_code_prefix(industry)
     for _ in range(10):
@@ -121,6 +156,7 @@ async def register_gym(
         stripe_subscription_id=subscription_id,
         saas_current_period_end=now_utc() + timedelta(days=30),
         mfa_required=(data.tier is SaasTier.ENTERPRISE),
+        onboarding_complete=True,
     )
     session.add(org)
     await session.flush()
@@ -199,6 +235,7 @@ async def create_organization_for_user(
         stripe_subscription_id=subscription_id,
         saas_current_period_end=now_utc() + timedelta(days=30),
         mfa_required=(tier is SaasTier.ENTERPRISE),
+        onboarding_complete=True,
     )
     session.add(org)
     await session.flush()

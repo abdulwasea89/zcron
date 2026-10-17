@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Alert, Button, EmptyState, Input, Spinner } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
+import { enqueueOfflineMutation } from "@/lib/offline-mutations";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type TrialSlot = {
   id: string;
@@ -36,6 +38,7 @@ const STATUS_STYLE: Record<LeadBooking["status"], string> = {
 };
 
 export function LeadBookings({ leadId, preferredTimes, onLeadChanged }: Props) {
+  const currentUser = useCurrentUser();
   const [bookings, setBookings] = useState<LeadBooking[] | null>(null);
   const [slots, setSlots] = useState<TrialSlot[]>([]);
   const [bookingType, setBookingType] = useState<"trial" | "tour">("trial");
@@ -65,24 +68,55 @@ export function LeadBookings({ leadId, preferredTimes, onLeadChanged }: Props) {
     queueMicrotask(() => void load());
   }, [load]);
 
+  useEffect(() => {
+    const handleSynced = (event: Event) => {
+      const path = (event as CustomEvent<{ path?: string }>).detail?.path;
+      if (path === `/leads/${leadId}/bookings`) {
+        void load();
+        void onLeadChanged();
+      }
+    };
+    window.addEventListener("acron:offline-mutation-synced", handleSynced);
+    return () => window.removeEventListener("acron:offline-mutation-synced", handleSynced);
+  }, [leadId, load, onLeadChanged]);
+
   async function createBooking(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
     setNotice("");
+    const idempotencyKey = crypto.randomUUID();
     try {
       const payload = bookingType === "trial"
         ? { booking_type: "trial", class_session_id: slotId, notes }
         : { booking_type: "tour", starts_at: new Date(tourTime).toISOString(), notes };
       await api.post(`/leads/${leadId}/bookings`, payload, {
-        "Idempotency-Key": crypto.randomUUID(),
+        "Idempotency-Key": idempotencyKey,
       });
       setNotes("");
       setTourTime("");
       setNotice(bookingType === "trial" ? "Trial class booked." : "Gym tour booked.");
       await Promise.all([load(), onLeadChanged()]);
     } catch (caught) {
-      setError((caught as ApiError).message);
+      const retryable = !(caught instanceof ApiError) || caught.status >= 500;
+      if (retryable && currentUser?.org_id) {
+        try {
+          const payload = bookingType === "trial"
+            ? { booking_type: "trial", class_session_id: slotId, notes }
+            : { booking_type: "tour", starts_at: new Date(tourTime).toISOString(), notes };
+          await enqueueOfflineMutation({
+            organizationId: currentUser.org_id,
+            path: `/leads/${leadId}/bookings`,
+            body: payload,
+            idempotencyKey,
+          });
+          setNotice("Connection failed. This booking request is saved on this device and is not confirmed yet. It will sync when you reconnect; check the booking list before creating it again.");
+        } catch {
+          setError("Connection failed and this booking request could not be saved for sync. Check the booking list before retrying.");
+        }
+      } else {
+        setError((caught as ApiError).message);
+      }
     } finally {
       setBusy(false);
     }

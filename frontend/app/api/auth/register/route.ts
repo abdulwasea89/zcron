@@ -9,19 +9,9 @@ export async function POST(req: NextRequest) {
       method: "POST",
       auth: false,
       body: {
-        full_name: body.full_name,
         email: body.email,
         password: body.password,
         confirm_password: body.confirm_password,
-        cnic: body.cnic,
-        phone: body.phone,
-        occupation: body.occupation,
-        education: body.education,
-        address: body.address,
-        date_of_birth: body.date_of_birth,
-        gender: body.gender,
-        city: body.city,
-        emergency_contact: body.emergency_contact,
       },
     });
     return NextResponse.json(data);

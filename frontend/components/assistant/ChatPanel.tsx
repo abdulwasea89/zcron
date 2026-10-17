@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { ChatThread } from "./ChatThread";
+import { AssistantBot } from "./AssistantBot";
 import { ReferencePicker, type Reference } from "./ReferencePicker";
 import { Alert, Spinner } from "@/components/ui";
 import { api, ApiError, streamPost } from "@/lib/api";
@@ -63,6 +64,8 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [detail, setDetail] = useState<AssistantConversationDetailOut | null>(null);
   const [value, setValue] = useState("");
+  const [focusSignal, setFocusSignal] = useState(0);
+  const [pendingMessage, setPendingMessage] = useState<AssistantMessageOut | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -317,6 +320,14 @@ export function ChatPanel({
     };
   }, [conversationId, loadDetail, runStream]);
 
+  useEffect(() => {
+    // The optimistic first turn is replaced by the persisted conversation as
+    // soon as its id arrives from the page shell.
+    if (conversationId && pendingMessage) {
+      queueMicrotask(() => setPendingMessage(null));
+    }
+  }, [conversationId, pendingMessage]);
+
   // Switching threads cancels a reply still arriving for the *old* one —
   // nothing is on screen to receive the remaining tokens, and the backend stops
   // generating the moment the connection drops.
@@ -348,6 +359,14 @@ export function ChatPanel({
     if (!conversationId) {
       // Blank thread: create it, then stream. Same path the dashboard bar takes.
       setSending(true);
+      setPendingMessage({
+        id: `pending-${Date.now()}`,
+        role: "user",
+        content: text,
+        model: null,
+        error: null,
+        created_at: new Date().toISOString(),
+      });
       try {
         const created = await api.post<AssistantConversationDetailOut>(
           "/assistant/conversations",
@@ -361,6 +380,7 @@ export function ChatPanel({
         await runStream(created.id);
       } catch (e) {
         setError((e as ApiError).message);
+        setPendingMessage(null);
         setValue(text); // hand the prompt back rather than swallowing it
       } finally {
         setSending(false);
@@ -392,9 +412,81 @@ export function ChatPanel({
   // Switching conversations therefore never flashes the previous transcript,
   // and there is no reset effect to fall out of sync.
   const active = conversationId && detail?.id === conversationId ? detail : null;
-  const messages = conversationId ? (active?.messages ?? []) : [];
+  const messages = conversationId
+    ? (active?.messages ?? [])
+    : pendingMessage ? [pendingMessage] : [];
   const activeDraft = conversationId || sending ? draft : null;
   const showSpinner = Boolean(conversationId) && loading && !active;
+  const showCenteredComposer = !conversationId && !sending && !initialPrompt && messages.length === 0;
+
+  const promptStarters = [
+    "Which memberships expire this week?",
+    "Summarize this month’s revenue",
+    "Which members need a follow-up?",
+  ];
+
+  const composer = (
+    <>
+      {refsOpen && <ReferencePicker onPick={insertReference} onClose={() => setRefsOpen(false)} />}
+      <div className="mx-auto w-full max-w-3xl">
+        <ChatComposer
+          value={value}
+          onChange={setValue}
+          onSubmit={send}
+          sending={sending}
+          autoFocus
+          focusSignal={focusSignal}
+          className={showCenteredComposer ? "assistant-composer-centered" : !conversationId ? "assistant-composer-docking" : ""}
+          placeholder={conversationId ? "Reply…" : "Ask about members, revenue, or payroll…"}
+          onReference={() => setRefsOpen((v) => !v)}
+        />
+      </div>
+    </>
+  );
+
+  if (showCenteredComposer) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-7 px-4 pb-8 sm:px-6">
+        {error && <div className="w-full max-w-3xl"><Alert>{error}</Alert></div>}
+        <div className="assistant-welcome flex flex-col items-center text-center">
+          <div className="assistant-welcome-bot relative mb-3 flex h-14 w-14 items-center justify-center" aria-hidden="true">
+            <span className="assistant-welcome-glow absolute inset-1 rounded-full bg-brand/15 blur-xl" />
+            <AssistantBot size={42} />
+          </div>
+          <p className="mono-label mb-2 text-[10px] text-brand/80">YOUR GYM ASSISTANT</p>
+          <h1 className="font-heading text-[26px] font-medium tracking-tight text-foreground sm:text-[30px]">
+            Where should we begin?
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            A clear answer about members, plans, payments, and daily operations is one question away.
+          </p>
+        </div>
+        <div className="assistant-welcome-composer w-full max-w-3xl">
+          {composer}
+        </div>
+        <div className="assistant-prompt-starters w-full max-w-3xl">
+          <p className="mb-2.5 text-center text-[11px] font-medium text-muted-foreground">Try asking</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {promptStarters.map((prompt, index) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => {
+                  setValue(prompt);
+                  setFocusSignal((current) => current + 1);
+                }}
+                className="assistant-prompt-chip animate-assistant-chip rounded-full border border-foreground/10 bg-surface/55 px-3.5 py-2 text-xs text-foreground/85 transition duration-200 hover:-translate-y-0.5 hover:border-brand/35 hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand/60"
+                style={{ animationDelay: `${240 + index * 70}ms` }}
+              >
+                {prompt}
+                <span className="ml-2 text-brand/80" aria-hidden="true">↗</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -423,6 +515,12 @@ export function ChatPanel({
         />
       )}
 
+      {!conversationId && sending && messages.length === 0 && (
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground" role="status">
+          Starting your chat…
+        </div>
+      )}
+
       {/* The composer is bottom-anchored, so the gap under it is the one
           measurement on this page you can actually feel — and it is the sum of
           two paddings, not one. The shell's `<main>` already contributes
@@ -436,20 +534,7 @@ export function ChatPanel({
           rather than a smaller `pb-*` because the shell's padding is shared with
           every other page and this page is the only one that wants it gone. */}
       <div className="relative -mb-3 shrink-0 px-4 pb-0 pt-2 sm:px-6 lg:-mb-5">
-        {refsOpen && (
-          <ReferencePicker onPick={insertReference} onClose={() => setRefsOpen(false)} />
-        )}
-        <div className="mx-auto w-full max-w-3xl">
-          <ChatComposer
-            value={value}
-            onChange={setValue}
-            onSubmit={send}
-            sending={sending}
-            autoFocus
-            placeholder={conversationId ? "Reply…" : "Ask about members, revenue, or payroll…"}
-            onReference={() => setRefsOpen((v) => !v)}
-          />
-        </div>
+        {composer}
       </div>
     </>
   );

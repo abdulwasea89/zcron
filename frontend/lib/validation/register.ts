@@ -40,7 +40,6 @@ const password = z
 // Step 1 — account credentials.
 export const accountSchema = z
   .object({
-    fullName: name("Full name"),
     email: emailField,
     password,
     confirm: z.string().min(1, "Confirm your password"),

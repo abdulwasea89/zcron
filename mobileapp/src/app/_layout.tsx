@@ -12,6 +12,7 @@ import { useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { HeroUINativeProvider } from "heroui-native";
+import { StripeProvider } from "@stripe/stripe-react-native";
 
 import { useAuthStore } from "@/stores/auth-store";
 import { toOrgSummary, useOrgStore } from "@/stores/org-store";
@@ -109,6 +110,7 @@ export default function RootLayout() {
   }, [accessToken, activeOrgId, setUnreadCount]);
 
   return (
+    <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "pk_test_placeholder"}>
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: palette.background }}>
       <HeroUINativeProvider>
         <SafeAreaProvider>
@@ -137,5 +139,6 @@ export default function RootLayout() {
         </SafeAreaProvider>
       </HeroUINativeProvider>
     </GestureHandlerRootView>
+    </StripeProvider>
   );
 }

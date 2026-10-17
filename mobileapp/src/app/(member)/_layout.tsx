@@ -55,6 +55,7 @@ export default function MemberLayout() {
           options={{ title: "Profile", tabBarIcon: icon(SYMBOLS.profile) }}
         />
         <Tabs.Screen name="membership-pause" options={HIDDEN} />
+        <Tabs.Screen name="membership-change" options={HIDDEN} />
       </Tabs>
     </RequireAuth>
   );

@@ -79,7 +79,7 @@ def _html_from_text(body: str) -> str:
     )
 
 
-def _send_smtp_sync(to: str, subject: str, body: str) -> None:
+def _send_smtp_sync(to: str, subject: str, body: str, smtp_config: dict | None = None) -> None:
     """Send one email over SMTP (e.g. Gmail). Blocking — run in a thread.
 
     Delivers real mail to ANY recipient without a verified sending domain, which
@@ -96,19 +96,25 @@ def _send_smtp_sync(to: str, subject: str, body: str) -> None:
     from email.utils import formatdate, make_msgid
 
     msg = EmailMessage()
-    msg["From"] = settings.smtp_sender
+    sender = (smtp_config or {}).get("from_email") or settings.smtp_sender
+    host = (smtp_config or {}).get("host") or settings.smtp_host
+    port = int((smtp_config or {}).get("port") or settings.smtp_port)
+    username = (smtp_config or {}).get("username") or settings.smtp_user
+    password = (smtp_config or {}).get("password") or settings.smtp_password
+    use_tls = (smtp_config or {}).get("use_tls", settings.smtp_use_tls)
+    msg["From"] = sender
     msg["To"] = to
     msg["Subject"] = subject
-    msg["Reply-To"] = settings.smtp_sender
+    msg["Reply-To"] = sender
     msg["Date"] = formatdate(localtime=True)
-    msg["Message-ID"] = make_msgid(domain=settings.smtp_sender.rpartition("@")[2])
+    msg["Message-ID"] = make_msgid(domain=sender.rpartition("@")[2])
     msg.set_content(body)
     msg.add_alternative(_html_from_text(body), subtype="html")
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
-        if settings.smtp_use_tls:
+    with smtplib.SMTP(host, port, timeout=15) as server:
+        if use_tls:
             server.starttls()
-        server.login(settings.smtp_user, settings.smtp_password)
+        server.login(username, password)
         server.send_message(msg)
 
 
@@ -121,7 +127,8 @@ class EmailDeliveryError(Exception):
 
 
 async def send_email(
-    to: str, subject: str, body: str, attachments: list[str] | None = None
+    to: str, subject: str, body: str, attachments: list[str] | None = None,
+    smtp_config: dict | None = None,
 ) -> bool:
     """Send an email. Returns True only if a real provider accepted it.
 
@@ -140,9 +147,9 @@ async def send_email(
 
     # SMTP first: it delivers to any recipient without a verified domain (Gmail
     # App Password), unlike Resend's shared test sender.
-    if settings.smtp_active:
+    if smtp_config or settings.smtp_active:
         try:
-            await asyncio.to_thread(_send_smtp_sync, to, subject, body)
+            await asyncio.to_thread(_send_smtp_sync, to, subject, body, smtp_config)
             logger.info("Email sent via SMTP to=%s subject=%s", to, subject)
             return True
         except Exception as exc:
@@ -155,7 +162,7 @@ async def send_email(
                 "from": settings.email_from,
                 "to": [to],
                 "subject": subject,
-                "html": f"<p>{body}</p>",
+                "html": _html_from_text(body),
             }
             result = await asyncio.to_thread(_send_sync, params)
             logger.info("Email sent to=%s subject=%s id=%s", to, subject, result.get("id", "?"))

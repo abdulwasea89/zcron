@@ -94,18 +94,9 @@ async def register_owner_start(session: AsyncSession, data: OwnerRegisterStart) 
 
     user = User(
         email=data.email.lower(),
-        full_name=data.full_name,
+        full_name=data.email.split("@", 1)[0],
         hashed_password=hash_password(data.password),
         email_verified=False,
-        cnic=data.cnic,
-        phone=data.phone,
-        occupation=data.occupation,
-        education=data.education,
-        address=data.address,
-        date_of_birth=data.date_of_birth,
-        gender=data.gender,
-        city=data.city,
-        emergency_contact=data.emergency_contact,
     )
     session.add(user)
     await session.flush()

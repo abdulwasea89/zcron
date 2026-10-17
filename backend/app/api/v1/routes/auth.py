@@ -176,8 +176,12 @@ async def register_owner(data: OwnerRegisterStart, session: AsyncSession = Depen
 
 @router.post("/verify-email", response_model=Message)
 async def verify_email(data: EmailVerifyRequest, session: AsyncSession = Depends(get_session)):
-    await auth_service.verify_email(session, data.email, data.code)
-    return Message(message="Email verified.")
+    user = await auth_service.verify_email(session, data.email, data.code)
+    from app.services.organizations_service import start_owner_onboarding
+
+    org, access, refresh = await start_owner_onboarding(session, user)
+    return {"message": "Email verified.", "access_token": access,
+            "refresh_token": refresh, "organization_id": org.id}
 
 
 @router.post("/resend-code", response_model=Message)

@@ -40,8 +40,11 @@ export interface OrganizationOut {
   /** Venue vertical: gym | office | academy (defaults to "gym"). */
   industry: string;
   default_currency: string;
+  country: string;
   timezone: string;
   created_at: string;
+  /** False until required owner details and first Stripe subscription checkout are verified. */
+  onboarding_complete: boolean;
 }
 
 export interface SetupChecklist {
@@ -372,6 +375,7 @@ export interface PaymentOut {
   plan_id: string | null;
   kind: string;
   method: string;
+  stripe_payment_method_type?: string | null;
   status: string;
   amount: number;
   tax_amount: number;
@@ -826,6 +830,7 @@ export interface InboxMessage {
   body: string;
   channel: string;
   delivery_status: string | null;
+  delivery_error: string | null;
   created_at: string;
 }
 

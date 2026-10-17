@@ -60,7 +60,30 @@ async def init_db() -> None:
             await conn.run_sync(_upgrade_sqlite_plan_variants_schema)
             await conn.run_sync(_upgrade_sqlite_promotions_schema)
             await conn.run_sync(_upgrade_sqlite_freeze_schema)
+            await conn.run_sync(_upgrade_sqlite_owner_onboarding_schema)
+            await conn.run_sync(_upgrade_sqlite_credit_schema)
+            await conn.run_sync(_upgrade_sqlite_membership_change_vault_schema)
             await conn.run_sync(_upgrade_sqlite_attendance_card_schema)
+            await conn.run_sync(_upgrade_sqlite_inbox_delivery_schema)
+            await conn.run_sync(_upgrade_sqlite_payment_method_schema)
+            await conn.run_sync(_upgrade_sqlite_recurring_billing_schema)
+
+
+def _upgrade_sqlite_owner_onboarding_schema(connection) -> None:
+    """Keep existing local SQLite workspaces compatible with owner onboarding."""
+    from sqlalchemy import inspect
+
+    columns = {column["name"] for column in inspect(connection).get_columns("organizations")}
+    additions = {
+        "onboarding_complete": "BOOLEAN NOT NULL DEFAULT 1",
+        "stripe_onboarding_session_id": "VARCHAR",
+        "stripe_onboarding_attempt": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for name, definition in additions.items():
+        if name not in columns:
+            connection.exec_driver_sql(
+                f'ALTER TABLE organizations ADD COLUMN "{name}" {definition}'
+            )
 
 
 def _upgrade_sqlite_promotions_schema(connection) -> None:
@@ -182,6 +205,29 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+def _upgrade_sqlite_credit_schema(connection) -> None:
+    from sqlalchemy import inspect
+    inspector = inspect(connection)
+    for table, fields in {
+        "subscriptions": {"prepaid_value_minor": "INTEGER", "prepaid_value_at": "DATETIME"},
+        "payments": {"vault_credited_minor": "INTEGER NOT NULL DEFAULT 0"},
+    }.items():
+        existing = {c["name"] for c in inspector.get_columns(table)}
+        for name, kind in fields.items():
+            if name not in existing:
+                connection.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {kind}')
+
+
+def _upgrade_sqlite_membership_change_vault_schema(connection) -> None:
+    from sqlalchemy import inspect
+    if "membership_change_requests" not in inspect(connection).get_table_names():
+        return
+    columns = {c["name"] for c in inspect(connection).get_columns("membership_change_requests")}
+    for name, kind in {"vault_credit_minor": "INTEGER NOT NULL DEFAULT 0", "prepaid_before_minor": "INTEGER"}.items():
+        if name not in columns:
+            connection.exec_driver_sql(f'ALTER TABLE membership_change_requests ADD COLUMN "{name}" {kind}')
+
+
 def _upgrade_sqlite_attendance_card_schema(connection) -> None:
     """Add local-dev RFID assignment support to existing SQLite workspaces."""
     from sqlalchemy import inspect
@@ -202,3 +248,65 @@ def _upgrade_sqlite_attendance_card_schema(connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_org_member_attendance_card_uid "
         "ON organization_members (organization_id, attendance_card_uid)"
     )
+
+
+def _upgrade_sqlite_inbox_delivery_schema(connection) -> None:
+    """Add delivery error details to existing local inbox databases."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    if "inbox_messages" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("inbox_messages")}
+    if "delivery_error" not in columns:
+        connection.exec_driver_sql("ALTER TABLE inbox_messages ADD COLUMN delivery_error VARCHAR")
+        connection.exec_driver_sql(
+            "UPDATE inbox_messages SET delivery_status = 'unknown' "
+            "WHERE direction = 'outbound' AND delivery_status = 'sent'"
+        )
+
+
+def _upgrade_sqlite_payment_method_schema(connection) -> None:
+    """Add actual Stripe method labels to existing local payment ledgers."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    if "payments" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("payments")}
+    if "stripe_payment_method_type" not in columns:
+        connection.exec_driver_sql(
+            'ALTER TABLE payments ADD COLUMN "stripe_payment_method_type" VARCHAR(48)'
+        )
+
+
+def _upgrade_sqlite_recurring_billing_schema(connection) -> None:
+    """Add web recurring billing consent and saved Stripe references locally."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    additions = {
+        "organization_members": {
+            "stripe_customer_id": "VARCHAR",
+            "stripe_default_payment_method_id": "VARCHAR",
+            "stripe_default_payment_method_type": "VARCHAR(48)",
+            "recurring_consent_at": "DATETIME",
+            "stripe_recurring_setup_intent_id": "VARCHAR",
+        },
+        "subscriptions": {
+            "auto_renew": "BOOLEAN NOT NULL DEFAULT 0",
+            "renewal_attempt_count": "INTEGER NOT NULL DEFAULT 0",
+            "next_renewal_attempt_at": "DATETIME",
+        },
+        "payments": {
+            "recurring_consent": "BOOLEAN NOT NULL DEFAULT 0",
+            "stripe_payment_method_id": "VARCHAR",
+        },
+    }
+    for table, columns in additions.items():
+        existing = {column["name"] for column in inspector.get_columns(table)}
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.exec_driver_sql(
+                    f'ALTER TABLE "{table}" ADD COLUMN "{name}" {definition}'
+                )

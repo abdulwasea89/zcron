@@ -30,6 +30,7 @@ class MessageOut(BaseModel):
     body: str
     channel: str
     delivery_status: str | None = None
+    delivery_error: str | None = None
     created_at: datetime
 
 

@@ -4,25 +4,9 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthShell } from "@/components/AuthShell";
-import { Alert, Button, Input, Select } from "@/components/ui";
-import { accountSchema, personalSchema, collectErrors } from "@/lib/validation/register";
+import { Alert, Button, Input } from "@/components/ui";
+import { accountSchema, collectErrors } from "@/lib/validation/register";
 import { checkPwned } from "@/lib/hibp";
-import { INDUSTRY_LIST, getIndustry, pluralize, type IndustryKey } from "@/lib/industries";
-
-function capitalize(word: string): string {
-  return word.charAt(0).toUpperCase() + word.slice(1);
-}
-
-// Tier caps are expressed in the vertical's own member noun ("members" for
-// gyms, "seat-holders" for office space, "students" for academies). The three
-// tiers themselves are shared across the platform.
-function tiersFor(memberNoun: string) {
-  return [
-    { id: "starter", name: "Starter", price: "$29", cap: `Up to 25 ${pluralize(memberNoun)}` },
-    { id: "pro", name: "Pro", price: "$79", cap: `Up to 100 ${pluralize(memberNoun)}` },
-    { id: "enterprise", name: "Enterprise", price: "Custom", cap: "Unlimited" },
-  ];
-}
 
 function cx(...parts: (string | false | undefined | null)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -67,17 +51,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [cnic, setCnic] = useState("");
-  const [occupation, setOccupation] = useState("");
-  const [education, setEducation] = useState("");
-  const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
-  const [dateOfBirth, setDateOfBirth] = useState("");
-  const [gender, setGender] = useState("");
-  const [emergencyContact, setEmergencyContact] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -85,15 +59,8 @@ export default function RegisterPage() {
   const [checkingBreach, setCheckingBreach] = useState(false);
   const breachTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [code, setCode] = useState("");
-  const [industry, setIndustry] = useState<IndustryKey>("gym");
-  const [venueName, setVenueName] = useState("");
-  const [currency, setCurrency] = useState("USD");
-  const [tier, setTier] = useState("pro");
-
-  // Industry metadata drives the venue-specific copy on the final step.
-  const ind = getIndustry(industry);
-  const stepLabels = ["Account", "About you", "Verify", `Your ${ind.shortNoun}`];
-  const TIERS = tiersFor(ind.memberNoun);
+  const [notice, setNotice] = useState("");
+  const stepLabels = ["Account", "Verify"];
 
 
   const firstInputRef = useRef<HTMLInputElement>(null);
@@ -158,15 +125,7 @@ export default function RegisterPage() {
   }, [password]);
 
   function validateAccount(): boolean {
-    const { success, errors } = collectErrors(accountSchema, { fullName, email, password, confirm });
-    setFieldErrors(errors);
-    return success;
-  }
-
-  function validatePersonal(): boolean {
-    const { success, errors } = collectErrors(personalSchema, {
-      phone, cnic, dateOfBirth, gender, occupation, education, address, city, emergencyContact,
-    });
+    const { success, errors } = collectErrors(accountSchema, { email, password, confirm });
     setFieldErrors(errors);
     return success;
   }
@@ -177,7 +136,7 @@ export default function RegisterPage() {
     setStep((s) => Math.max(1, s - 1));
   }
 
-  function submitAccount(e: React.FormEvent) {
+  async function submitAccount(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!validateAccount()) return;
@@ -186,32 +145,10 @@ export default function RegisterPage() {
       return;
     }
     setFieldErrors({});
-    setStep(2);
-  }
-
-  async function submitPersonal(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    if (!validatePersonal()) return;
     setLoading(true);
     try {
-      await post("/api/auth/register", {
-        full_name: fullName,
-        email,
-        phone,
-        cnic,
-        occupation,
-        education,
-        address,
-        city,
-        date_of_birth: dateOfBirth,
-        gender,
-        emergency_contact: emergencyContact,
-        password,
-        confirm_password: confirm,
-      });
-      setFieldErrors({});
-      setStep(3);
+      await post("/api/auth/register", { email, password, confirm_password: confirm });
+      setStep(2);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -227,26 +164,6 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await post("/api/auth/verify-email", { email, code });
-      setStep(4);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function submitGym(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setFieldErrors({});
-    if (!venueName.trim()) { setFieldErrors({ venueName: "Required" }); return; }
-    setLoading(true);
-    try {
-      await post("/api/auth/register-gym", {
-        owner_email: email,
-        details: { name: venueName, default_currency: currency, industry },
-        tier,
-      });
       router.push("/app");
       router.refresh();
     } catch (err) {
@@ -256,17 +173,24 @@ export default function RegisterPage() {
     }
   }
 
-  const titles = ["Create your account", "Tell us about you", "Check your inbox", `Set up your ${ind.shortNoun}`];
+  async function resendCode() {
+    setError(""); setNotice(""); setLoading(true);
+    try {
+      await post("/api/auth/resend-code", { email });
+      setNotice("A new verification code was sent.");
+    } catch (err) { setError((err as Error).message); }
+    finally { setLoading(false); }
+  }
+
+  const titles = ["Create your account", "Check your inbox"];
   const descriptions = [
-    "Start with your name, email, and a strong password.",
-    "A few details we need to set up your owner profile.",
+    "Start with your email and a strong password. You’ll finish workspace setup after verifying your email.",
     `We sent a 6-digit code to ${email}.`,
-    `Name your ${ind.shortNoun}, pick your currency, and choose a plan.`,
   ];
 
   return (
     <AuthShell
-      wide={step === 2}
+      wide={false}
       eyebrow={`Step ${step} of ${stepLabels.length}`}
       title={titles[step - 1]}
       description={descriptions[step - 1]}
@@ -287,15 +211,6 @@ export default function RegisterPage() {
           <form onSubmit={submitAccount} className="space-y-4">
             <Input
               ref={firstInputRef}
-              label="Full name"
-              required
-              value={fullName}
-              onChange={(e) => { setFullName(e.target.value); clearField("fullName"); }}
-              placeholder="Sarah Chen"
-              error={fieldErrors.fullName}
-            />
-
-            <Input
               label="Work email"
               type="email"
               autoComplete="email"
@@ -370,118 +285,14 @@ export default function RegisterPage() {
               error={fieldErrors.confirm}
             />
 
-            <Button type="submit" className="w-full">Continue</Button>
+            <Button type="submit" loading={loading} className="w-full">Continue</Button>
           </form>
         )}
 
-        {/* Step 2 — About you */}
+        {notice && <p role="status" className="mb-4 text-sm text-[var(--success)]">{notice}</p>}
+
+        {/* Step 2 — Verify email */}
         {step === 2 && (
-          <form onSubmit={submitPersonal} className="space-y-6">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input
-                ref={firstInputRef}
-                label="Phone number"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                required
-                value={phone}
-                onChange={(e) => { setPhone(e.target.value); clearField("phone"); }}
-                placeholder="+1 (555) 123-4567"
-                error={fieldErrors.phone}
-              />
-
-              <Input
-                label="CNIC / National ID"
-                inputMode="numeric"
-                maxLength={15}
-                required
-                value={cnic}
-                onChange={(e) => { setCnic(e.target.value.replace(/[^\d-]/g, "")); clearField("cnic"); }}
-                placeholder="42101-1234567-8"
-                error={fieldErrors.cnic}
-              />
-
-              <Input
-                label="Date of birth"
-                type="date"
-                required
-                max={new Date().toISOString().slice(0, 10)}
-                value={dateOfBirth}
-                onChange={(e) => { setDateOfBirth(e.target.value); clearField("dateOfBirth"); }}
-                error={fieldErrors.dateOfBirth}
-              />
-
-              <Select
-                label="Gender"
-                required
-                value={gender}
-                onChange={(e) => { setGender(e.target.value); clearField("gender"); }}
-                error={fieldErrors.gender}
-              >
-                <option value="" disabled>Select…</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-              </Select>
-
-              <Input
-                label="Occupation"
-                required
-                value={occupation}
-                onChange={(e) => { setOccupation(e.target.value); clearField("occupation"); }}
-                placeholder="Owner"
-                error={fieldErrors.occupation}
-              />
-
-              <Input
-                label="Education"
-                required
-                value={education}
-                onChange={(e) => { setEducation(e.target.value); clearField("education"); }}
-                placeholder="Bachelor's degree"
-                error={fieldErrors.education}
-              />
-
-              <div className="sm:col-span-2">
-                <Input
-                  label="Address"
-                  required
-                  value={address}
-                  onChange={(e) => { setAddress(e.target.value); clearField("address"); }}
-                  placeholder="123 Main St"
-                  error={fieldErrors.address}
-                />
-              </div>
-
-              <Input
-                label="City"
-                required
-                value={city}
-                onChange={(e) => { setCity(e.target.value); clearField("city"); }}
-                placeholder="Karachi"
-                error={fieldErrors.city}
-              />
-
-              <Input
-                label="Emergency contact"
-                required
-                value={emergencyContact}
-                onChange={(e) => { setEmergencyContact(e.target.value); clearField("emergencyContact"); }}
-                placeholder="+1 (555) 987-6543"
-                error={fieldErrors.emergencyContact}
-              />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Button type="button" variant="secondary" onClick={goBack}>Back</Button>
-              <Button type="submit" loading={loading} className="flex-1">Create account</Button>
-            </div>
-          </form>
-        )}
-
-        {/* Step 3 — Verify email */}
-        {step === 3 && (
           <form onSubmit={submitVerify} className="space-y-5">
             <div className="rounded-xl bg-[var(--primary-light)] px-4 py-3.5 text-sm leading-relaxed text-[var(--primary)]">
               Enter the 6-digit code sent to <span className="font-semibold">{email}</span>.
@@ -500,104 +311,14 @@ export default function RegisterPage() {
               error={fieldErrors.code}
             />
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Button type="button" variant="secondary" onClick={goBack}>Back</Button>
               <Button type="submit" loading={loading} className="flex-1">Verify email</Button>
+              <Button type="button" variant="ghost" disabled={loading} onClick={resendCode}>Resend code</Button>
             </div>
           </form>
         )}
 
-        {/* Step 4 — Venue setup */}
-        {step === 4 && (
-          <form onSubmit={submitGym} className="space-y-5">
-            <div>
-              <span className="mb-2 block text-[12px] font-medium text-[var(--foreground)]">What kind of place is this?</span>
-              <div className="grid gap-2.5">
-                {INDUSTRY_LIST.map((o) => {
-                  const selected = industry === o.key;
-                  return (
-                    <button
-                      type="button"
-                      key={o.key}
-                      onClick={() => setIndustry(o.key)}
-                      className={`tier-option flex items-center justify-between rounded-xl border px-4 py-3 text-left transition duration-200 ${
-                        selected
-                          ? "border-[var(--primary)] bg-[var(--primary-light)] ring-2 ring-[var(--ring)]"
-                          : "border-[var(--border)] hover:bg-foreground/5"
-                      }`}
-                    >
-                      <div>
-                        <div className="text-sm font-semibold text-[var(--foreground)]">{o.label}</div>
-                        <div className="mt-0.5 text-xs text-[var(--muted)]">{o.tagline}</div>
-                      </div>
-                      <span
-                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                          selected ? "border-[var(--primary)] bg-[var(--primary)] text-white" : "border-[var(--border)]"
-                        }`}
-                        aria-hidden="true"
-                      >
-                        {selected && (
-                          <svg className="h-3 w-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="5 10.5 8.5 14 15 6.5" />
-                          </svg>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <Input
-              ref={firstInputRef}
-              label={`${capitalize(ind.shortNoun)} name`}
-              required
-              value={venueName}
-              onChange={(e) => { setVenueName(e.target.value); clearField("venueName"); }}
-              placeholder={ind.sampleName}
-              error={fieldErrors.venueName}
-            />
-
-            <Select label="Default currency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              <option value="USD">USD — US Dollar</option>
-              <option value="EUR">EUR — Euro</option>
-              <option value="GBP">GBP — British Pound</option>
-              <option value="PKR">PKR — Pakistani Rupee</option>
-            </Select>
-
-            <div>
-              <span className="mb-2 block text-[12px] font-medium text-[var(--foreground)]">Plan tier</span>
-              <div className="grid gap-2.5">
-                {TIERS.map((t) => (
-                  <button
-                    type="button"
-                    key={t.id}
-                    onClick={() => setTier(t.id)}
-                    className={`tier-option flex items-center justify-between rounded-xl border px-4 py-3.5 text-left transition duration-200 ${
-                      tier === t.id
-                        ? "border-[var(--primary)] bg-[var(--primary-light)] ring-2 ring-[var(--ring)]"
-                        : "border-[var(--border)] hover:bg-foreground/5"
-                    }`}
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-[var(--foreground)]">{t.name}</div>
-                      <div className="mt-0.5 text-xs text-[var(--muted)]">{t.cap}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-[var(--foreground)]">{t.price}</div>
-                      {t.id !== "enterprise" && <div className="text-[10px] text-[var(--muted)]">per month</div>}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Button type="button" variant="secondary" onClick={goBack}>Back</Button>
-              <Button type="submit" loading={loading} className="flex-1">Create {ind.shortNoun}</Button>
-            </div>
-          </form>
-        )}
         </div>
       </div>
     </AuthShell>

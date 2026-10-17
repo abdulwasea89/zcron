@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import json
+
+from fastapi import APIRouter, Depends, Header
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.api.deps import get_session, require_capability, require_writable_org
 from app.core.permissions import Capability
-from app.core.tenancy import TenantContext
+from app.core.tenancy import IDEMPOTENCY_HEADER, TenantContext
 from app.core.constants import PaymentMethod
 from app.models.membership import OrganizationMember
 from app.models.payment import Payment
@@ -25,6 +27,7 @@ from app.schemas.cash import (
     ReconciliationRequest,
 )
 from app.services import cash_service as cash
+from app.services import idempotency_service
 from app.services.pricing_service import quote_member_payment
 from app.schemas.promotions import PriceQuoteOut
 from fastapi import HTTPException
@@ -78,17 +81,32 @@ async def search_cash_members(
 @router.post("/log", response_model=CashPaymentOut, status_code=201, dependencies=[Depends(require_writable_org)])
 async def log_cash_payment(
     data: CashPaymentLog,
+    idempotency_key: str = Header(default="", alias=IDEMPOTENCY_HEADER),
     ctx: TenantContext = Depends(require_capability(Capability.LOG_CASH_PAYMENT)),
     session: AsyncSession = Depends(get_session),
 ):
+    claim = await idempotency_service.claim(
+        session,
+        key=idempotency_key,
+        endpoint="cash.log",
+        body=data.model_dump(mode="json"),
+        organization_id=ctx.org_id,
+        user_id=ctx.user_id,
+    )
+    if not claim.claimed:
+        return CashPaymentOut.model_validate(json.loads(claim.cached_response or "{}"))
     payment, member, pdf_url = await cash.log_cash_payment(
         session, org_id=ctx.org_id, data=data, staff_user_id=ctx.user_id
     )
-    return CashPaymentOut(
+    output = CashPaymentOut(
         payment_id=payment.id, member_id=member.id, amount=payment.amount,
         method=payment.method.value, member_status=member.member_status.value,
         receipt_pdf_url=pdf_url,
     )
+    await idempotency_service.complete(
+        session, claim.record, code=201, body=output.model_dump_json()
+    )
+    return output
 
 
 @router.post("/quote", response_model=PriceQuoteOut)

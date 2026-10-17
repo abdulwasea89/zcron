@@ -76,6 +76,7 @@ class PublicPlanOut(BaseModel):
     name: str
     public_description: str | None
     price: float
+    renewal_total: float
     joining_fee: float = 0.0
     currency: str
     billing_type: str
@@ -84,6 +85,7 @@ class PublicPlanOut(BaseModel):
     family_capacity: int | None = None
     cycle_length: int | None = None
     cycle_unit: str | None = None
+    auto_renew: bool = True
     pack_size: int | None = None
     validity_days: int | None = None
     included_credits: int | None = None
@@ -106,6 +108,24 @@ class SignupQuote(BaseModel):
     email: EmailStr
     plan_id: str
     promo_code: str | None = None
+
+
+class WebSignupPaymentIntent(BaseModel):
+    plan_id: str
+    promo_code: str | None = Field(default=None, max_length=64)
+    auto_renew: bool = False
+
+
+class WebSignupPaymentConfirm(BaseModel):
+    payment_intent_id: str = Field(min_length=8, max_length=128)
+
+
+class RecurringSetupConfirm(BaseModel):
+    setup_intent_id: str = Field(min_length=8, max_length=128)
+
+
+class RecurringSetupConsent(BaseModel):
+    consent: bool
 
 
 class ProfileComplete(BaseModel):

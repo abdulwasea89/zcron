@@ -35,7 +35,11 @@ def construct_event(payload: bytes, sig_header: str | None, *, secret: str) -> d
     integrations, which all gate on ``settings.stripe_live``.
     """
 
-    if settings.stripe_live and secret and _stripe is not None:
+    if settings.stripe_live:
+        if not secret:
+            raise WebhookError("Stripe webhook signing secret is not configured.")
+        if _stripe is None:
+            raise WebhookError("Stripe SDK is unavailable.")
         try:
             event = _stripe.Webhook.construct_event(payload, sig_header or "", secret)
         except Exception as exc:  # signature/timestamp/JSON failure

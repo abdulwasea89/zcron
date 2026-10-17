@@ -16,6 +16,7 @@ from app.integrations.email import send_email_safe as send_email
 from app.integrations.push import send_push
 from app.models.membership import OrganizationMember
 from app.models.membership_reminder import MembershipReminder
+from app.models.plan import MembershipPlan
 from app.models.subscription import Subscription
 from app.models.user import User
 
@@ -144,15 +145,42 @@ async def expire_due_memberships(session: AsyncSession, *, org_id: str) -> int:
     expired = 0
     for sub in subs:
         if sub.current_period_end and sub.current_period_end < now:
-            sub.status = SubscriptionStatus.EXPIRED
-            session.add(sub)
+            if sub.status == SubscriptionStatus.GRACE and sub.grace_until and sub.grace_until > now:
+                continue
             member = await session.get(OrganizationMember, sub.member_id)
+            if sub.cancel_at_period_end:
+                from app.services.member_vault_service import credit_unused
+                await credit_unused(session, sub, reference=f"period-end-cancel:{sub.id}",
+                                    description="Unused value after scheduled membership cancellation")
+                sub.status = SubscriptionStatus.CANCELLED
+                sub.cancelled_at = now
+                sub.cancel_at_period_end = False
+            elif sub.scheduled_plan_id:
+                target = await session.get(MembershipPlan, sub.scheduled_plan_id)
+                if target is not None and target.organization_id == org_id and target.status.value == "published":
+                    sub.plan_id = target.id
+                    sub.price_snapshot = target.price
+                    sub.currency = target.currency
+                    sub.started_at = now
+                    from app.services.plan_entitlements import subscription_terms
+                    sub.current_period_end, sub.classes_remaining = subscription_terms(target, at=now)
+                    sub.credits_allowance = sub.classes_remaining
+                    sub.prepaid_value_minor = None
+                    sub.prepaid_value_at = None
+                    sub.scheduled_plan_id = None
+                    sub.scheduled_plan_at = None
+                    session.add(sub)
+                    continue
+                sub.status = SubscriptionStatus.EXPIRED
+            else:
+                sub.status = SubscriptionStatus.EXPIRED
+            session.add(sub)
             if member is not None and member.member_status in {MemberStatus.ACTIVE, MemberStatus.GRACE}:
-                member.member_status = MemberStatus.EXPIRED
+                member.member_status = MemberStatus.CANCELLED if sub.status == SubscriptionStatus.CANCELLED else MemberStatus.EXPIRED
                 session.add(member)
                 from app.services.family_service import sync_family_status
 
-                await sync_family_status(session, org_id, member.id, MemberStatus.EXPIRED)
+                await sync_family_status(session, org_id, member.id, member.member_status)
             expired += 1
     return expired
 

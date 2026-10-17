@@ -19,13 +19,23 @@ async function request<T>(method: string, path: string, body?: unknown, headers?
     headers: Object.keys(h).length > 0 ? h : undefined,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(res.headers.get("X-Acron-Offline") === "1" ? "acron:offline-data" : "acron:fresh-data"));
+  }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
-    const detail =
-      data && typeof data === "object" && "detail" in data
-        ? String((data as { detail: unknown }).detail)
-        : `Request failed (${res.status})`;
+    const raw = data && typeof data === "object" && "detail" in data
+      ? (data as { detail: unknown }).detail
+      : null;
+    const detail = Array.isArray(raw)
+      ? raw.map((item) => {
+          if (!item || typeof item !== "object") return String(item);
+          const issue = item as { loc?: unknown[]; msg?: unknown };
+          const field = issue.loc?.filter((part) => part !== "body").join(" → ");
+          return [field, issue.msg].filter(Boolean).join(": ");
+        }).filter(Boolean).join("; ") || `Request failed (${res.status})`
+      : typeof raw === "string" ? raw : `Request failed (${res.status})`;
     throw new ApiError(res.status, detail);
   }
   return data as T;

@@ -38,6 +38,9 @@ class Payment(UUIDModel, TimestampModel, table=True):
     # Card via Stripe (Connect for member fees)
     stripe_payment_intent_id: str | None = Field(default=None, index=True)
     stripe_charge_id: str | None = None
+    stripe_payment_method_type: str | None = None
+    stripe_payment_method_id: str | None = None
+    recurring_consent: bool = False
 
     # Cash / offline
     logged_by: str | None = Field(default=None, foreign_key="users.id")
@@ -57,3 +60,5 @@ class Payment(UUIDModel, TimestampModel, table=True):
     invoice_id: str | None = Field(default=None, foreign_key="invoices.id", index=True)
 
     paid_at: datetime | None = None
+
+    vault_credited_minor: int = 0  # already converted to credit; cannot also be refunded

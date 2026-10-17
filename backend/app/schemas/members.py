@@ -141,6 +141,72 @@ class FreezeRequestQueueOut(FreezeRequestOut):
     member_email: str
 
 
+class MembershipChangeCreate(BaseModel):
+    request_type: str
+    target_plan_id: str | None = None
+    reason: str = Field(min_length=3, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def clean_change_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Please explain the membership change request.")
+        return value
+
+
+class MembershipChangeDecision(BaseModel):
+    approve: bool = False
+    offer_pause: bool = False
+    offer_type: str | None = None
+    offer_plan_id: str | None = None
+    offer_discount_percent: float | None = Field(default=None, ge=1, le=100)
+    offer_discount_months: int | None = Field(default=None, ge=1, le=12)
+    effective_timing: str = "now"  # now | period_end
+    note: str | None = Field(default=None, max_length=500)
+
+
+class MembershipChangeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    member_id: str
+    subscription_id: str
+    request_type: str
+    target_plan_id: str | None
+    reason: str
+    status: str
+    save_offer: str | None
+    offer_type: str | None = None
+    offer_plan_id: str | None = None
+    offer_discount_percent: float | None = None
+    amount_due: float = 0.0
+    effective_at: datetime | None = None
+    created_at: datetime
+    reviewed_at: datetime | None
+    decision_note: str | None
+
+
+class MembershipChangePaymentOut(BaseModel):
+    payment_required: bool
+    payment_id: str | None = None
+    payment_intent_id: str | None = None
+    client_secret: str | None = None
+    amount: float = 0.0
+    currency: str = "USD"
+
+
+class MembershipChangePaymentConfirm(BaseModel):
+    payment_intent_id: str
+
+
+class MembershipChangeQueueOut(MembershipChangeOut):
+    member_name: str
+    member_email: str
+    current_plan_name: str
+    target_plan_name: str | None
+
+
 class RoleChange(BaseModel):
     role: str
 

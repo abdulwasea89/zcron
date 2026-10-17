@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { ListToolbar } from "@/components/ListToolbar";
 import {
@@ -18,11 +18,10 @@ import { api, ApiError } from "@/lib/api";
 import { titleCase } from "@/lib/format";
 import type { InboxConversation, InboxStats, InboxThread } from "@/lib/types";
 
-/* ─── Shared team inbox (#20) ───
+/* ─── Shared team inbox (#19) ───
    One place for every member conversation across channels. Left: the queue with
-   filters. Right: the thread + reply, with an AI draft and assign-to-me. No
-   channel provider is wired yet — inbound arrives via the ingest hook and
-   outbound is stored/marked sent. */
+   filters. Right: the thread + reply, with an AI draft, assignment, and
+   delivery state across configured messaging providers. */
 
 type Filter = "open" | "unassigned" | "mine" | "resolved";
 
@@ -95,6 +94,12 @@ export default function InboxPage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [logOpen, setLogOpen] = useState(false);
+  const [logChannel, setLogChannel] = useState<"phone" | "walk_in">("phone");
+  const [logName, setLogName] = useState("");
+  const [logHandle, setLogHandle] = useState("");
+  const [logBody, setLogBody] = useState("");
+  const [logBusy, setLogBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadPanelRef = useRef<HTMLElement>(null);
   const queueRef = useRef<HTMLElement>(null);
@@ -231,6 +236,25 @@ export default function InboxPage() {
     }
   }
 
+  async function createInteractionLog(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLogBusy(true); setError("");
+    try {
+      const created = await api.post<InboxThread>("/inbox/conversations/ingest", {
+        channel: logChannel,
+        handle: logHandle.trim() || `walk-in-${crypto.randomUUID()}`,
+        contact_name: logName.trim(),
+        body: logBody.trim(),
+      });
+      setLogOpen(false); setLogName(""); setLogHandle(""); setLogBody("");
+      setFilter("open"); setQuery("");
+      await openThread(created.id);
+      void loadList(); void loadStats();
+    } catch (cause) {
+      setError((cause as ApiError).message || "Could not save the interaction.");
+    } finally { setLogBusy(false); }
+  }
+
   const tabs = useMemo(
     () => [
       { value: "open" as Filter, label: "Open", count: stats?.open },
@@ -303,9 +327,23 @@ export default function InboxPage() {
         subtitle="Every member conversation, one shared queue"
         action={<div className="flex items-center gap-3 pt-1">
           {Boolean(stats?.unread) && <span className="text-xs font-medium text-foreground">{stats?.unread} unread</span>}
+          <Button variant="secondary" onClick={() => setLogOpen(true)}>Log interaction</Button>
           <LiveIndicator className="text-xs" />
         </div>}
       />
+
+      {logOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !logBusy) setLogOpen(false); }}>
+        <form onSubmit={(event) => void createInteractionLog(event)} role="dialog" aria-modal="true" aria-labelledby="interaction-log-title" className="w-full max-w-lg rounded-xl border border-border bg-surface p-5 shadow-2xl">
+          <div className="flex items-start justify-between gap-4"><div><h2 id="interaction-log-title" className="text-lg font-semibold text-foreground">Log an interaction</h2><p className="mt-1 text-sm text-muted-foreground">Record a phone call or an in-person visit in the shared inbox.</p></div><button type="button" disabled={logBusy} aria-label="Close" onClick={() => setLogOpen(false)} className="rounded-md px-2 py-1 text-muted-foreground hover:bg-foreground/5">×</button></div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs text-muted-foreground">Interaction type<select value={logChannel} onChange={(event) => setLogChannel(event.target.value as "phone" | "walk_in")} className="mt-1.5 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"><option value="phone">Phone call</option><option value="walk_in">Walk-in visit</option></select></label>
+            <label className="text-xs text-muted-foreground">Contact name<input required maxLength={120} value={logName} onChange={(event) => setLogName(event.target.value)} className="mt-1.5 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" /></label>
+            <label className="text-xs text-muted-foreground sm:col-span-2">{logChannel === "phone" ? "Phone number" : "Email or phone (optional)"}<input required={logChannel === "phone"} maxLength={254} value={logHandle} onChange={(event) => setLogHandle(event.target.value)} placeholder={logChannel === "walk_in" ? "Leave blank to label as walk-in" : "+1 555 0100"} className="mt-1.5 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" /></label>
+            <label className="text-xs text-muted-foreground sm:col-span-2">Summary<textarea required maxLength={4000} rows={4} value={logBody} onChange={(event) => setLogBody(event.target.value)} placeholder="What did you discuss or resolve?" className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+          </div>
+          <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="secondary" disabled={logBusy} onClick={() => setLogOpen(false)}>Cancel</Button><Button type="submit" disabled={logBusy} loading={logBusy}>Save to inbox</Button></div>
+        </form>
+      </div>}
 
       {error && (
         <div className="mb-3">
@@ -476,9 +514,21 @@ export default function InboxPage() {
                         }`}
                       >
                         <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                        <p className={`mt-1 text-right text-[11px] ${out ? "text-brand-foreground/80" : "text-muted-foreground"}`}>
-                          {clockTime(m.created_at)}
-                        </p>
+                        <div className={`mt-1 flex items-center justify-end gap-2 text-[11px] ${out ? "text-brand-foreground/80" : "text-muted-foreground"}`}>
+                          <span>{clockTime(m.created_at)}</span>
+                          {out && <span>{m.delivery_status === "delivered" ? "Delivered" : m.delivery_status === "sent" ? "Sent" : m.delivery_status === "sending" ? "Sending…" : m.delivery_status === "failed" ? "Not sent" : "Delivery unknown"}</span>}
+                        </div>
+                        {out && m.delivery_status === "failed" && (
+                          <div className="mt-2 border-t border-current/20 pt-2 text-xs">
+                            <p>{m.delivery_error || "Delivery failed. Check channel setup and try again."}</p>
+                            <button
+                              type="button"
+                              className="mt-1 font-semibold underline underline-offset-2"
+                              disabled={busy === thread.id}
+                              onClick={() => void act(thread.id, `messages/${m.id}/retry`)}
+                            >Retry delivery</button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

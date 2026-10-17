@@ -55,6 +55,13 @@ interface FreezeRequest {
   decision_note: string | null;
 }
 
+interface MembershipChangeRequest {
+  id: string; member_id: string; member_name: string; member_email: string;
+  request_type: "upgrade" | "downgrade" | "transfer" | "cancel";
+  target_plan_id: string | null; current_plan_name: string; target_plan_name: string | null;
+  reason: string; status: string; save_offer: string | null; created_at: string;
+}
+
 function roleBadge(role: string) {
   switch (role) {
     case "owner":
@@ -83,6 +90,9 @@ export default function MembersPage() {
   const [pauseRequests, setPauseRequests] = useState<FreezeRequest[]>([]);
   const [showPauseRequests, setShowPauseRequests] = useState(false);
   const [pauseDecisionBusy, setPauseDecisionBusy] = useState(false);
+  const [changeRequests, setChangeRequests] = useState<MembershipChangeRequest[]>([]);
+  const [showChangeRequests, setShowChangeRequests] = useState(false);
+  const [changeDecisionBusy, setChangeDecisionBusy] = useState(false);
   const [tab, setTab] = useState<"all" | "approvals">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState(NONE);
@@ -155,6 +165,12 @@ export default function MembersPage() {
     }
   }
 
+  async function loadChangeRequests() {
+    if (!canManage) return;
+    try { setChangeRequests(await api.get<MembershipChangeRequest[]>("/members/change-requests")); }
+    catch (e) { setError((e as ApiError).message); }
+  }
+
   useEffect(() => {
     queueMicrotask(() => void load());
     queueMicrotask(() => {
@@ -166,7 +182,7 @@ export default function MembersPage() {
   }, []);
 
   useEffect(() => {
-    if (canManage) queueMicrotask(() => void loadPauseRequests());
+    if (canManage) queueMicrotask(() => { void loadPauseRequests(); void loadChangeRequests(); });
   }, [canManage]);
 
   async function decidePauseRequest(request: FreezeRequest, approve: boolean) {
@@ -181,6 +197,19 @@ export default function MembersPage() {
     } finally {
       setPauseDecisionBusy(false);
     }
+  }
+
+  async function decideChangeRequest(request: MembershipChangeRequest, decision: "approve" | "reject" | "offer") {
+    setChangeDecisionBusy(true); setError("");
+    try {
+      await api.post(`/members/change-requests/${request.id}/decision`, {
+        approve: decision === "approve", offer_pause: decision === "offer",
+      });
+      setInviteMsg(decision === "offer" ? `Pause offered to ${request.member_name}.` :
+        `${request.request_type === "cancel" ? "Cancellation" : "Plan change"} ${decision === "approve" ? "approved" : "declined"} for ${request.member_name}.`);
+      await Promise.all([load(), loadChangeRequests()]);
+    } catch (e) { setError((e as ApiError).message); }
+    finally { setChangeDecisionBusy(false); }
   }
 
   function handleInviteResult(res: InviteResult, email: string, sentVerb: string) {
@@ -326,6 +355,9 @@ export default function MembersPage() {
         title="Members"
         subtitle="Directory & status management"
         action={<div className="flex flex-wrap gap-2">
+          {canManage && <Button variant="secondary" onClick={() => { setShowChangeRequests(true); void loadChangeRequests(); }}>
+            Plan changes{changeRequests.length > 0 ? ` · ${changeRequests.length}` : ""}
+          </Button>}
           {canManage && <Button variant="secondary" onClick={() => { setShowPauseRequests(true); void loadPauseRequests(); }}>
             Pause requests{pauseRequests.length > 0 ? ` · ${pauseRequests.length}` : ""}
           </Button>}
@@ -335,6 +367,37 @@ export default function MembersPage() {
           </Button>
         </div>}
       />
+
+      <Sheet open={showChangeRequests} onOpenChange={setShowChangeRequests}>
+        <SheetContent side="right" className="sm:max-w-[560px]">
+          <SheetHeader>
+            <SheetTitle>Membership changes</SheetTitle>
+            <SheetDescription>Review plan changes and cancellations. Offer a pause when a member asks to cancel.</SheetDescription>
+          </SheetHeader>
+          <SheetBody className="space-y-3">
+            {changeRequests.length === 0 ? <EmptyState title="No requests waiting" hint="Member plan and cancellation requests will appear here." /> :
+              changeRequests.map((request) => <article key={request.id} className="rounded-lg border border-[var(--border)] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div><h3 className="text-sm font-semibold text-foreground">{request.member_name}</h3>
+                    <p className="text-xs text-muted-foreground">{request.member_email}</p></div>
+                  <Badge tone={request.request_type === "cancel" ? "warning" : "info"}>{titleCase(request.request_type)}</Badge>
+                </div>
+                <p className="mt-3 text-sm text-foreground">{request.reason}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Current plan: {request.current_plan_name}{request.target_plan_name ? ` · Requested: ${request.target_plan_name}` : ""}
+                </p>
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <Button type="button" variant="secondary" disabled={changeDecisionBusy} onClick={() => void decideChangeRequest(request, "reject")}>Decline</Button>
+                  {request.request_type === "cancel" && <Button type="button" variant="secondary" disabled={changeDecisionBusy} onClick={() => void decideChangeRequest(request, "offer")}>Offer a pause</Button>}
+                  <Button type="button" disabled={changeDecisionBusy} onClick={() => void decideChangeRequest(request, "approve")}>
+                    {request.request_type === "cancel" ? "Cancel membership" : "Approve plan change"}
+                  </Button>
+                </div>
+              </article>)}
+          </SheetBody>
+          <SheetFooter><SheetClose asChild><Button type="button" variant="secondary">Close</Button></SheetClose></SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={showPauseRequests} onOpenChange={setShowPauseRequests}>
         <SheetContent side="right" className="sm:max-w-[520px]">

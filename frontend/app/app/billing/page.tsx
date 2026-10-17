@@ -9,15 +9,20 @@ import { api, ApiError } from "@/lib/api";
 import { money, statusTone, titleCase } from "@/lib/format";
 import type { InvoiceOut, SaasStatusOut } from "@/lib/types";
 
-const TIERS = ["starter", "pro", "enterprise"];
+type VaultOut = { currency: string; available_credit: number; has_more: boolean; transactions: { id: string; amount: number; currency: string; created: number; description: string; type: string }[] };
+type SubscriptionOut = { cancel_at_period_end: boolean; stripe_status: string | null; period_end: string | null; scheduled_tier: string | null };
 
 export default function BillingPage({ embedded = false }: { embedded?: boolean }) {
   const [status, setStatus] = useState<SaasStatusOut | null>(null);
   const [invoices, setInvoices] = useState<InvoiceOut[] | null>(null);
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [portalBusy, setPortalBusy] = useState(false);
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState("all");
+  const [vault, setVault] = useState<VaultOut | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionOut | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function load() {
     setError("");
@@ -28,6 +33,12 @@ export default function BillingPage({ embedded = false }: { embedded?: boolean }
       ]);
       setStatus(s);
       setInvoices(inv);
+      const [v, sub] = await Promise.allSettled([
+        api.get<VaultOut>("/saas-billing/vault"),
+        api.get<SubscriptionOut>("/saas-billing/subscription"),
+      ]);
+      if (v.status === "fulfilled") setVault(v.value);
+      if (sub.status === "fulfilled") setSubscription(sub.value);
     } catch (e) {
       setError((e as ApiError).message);
       setInvoices([]);
@@ -37,6 +48,61 @@ export default function BillingPage({ embedded = false }: { embedded?: boolean }
   useEffect(() => {
     queueMicrotask(() => void load());
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+    if (params.get("billing") !== "success" || !sessionId) return;
+    let active = true;
+    void api.post("/saas-billing/confirm", { session_id: sessionId })
+      .then(() => { if (active) { setError(""); setNotice("Your subscription is active and your Stripe credit was applied where available."); void load(); } })
+      .catch((e) => { if (active) setError((e as ApiError).message); })
+      .finally(() => { params.delete("billing"); params.delete("session_id"); window.history.replaceState({}, "", `${window.location.pathname}${params.size ? `?${params}` : ""}`); });
+    return () => { active = false; };
+  }, []);
+
+  async function changeTier(tier: "starter" | "pro") {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const higher = tier === "pro";
+      await api.post(`/saas-billing/${higher ? "upgrade" : "downgrade"}`, { tier }, { "Idempotency-Key": crypto.randomUUID() });
+      setNotice(`Your ${tier === "pro" ? "Pro" : "Starter"} plan is active. Stripe applied any prorated balance.`);
+      await load();
+    } catch (e) { setError((e as ApiError).message); }
+    finally { setBusy(false); }
+  }
+
+  async function cancelPlan(timing: "now" | "period_end") {
+    const prompt = timing === "now"
+      ? "Cancel now? Stripe will calculate any unused subscription value and keep eligible credit on your billing account."
+      : "Schedule cancellation for the end of your paid period? Your dashboard remains available until then.";
+    if (!window.confirm(prompt)) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await api.post<{ message: string }>("/saas-billing/cancel", { timing }, { "Idempotency-Key": crypto.randomUUID() });
+      setNotice(result.message); await load();
+    } catch (e) { setError((e as ApiError).message); }
+    finally { setBusy(false); }
+  }
+
+  async function resumePlan() {
+    setBusy(true); setError("");
+    try {
+      const result = await api.post<{ message: string; checkout_url: string | null }>("/saas-billing/resume", {}, { "Idempotency-Key": crypto.randomUUID() });
+      if (result.checkout_url) window.location.assign(result.checkout_url);
+      else { setNotice(result.message); await load(); }
+    } catch (e) { setError((e as ApiError).message); }
+    finally { setBusy(false); }
+  }
+
+  async function cancelScheduledDowngrade() {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await api.post<{ message: string }>("/saas-billing/schedule/cancel", {}, { "Idempotency-Key": crypto.randomUUID() });
+      setNotice(result.message); await load();
+    } catch (e) { setError((e as ApiError).message); }
+    finally { setBusy(false); }
+  }
 
   const allInvoices = invoices ?? [];
 
@@ -56,23 +122,24 @@ export default function BillingPage({ embedded = false }: { embedded?: boolean }
     return i.status.toLowerCase().includes(invoiceQ) || new Date(i.created_at).toLocaleDateString().toLowerCase().includes(invoiceQ);
   });
 
-  async function changeTier(tier: string, direction: "upgrade" | "downgrade") {
+  async function openPortal() {
     setError("");
-    setBusy(true);
+    setPortalBusy(true);
     try {
-      await api.post(`/saas-billing/${direction}`, { tier });
-      await load();
+      const result = await api.post<{ url: string }>("/saas-billing/portal", {});
+      window.location.assign(result.url);
     } catch (e) {
       setError((e as ApiError).message);
     } finally {
-      setBusy(false);
+      setPortalBusy(false);
     }
   }
 
-  const currentIdx = status ? TIERS.indexOf(status.saas_tier) : -1;
-
   const body = status && (
     <>
+      <Row label="Manage billing" description="Update your payment method and billing details securely in Stripe.">
+        <Button variant="secondary" loading={portalBusy} onClick={openPortal}>Open billing portal</Button>
+      </Row>
       <Row label="Current tier" description="Your SaaS plan">
         <div className="flex items-center justify-end gap-2">
           <span className="text-sm font-medium text-foreground">{titleCase(status.saas_tier)}</span>
@@ -101,12 +168,7 @@ export default function BillingPage({ embedded = false }: { embedded?: boolean }
           }
         >
           <div className="flex justify-end">
-            <Button
-              variant="secondary"
-              onClick={() => alert("Configure your payment method (Stripe customer portal integration pending).")}
-            >
-              Update card
-            </Button>
+            <Button variant="secondary" loading={portalBusy} onClick={openPortal}>Update card</Button>
           </div>
         </Row>
       )}
@@ -121,42 +183,37 @@ export default function BillingPage({ embedded = false }: { embedded?: boolean }
         </Row>
       )}
       {status.saas_status === "cancelled" && (
-        <Row label="Subscription cancelled" description="Your data is archived at the end of the retention period.">
-          <div className="flex justify-end"><Badge tone="neutral">Cancelled</Badge></div>
+        <Row label="Subscription cancelled" description="Your workspace remains readable. Resume with your Stripe billing credit applied to the next invoice.">
+          <div className="flex justify-end"><Button loading={busy} onClick={resumePlan}>Resume plan</Button></div>
         </Row>
       )}
 
       <div className="pt-4">
-        <SubHeading>Change plan</SubHeading>
-        <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
-          Upgrade is immediate; downgrade is blocked if usage exceeds the lower cap.
-        </p>
+        <SubHeading>Subscription plan</SubHeading>
+        <p className="mt-1 text-[12px] leading-5 text-muted-foreground">Upgrade immediately with Stripe proration, or move to a lower tier at the current billing period boundary.</p>
       </div>
-      {TIERS.map((tier, idx) => {
-        const isCurrent = idx === currentIdx;
-        const isUpgrade = idx > currentIdx;
-        return (
-          <Row
-            key={tier}
-            label={titleCase(tier)}
-            description={isCurrent ? "Your current plan" : isUpgrade ? "Move up to unlock more" : "Move down to a smaller cap"}
-          >
-            <div className="flex justify-end">
-              {isCurrent ? (
-                <Badge tone="info">Current</Badge>
-              ) : (
-                <Button
-                  variant={isUpgrade ? "primary" : "secondary"}
-                  loading={busy}
-                  onClick={() => changeTier(tier, isUpgrade ? "upgrade" : "downgrade")}
-                >
-                  {isUpgrade ? "Upgrade" : "Downgrade"}
-                </Button>
-              )}
-            </div>
-          </Row>
-        );
-      })}
+      <div className="grid gap-3 py-2 sm:grid-cols-2">
+        {([{ tier: "starter" as const, price: "$29", seats: "Up to 25 active members" }, { tier: "pro" as const, price: "$79", seats: "Up to 100 active members" }]).map((plan) => {
+          const selected = status.saas_tier === plan.tier;
+          return <div key={plan.tier} className={`border p-4 ${selected ? "border-brand/70 bg-brand/[0.05]" : "border-foreground/10"}`}>
+            <div className="flex items-center justify-between"><strong>{titleCase(plan.tier)}</strong><span className="tabular-nums">{plan.price}<small className="text-muted-foreground"> / month</small></span></div>
+            <p className="mt-1 text-xs text-muted-foreground">{plan.seats}</p>
+            <div className="mt-3 flex justify-end">{selected ? <Badge tone="info">Current</Badge> : <Button variant="secondary" loading={busy} disabled={status.saas_status !== "active" || !!subscription?.scheduled_tier || !!subscription?.cancel_at_period_end} onClick={() => void changeTier(plan.tier)}>{plan.tier === "pro" ? "Upgrade now" : "Downgrade at renewal"}</Button>}</div>
+          </div>;
+        })}
+      </div>
+      {subscription?.scheduled_tier && <Row label="Scheduled plan change" description={`${titleCase(subscription.scheduled_tier)} starts ${subscription.period_end ? new Date(subscription.period_end).toLocaleDateString() : "at the next billing period"}. Your current tier stays active until then.`}>
+        <Button variant="secondary" loading={busy} onClick={() => void cancelScheduledDowngrade()}>Keep current plan</Button>
+      </Row>}
+      <Row label="Credit vault" description="Stripe keeps eligible billing credit on this workspace and applies it to future invoices.">
+        <ReadValue>{vault ? money(vault.available_credit / 100, vault.currency) : "Loading…"}</ReadValue>
+      </Row>
+      {vault?.transactions?.length ? <div className="border-y border-foreground/10 py-2">
+        {vault.transactions.slice(0, 5).map((tx) => <div key={tx.id} className="flex justify-between gap-4 py-2 text-xs"><span className="text-muted-foreground">{tx.description} · {new Date(tx.created * 1000).toLocaleDateString()}</span><span className="tabular-nums">{money(tx.amount / 100, tx.currency)}</span></div>)}
+      </div> : null}
+      <Row label="Cancellation" description={subscription?.cancel_at_period_end ? `Scheduled for ${subscription.period_end ? new Date(subscription.period_end).toLocaleDateString() : "period end"}. You keep access through the paid period.` : "Cancel now with Stripe-calculated remaining credit, or keep access until the billing period ends."}>
+        <div className="flex flex-wrap justify-end gap-2">{subscription?.cancel_at_period_end ? <Button variant="secondary" loading={busy} onClick={() => void resumePlan()}>Keep my plan</Button> : status.saas_status === "active" ? <><Button variant="secondary" loading={busy} onClick={() => void cancelPlan("period_end")}>Cancel at renewal</Button><Button variant="danger" loading={busy} onClick={() => void cancelPlan("now")}>Cancel now</Button></> : null}</div>
+      </Row>
 
       <div className="py-4">
         <SubHeading>Invoices</SubHeading>
@@ -227,6 +284,7 @@ export default function BillingPage({ embedded = false }: { embedded?: boolean }
     return (
       <>
         {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+        {notice && <div className="mb-4"><Alert tone="success">{notice}</Alert></div>}
         {status === null ? (
           <Spinner label="Loading billing info..." />
         ) : (
@@ -242,6 +300,7 @@ export default function BillingPage({ embedded = false }: { embedded?: boolean }
     <>
       <PageHeader title="Billing" subtitle="Your platform subscription & invoices" />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      {notice && <div className="mb-4"><Alert tone="success">{notice}</Alert></div>}
       {status === null ? (
         <Spinner label="Loading billing info..." />
       ) : (

@@ -1,9 +1,9 @@
-"""Shared team inbox service (Section 1.3, #20).
+"""Shared team inbox service (Section 1.3, #19).
 
 Conversations and messages across channels, with matching to members, assignment,
-status, and an AI reply draft. No channel provider is wired yet: inbound messages
-arrive through ``record_inbound`` (a future webhook calls it), and outbound
-replies are stored and marked ``sent`` (a future sender dispatches them).
+status, and an AI reply draft. Outbound replies dispatch through configured
+email, Twilio SMS/WhatsApp, Meta messaging, WeChat, Telegram, LINE, and web chat.
+Phone and walk-in interactions are recorded as staff-entered inbox messages.
 """
 
 from __future__ import annotations
@@ -117,6 +117,7 @@ async def record_inbound(
     contact_name: str | None = None,
     member_id: str | None = None,
     external_id: str | None = None,
+    force_new: bool = False,
 ) -> dict:
     """Store an inbound message, creating/ropening its conversation."""
 
@@ -135,9 +136,14 @@ async def record_inbound(
         if existing is not None:
             return await _thread_out(session, existing.conversation_id)
 
-    conv = await find_or_create(
+    conv = InboxConversation(
+        organization_id=org_id, channel=ch, contact_handle=handle, contact_name=contact_name,
+    ) if force_new else await find_or_create(
         session, org_id=org_id, channel=ch, handle=handle, contact_name=contact_name
     )
+    if force_new:
+        session.add(conv)
+        await session.flush()
     if conv.member_id is None:
         conv.member_id = member_id or await _match_member(session, org_id, handle)
     # A new inbound reopens a resolved thread.
@@ -199,8 +205,7 @@ async def reply(
         if existing is not None:
             return await _thread_out(session, conv.id)
 
-    session.add(
-        InboxMessage(
+    message = InboxMessage(
             organization_id=org_id,
             conversation_id=conv.id,
             direction=MessageDirection.OUTBOUND,
@@ -208,9 +213,10 @@ async def reply(
             sender_user_id=user_id,
             body=body,
             channel=conv.channel,
+            delivery_status="sending",
             idempotency_key=idempotency_key,
         )
-    )
+    session.add(message)
     conv.last_message_at = now_utc()
     if conv.assigned_to is None:
         conv.assigned_to = user_id
@@ -218,12 +224,67 @@ async def reply(
         conv.status = ConversationStatus.PENDING
     session.add(conv)
     await session.flush()
+    await _deliver_message(session, org_id, message, conv.contact_handle)
     await record_audit(
         session, action="inbox.replied", organization_id=org_id, actor_user_id=user_id,
         entity_type="inbox_conversation", entity_id=conv.id,
     )
     await events.inbox_changed(org_id, conversation_id=conv.id, action="replied")
     return await _thread_out(session, conv.id)
+
+
+async def retry_delivery(
+    session: AsyncSession, *, org_id: str, conversation_id: str, message_id: str,
+    actor_id: str,
+) -> dict:
+    """Retry only a failed outbound message in the tenant's conversation."""
+    conv = await _get_conversation(session, org_id, conversation_id)
+    message = await session.get(InboxMessage, message_id)
+    if (
+        message is None
+        or message.organization_id != org_id
+        or message.conversation_id != conv.id
+        or _value(message.direction) != MessageDirection.OUTBOUND.value
+    ):
+        raise HTTPException(status_code=404, detail="Outbound message not found.")
+    if message.delivery_status != "failed":
+        raise HTTPException(status_code=409, detail="Only failed messages can be retried.")
+    message.delivery_status = "sending"
+    message.delivery_error = None
+    session.add(message)
+    await session.flush()
+    await _deliver_message(session, org_id, message, conv.contact_handle)
+    await record_audit(
+        session, action="inbox.delivery_retried", organization_id=org_id,
+        actor_user_id=actor_id, entity_type="inbox_message", entity_id=message.id,
+        metadata={"delivery_status": message.delivery_status},
+    )
+    await events.inbox_changed(org_id, conversation_id=conv.id, action="delivery_retried")
+    return await _thread_out(session, conv.id)
+
+
+async def _deliver_message(session: AsyncSession, org_id: str, message: InboxMessage, recipient: str) -> None:
+    """Attempt provider delivery and persist a truthful result."""
+    from app.integrations.inbox_channels import InboxDeliveryError, deliver
+
+    try:
+        channel = Channel(_value(message.channel))
+        from app.services.inbox_channels_service import get_credentials
+
+        credentials = await get_credentials(session, org_id, channel.value)
+        callback = None
+        if channel in (Channel.SMS, Channel.WHATSAPP):
+            from app.services.inbox_channels_service import webhook_url
+            base = webhook_url(org_id, channel.value)
+            callback = f"{base}/status" if base else None
+        receipt = await deliver(channel, recipient, message.body, credentials, status_callback=callback)
+    except (InboxDeliveryError, ValueError) as exc:
+        message.delivery_status = "failed"
+        message.delivery_error = str(exc)[:240]
+    else:
+        message.delivery_status = "sent"
+        message.delivery_error = None
+        message.external_id = receipt.provider_message_id
 
 
 async def assign(
@@ -391,6 +452,7 @@ def _msg_out(m: InboxMessage) -> dict:
         "body": m.body,
         "channel": _value(m.channel),
         "delivery_status": m.delivery_status,
+        "delivery_error": m.delivery_error,
         "created_at": m.created_at,
     }
 

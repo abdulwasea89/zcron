@@ -7,12 +7,24 @@ under /assistant.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header
+from datetime import datetime, timedelta, timezone
+import re
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from jose import jwt
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from app.api.deps import get_session, require_capability
 from app.core.permissions import Capability
 from app.core.tenancy import IDEMPOTENCY_HEADER, TenantContext
+from app.core.config import settings
+from app.core.rate_limit import rate_limiter
+from app.core.security import safe_decode
+from app.models.inbox import InboxConversation
+from app.models.organization import Organization
+from app.services.inbox_channels_service import get_credentials
 from app.schemas.inbox import (
     AssignCreate,
     ConversationDetail,
@@ -26,6 +38,92 @@ from app.schemas.inbox import (
 from app.services import inbox_service as inbox
 
 router = APIRouter()
+
+
+class PublicChatStart(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field(min_length=3, max_length=254)
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class PublicChatMessage(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+def _chat_token(conversation_id: str, org_id: str) -> str:
+    return jwt.encode({"sub": conversation_id, "org_id": org_id, "type": "inbox_web_chat", "exp": datetime.now(timezone.utc) + timedelta(days=2)}, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+
+def _chat_claims(token: str | None) -> dict:
+    claims = safe_decode(token or "")
+    if not claims or claims.get("type") != "inbox_web_chat" or not claims.get("sub") or not claims.get("org_id"):
+        raise HTTPException(status_code=401, detail="This chat session has expired. Start a new conversation.")
+    return claims
+
+
+async def _public_chat_thread(session: AsyncSession, conversation_id: str) -> dict:
+    conv = await session.get(InboxConversation, conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Chat conversation not found.")
+    thread = await inbox._thread_out(session, conversation_id)
+    return {"id": conv.id, "status": thread["status"], "messages": [
+        {"id": m["id"], "direction": m["direction"], "body": m["body"], "created_at": m["created_at"]}
+        for m in thread["messages"]
+    ]}
+
+
+@router.get("/public/{org_code}")
+async def public_chat_info(org_code: str, session: AsyncSession = Depends(get_session)):
+    org = (await session.execute(select(Organization).where(Organization.org_code == org_code))).scalar_one_or_none()
+    if org is None or not (await get_credentials(session, org.id, "web_chat")):
+        raise HTTPException(status_code=404, detail="This workspace has not enabled web chat.")
+    return {"organization_name": org.name, "accent_color": org.accent_color}
+
+
+@router.post("/public/{org_code}/conversations", status_code=201)
+async def public_chat_start(org_code: str, data: PublicChatStart, request: Request, session: AsyncSession = Depends(get_session)):
+    if not data.name.strip() or not data.message.strip() or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", data.email.strip()):
+        raise HTTPException(status_code=422, detail="Enter your name, a valid email address, and a message.")
+    ip = request.client.host if request.client else "unknown"
+    allowed, _ = await rate_limiter.hit(f"inbox-chat:{org_code}:{ip}", 8, 60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Please wait a moment before sending another message.")
+    org = (await session.execute(select(Organization).where(Organization.org_code == org_code))).scalar_one_or_none()
+    if org is None or not (await get_credentials(session, org.id, "web_chat")):
+        raise HTTPException(status_code=404, detail="This workspace has not enabled web chat.")
+    handle = data.email.strip().lower()
+    thread = await inbox.record_inbound(session, org_id=org.id, channel="web_chat", handle=handle, body=data.message.strip(), contact_name=data.name.strip(), force_new=True)
+    token = _chat_token(thread["id"], org.id)
+    return {"token": token, "thread": await _public_chat_thread(session, thread["id"])}
+
+
+@router.get("/public/conversations/{conversation_id}")
+async def public_chat_read(conversation_id: str, authorization: str | None = Header(default=None), session: AsyncSession = Depends(get_session)):
+    claims = _chat_claims(authorization.removeprefix("Bearer ") if authorization else None)
+    if claims["sub"] != conversation_id:
+        raise HTTPException(status_code=403, detail="Chat session does not match this conversation.")
+    conv = await session.get(InboxConversation, conversation_id)
+    if conv is None or conv.organization_id != claims["org_id"] or inbox._value(conv.channel) != "web_chat":
+        raise HTTPException(status_code=404, detail="Chat conversation not found.")
+    return await _public_chat_thread(session, conversation_id)
+
+
+@router.post("/public/conversations/{conversation_id}/messages", status_code=201)
+async def public_chat_message(conversation_id: str, data: PublicChatMessage, request: Request, authorization: str | None = Header(default=None), session: AsyncSession = Depends(get_session)):
+    if not data.message.strip():
+        raise HTTPException(status_code=422, detail="Write a message before sending.")
+    claims = _chat_claims(authorization.removeprefix("Bearer ") if authorization else None)
+    if claims["sub"] != conversation_id:
+        raise HTTPException(status_code=403, detail="Chat session does not match this conversation.")
+    ip = request.client.host if request.client else "unknown"
+    allowed, _ = await rate_limiter.hit(f"inbox-chat-send:{conversation_id}:{ip}", 12, 60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Please wait a moment before sending another message.")
+    conv = await session.get(InboxConversation, conversation_id)
+    if conv is None or conv.organization_id != claims["org_id"] or inbox._value(conv.channel) != "web_chat":
+        raise HTTPException(status_code=404, detail="Chat conversation not found.")
+    await inbox.record_inbound(session, org_id=conv.organization_id, channel="web_chat", handle=conv.contact_handle, body=data.message.strip(), contact_name=conv.contact_name)
+    return await _public_chat_thread(session, conversation_id)
 
 
 @router.get("/conversations", response_model=list[ConversationSummary])
@@ -87,6 +185,19 @@ async def reply(
     return await inbox.reply(
         session, org_id=ctx.org_id, user_id=ctx.user_id, conversation_id=conversation_id,
         body=data.body, idempotency_key=idempotency_key or None,
+    )
+
+
+@router.post("/conversations/{conversation_id}/messages/{message_id}/retry", response_model=ConversationDetail)
+async def retry_reply_delivery(
+    conversation_id: str,
+    message_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_INBOX)),
+    session: AsyncSession = Depends(get_session),
+):
+    return await inbox.retry_delivery(
+        session, org_id=ctx.org_id, conversation_id=conversation_id, message_id=message_id,
+        actor_id=ctx.user_id,
     )
 
 

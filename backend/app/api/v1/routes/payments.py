@@ -23,6 +23,7 @@ router = APIRouter()
 def _to_out(p) -> PaymentOut:
     return PaymentOut(
         id=p.id, member_id=p.member_id, plan_id=p.plan_id, kind=p.kind.value, method=p.method.value,
+        stripe_payment_method_type=p.stripe_payment_method_type,
         status=p.status.value, amount=p.amount, tax_amount=p.tax_amount, currency=p.currency,
         plan_price_amount=p.plan_price_amount, joining_fee_amount=p.joining_fee_amount,
         discount_amount=p.discount_amount, promo_code=p.promo_code,

@@ -467,7 +467,7 @@ export function Select({
               role="listbox"
               aria-label={label}
               style={{ left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width }}
-              className="fixed z-[100] max-h-72 animate-pop-in overflow-y-auto overscroll-contain rounded-lg border border-[var(--border)] bg-popover p-1 shadow-lg shadow-black/10"
+              className="fixed z-[220] max-h-72 animate-pop-in overflow-y-auto overscroll-contain rounded-lg border border-[var(--border)] bg-popover p-1 shadow-lg shadow-black/10"
             >
               {options.map((o, i) => {
                 const isSelected = o.value === String(value ?? "");

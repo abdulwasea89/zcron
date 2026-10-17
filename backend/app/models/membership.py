@@ -50,6 +50,14 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
     profile_complete: bool = False
     family_owner_member_id: str | None = Field(default=None, foreign_key="organization_members.id", index=True)
 
+    # Stripe Connect member billing credentials are scoped to this gym's account.
+    # Store Stripe references only; never card or bank details.
+    stripe_customer_id: str | None = Field(default=None, index=True)
+    stripe_default_payment_method_id: str | None = None
+    stripe_default_payment_method_type: str | None = None
+    recurring_consent_at: datetime | None = None
+    stripe_recurring_setup_intent_id: str | None = None
+
     # Lifecycle
     joined_at: datetime | None = None
     banned: bool = False

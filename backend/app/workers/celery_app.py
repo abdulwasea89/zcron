@@ -94,11 +94,15 @@ def expire_and_remind_task() -> dict:
     )
 
     async def _per_org(session, org_id):
+        from app.services.recurring_billing_service import run_due_member_renewals
+
+        recurring = await run_due_member_renewals(session, org_id=org_id)
         expired = await expire_due_memberships(session, org_id=org_id)
         resumed = await unfreeze_due_memberships(session, org_id=org_id)
         renewal = await send_pre_expiry_reminders(session, org_id=org_id)
         reminded = await send_grace_reminders(session, org_id=org_id)
-        return {"expired": expired, "resumed": resumed, "renewal": renewal, "reminded": reminded}
+        return {"recurring": recurring, "expired": expired, "resumed": resumed,
+                "renewal": renewal, "reminded": reminded}
 
     return _run(_for_each_org(_per_org))
 

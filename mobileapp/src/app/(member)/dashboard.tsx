@@ -229,6 +229,9 @@ export default function Screen_dashboard() {
                 <Button variant="secondary" onPress={goTo("/payments")}>
                   Payments & receipts
                 </Button>
+                {!isOffice ? <Button variant="secondary" onPress={() => router.navigate("/membership-change")}>
+                  Change or cancel membership
+                </Button> : null}
                 {!isOffice ? (
                   <Button variant="secondary" onPress={() => router.navigate("/membership-pause")}>
                     {status === "frozen" ? "View pause request" : "Request a membership pause"}

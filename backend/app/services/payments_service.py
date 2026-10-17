@@ -70,7 +70,10 @@ async def refund(
                                        body='{"detail":"Payment is not refundable."}')
         raise HTTPException(status_code=409, detail="Payment is not refundable.")
 
-    refundable = round(payment.amount - payment.refunded_amount, 2)
+    # A portion already converted into member-wallet credit cannot also leave
+    # the Connect account as a cash refund.
+    vault_credited = payment.vault_credited_minor / 100
+    refundable = round(max(0, payment.amount - payment.refunded_amount - vault_credited), 2)
     refund_amount = round(amount if amount is not None else refundable, 2)
     if refund_amount <= 0 or refund_amount > refundable:
         await idempotency_service.fail(session, claim.record, code=422,
@@ -98,10 +101,17 @@ async def refund(
     payment.refunded_amount = round(payment.refunded_amount + refund_amount, 2)
     payment.refunded_at = now_utc()
     payment.status = (
-        PaymentStatus.REFUNDED if payment.refunded_amount >= payment.amount - 0.01
+        PaymentStatus.REFUNDED if payment.refunded_amount + vault_credited >= payment.amount - 0.01
         else PaymentStatus.PARTIALLY_REFUNDED
     )
     session.add(payment)
+    if payment.subscription_id:
+        from app.models.subscription import Subscription
+        subscription = await session.get(Subscription, payment.subscription_id)
+        if subscription is not None and subscription.prepaid_value_minor is not None:
+            subscription.prepaid_value_minor = max(0, subscription.prepaid_value_minor - int(round(refund_amount * 100)))
+            subscription.prepaid_value_at = now_utc()
+            session.add(subscription)
 
     await record_audit(session, action="payment.refunded", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="payment", entity_id=payment.id,

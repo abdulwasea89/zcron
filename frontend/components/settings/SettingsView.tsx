@@ -40,6 +40,7 @@ const SECTION_KEYWORDS: Record<string, string[]> = {
   tools: ["staff", "payroll", "receipts", "workspace", "manage"],
   invoice: ["legal", "tax", "vat", "address", "payment terms"],
   payments: ["stripe", "connect", "payments"],
+  channels: ["inbox", "email", "sms", "whatsapp", "telegram", "line", "twilio", "smtp", "webhook", "instagram", "messenger", "wechat", "meta", "chat"],
   billing: ["subscription", "plan", "tier", "saas", "invoice"],
   audit: ["audit", "log", "activity", "trail", "history"],
   sessions: ["sessions", "devices", "login"],
@@ -55,6 +56,7 @@ const NAV_ICON: Record<string, string> = {
   shield: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z",
   lock: "M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z",
   person: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z",
+  message: "M7.5 8.25h9m-9 3h6m-9.75 8.25l2.879-2.879A9 9 0 1112 21a8.963 8.963 0 01-4.371-1.129L3.75 19.5z",
 };
 
 /** Remembers the last settings tab the user opened, so reopening the dialog
@@ -146,7 +148,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
   useEffect(() => {
     if (!org) return;
     const valid = [
-      "account", "organization", "preferences", "tools", "billing", "sessions", "security", "audit",
+      "account", "organization", "preferences", "tools", "billing", "sessions", "security", "audit", "channels",
       ...(invoice ? ["invoice"] : []),
       ...(org.industry !== "office" ? ["payments"] : []),
     ];
@@ -283,6 +285,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
           ],
         },
         { label: "Preferences", items: [{ id: "preferences", label: "Preferences", icon: NAV_ICON.sliders }] },
+        { label: "Communications", items: [{ id: "channels", label: "Inbox channels", icon: NAV_ICON.message }] },
         ...(toolLinks.length ? [{ label: "Workspace", items: [{ id: "tools", label: "Workspace tools", icon: NAV_ICON.building }] }] : []),
         {
           label: "Billing",
@@ -444,6 +447,10 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
                   <option value="invite_only">Invite-only</option>
                 </Select>
               </Row>
+            </Section>
+
+            <Section id="channels" title="Inbox channels" description="Connect the providers your team uses to message members" hidden={active !== "channels"}>
+              <InboxChannelsSection />
             </Section>
 
             <Section id="tools" title="Workspace tools" description="Manage the less frequent administrative work" hidden={active !== "tools"}>
@@ -661,4 +668,140 @@ function SessionsSection() {
       ))}
     </div>
   );
+}
+
+interface InboxConnection {
+  channel: string;
+  connected: boolean;
+  connected_at: string | null;
+  webhook_url: string | null;
+}
+
+const INBOX_PROVIDERS = [
+  { id: "email", title: "Email", detail: "Send with SMTP or Resend. Add Resend inbound signing secret to receive member emails.", fields: [
+    ["host", "SMTP host (optional with Resend)", "text"], ["port", "Port", "number"], ["username", "SMTP username", "text"], ["password", "SMTP password", "password"], ["from_email", "Sender email", "email"], ["resend_api_key", "Resend API key (optional)", "password"], ["inbound_webhook_secret", "Resend inbound webhook secret (optional)", "password"],
+  ] },
+  { id: "sms", title: "SMS · Twilio", detail: "Send and receive SMS with a Twilio number.", fields: [
+    ["account_sid", "Account SID", "text"], ["auth_token", "Auth Token", "password"], ["from_number", "Twilio phone number", "text"],
+  ] },
+  { id: "whatsapp", title: "WhatsApp · Twilio", detail: "Connect an approved WhatsApp sender in Twilio.", fields: [
+    ["account_sid", "Account SID", "text"], ["auth_token", "Auth Token", "password"], ["from_number", "WhatsApp sender", "text"],
+  ] },
+  { id: "telegram", title: "Telegram", detail: "Connect a bot; Acron registers its secure webhook automatically.", fields: [
+    ["bot_token", "Bot token", "password"],
+  ] },
+  { id: "line", title: "LINE", detail: "Connect a LINE Official Account messaging API channel.", fields: [
+    ["access_token", "Channel access token", "password"], ["channel_secret", "Channel secret", "password"],
+  ] },
+  { id: "instagram", title: "Instagram Messaging", detail: "Connect an Instagram professional account through Meta webhooks and Graph API.", fields: [
+    ["sender_id", "Instagram account ID", "text"], ["page_access_token", "Page access token", "password"], ["app_secret", "Meta app secret", "password"], ["verify_token", "Webhook verify token", "password"],
+  ] },
+  { id: "messenger", title: "Facebook Messenger", detail: "Connect a Facebook Page inbox through Meta webhooks and Graph API.", fields: [
+    ["sender_id", "Facebook Page ID", "text"], ["page_access_token", "Page access token", "password"], ["app_secret", "Meta app secret", "password"], ["verify_token", "Webhook verify token", "password"],
+  ] },
+  { id: "wechat", title: "WeChat Official Account", detail: "Connect a WeChat Official Account using its customer-service API and plaintext-mode callback.", fields: [
+    ["app_id", "App ID", "text"], ["app_secret", "App secret", "password"], ["verify_token", "Webhook token", "password"],
+  ] },
+  { id: "web_chat", title: "Member web chat", detail: "Enable a public, rate-limited chat link for members and prospects.", fields: [],
+  },
+] as const;
+
+function InboxChannelsSection() {
+  const [connections, setConnections] = useState<InboxConnection[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const refresh = useCallback(async () => {
+    setError("");
+    try {
+      setConnections(await api.get<InboxConnection[]>("/inbox/channels"));
+    } catch (e) {
+      setError((e as ApiError).message || "Could not load inbox connections.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { queueMicrotask(() => void refresh()); }, [refresh]);
+
+  const startEdit = (id: string) => {
+    setError(""); setNotice(""); setValues({}); setEditing(id);
+  };
+
+  const submit = async (id: string) => {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await api.put<InboxConnection>(`/inbox/channels/${id}`, { credentials: id === "web_chat" ? { enabled: true } : values });
+      setConnections((items) => items.map((item) => item.channel === id ? result : item));
+      setEditing(null); setValues({});
+      setNotice(`${INBOX_PROVIDERS.find((provider) => provider.id === id)?.title ?? id} ${id === "web_chat" ? "enabled" : "connected and verified"}.`);
+      await refresh();
+    } catch (e) {
+      setError((e as ApiError).message || "Could not connect this provider.");
+    } finally { setBusy(false); }
+  };
+
+  const disconnect = async (id: string) => {
+    const providerName = INBOX_PROVIDERS.find((provider) => provider.id === id)?.title ?? id;
+    const webhookNote = ["sms", "whatsapp", "line", "instagram", "messenger", "wechat", "email"].includes(id)
+      ? " Remove its webhook URL from the provider console first to stop inbound retries."
+      : "";
+    if (!window.confirm(`Disconnect ${providerName}? Outbound messages will stop.${webhookNote}`)) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await api.del(`/inbox/channels/${id}`);
+      setConnections((items) => items.map((item) => item.channel === id ? { ...item, connected: false, connected_at: null, webhook_url: null } : item));
+      setNotice(`${INBOX_PROVIDERS.find((provider) => provider.id === id)?.title ?? id} disconnected.`);
+    } catch (e) { setError((e as ApiError).message || "Could not disconnect this provider."); }
+    finally { setBusy(false); }
+  };
+
+  const copyWebhook = async (url: string) => {
+    try { await navigator.clipboard.writeText(url); setNotice("Webhook URL copied."); }
+    catch { setError("Could not copy the webhook URL. Select and copy it manually."); }
+  };
+
+  const connectionFor = (id: string) => connections.find((item) => item.channel === id);
+  if (loading) return <p className="py-4 text-sm text-muted-foreground">Loading connected providers…</p>;
+
+  return <div className="space-y-4">
+    <p className="text-sm leading-6 text-muted-foreground">Provider credentials are encrypted before storage. Only workspace owners can manage connections. Sending and webhook delivery require a publicly reachable HTTPS API URL.</p>
+    {error && <Alert>{error}</Alert>}
+    {notice && <Alert tone="success">{notice}</Alert>}
+    {INBOX_PROVIDERS.map((provider) => {
+      const connection = connectionFor(provider.id);
+      const isEditing = editing === provider.id;
+      return <div key={provider.id} className="rounded-lg border border-[var(--border)] px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><div className="flex items-center gap-2"><h3 className="text-sm font-medium text-foreground">{provider.title}</h3><Badge tone={connection?.connected ? "success" : "neutral"}>{connection?.connected ? "Connected" : "Not connected"}</Badge></div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{provider.detail}</p>
+            {connection?.connected_at && <p className="mt-1 text-[11px] text-muted-foreground">Verified {new Date(connection.connected_at).toLocaleString()}</p>}
+          </div>
+          {!isEditing && <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => startEdit(provider.id)}>{connection?.connected ? "Update" : "Connect"}</Button>
+            {connection?.connected && <Button variant="danger" disabled={busy} onClick={() => void disconnect(provider.id)}>Disconnect</Button>}
+          </div>}
+        </div>
+        {connection?.connected && connection.webhook_url && provider.id !== "telegram" && <div className="mt-3 rounded-md bg-foreground/[0.035] p-3">
+          <p className="text-xs font-medium text-foreground">{provider.id === "web_chat" ? "Member chat link" : "Provider webhook URL"}</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{connection.webhook_url}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void copyWebhook(connection.webhook_url!)}>Copy {provider.id === "web_chat" ? "link" : "URL"}</Button><span className="text-[11px] text-muted-foreground">{provider.id === "web_chat" ? "Share this page with members and prospects." : "Add this URL in your provider’s webhook settings. Keep it private."}</span></div>
+        </div>}
+        {isEditing && <div className="mt-4 border-t border-[var(--border)] pt-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {provider.fields.map(([key, label, type]) => <label key={key} className="block text-xs text-muted-foreground">{label}
+              <input type={type} inputMode={type === "number" ? "numeric" : undefined} autoComplete="off" value={values[key] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))} className="mt-1.5 h-9 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-foreground outline-none focus:border-brand" />
+            </label>)}
+            {provider.id === "email" && <label className="flex items-center gap-2 self-end pb-2 text-xs text-muted-foreground"><input type="checkbox" checked={values.use_tls !== "false"} onChange={(event) => setValues((current) => ({ ...current, use_tls: String(event.target.checked) }))} />Use STARTTLS</label>}
+          </div>
+          <p className="mt-3 text-[11px] text-muted-foreground">{connection?.connected ? "Enter the provider credentials again to replace the saved connection. Saved secrets are never shown." : "Credentials are only sent to the Acron backend for verification and encrypted storage."}</p>
+          <div className="mt-4 flex justify-end gap-2"><Button variant="secondary" disabled={busy} onClick={() => { setEditing(null); setValues({}); }}>Cancel</Button><Button disabled={busy} loading={busy} onClick={() => void submit(provider.id)}>{connection?.connected ? "Save connection" : "Verify and connect"}</Button></div>
+        </div>}
+      </div>;
+    })}
+    <div className="rounded-md border border-dashed border-[var(--border)] p-3 text-xs leading-5 text-muted-foreground">To enable provider webhooks, set <code>INBOX_PUBLIC_WEBHOOK_BASE_URL</code> to your public HTTPS API address and <code>INBOX_ENCRYPTION_KEY</code> in the backend environment. Telegram webhook registration is automatic; configure the displayed URLs in Twilio, Meta, LINE, WeChat, or Resend. Resend inbound email requires the email.received event and the webhook signing secret.</div>
+  </div>;
 }

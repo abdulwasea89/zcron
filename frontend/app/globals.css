@@ -808,6 +808,12 @@ body {
   --animate-sheet-out-right: sheet-out-right 180ms cubic-bezier(0.4, 0, 1, 1) both;
   --animate-sheet-in-left: sheet-in-left 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-sheet-out-left: sheet-out-left 180ms cubic-bezier(0.4, 0, 1, 1) both;
+  /* The assistant's empty-state entrance and the first-turn composer handoff. */
+  --animate-assistant-welcome: assistant-welcome 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-assistant-chip: assistant-chip 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-assistant-composer-in: assistant-composer-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-assistant-composer-dock: assistant-composer-dock 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-assistant-glow: assistant-glow 4.8s ease-in-out infinite;
 
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
@@ -823,7 +829,22 @@ body {
   @keyframes sheet-out-right { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(100%); } }
   @keyframes sheet-in-left { from { opacity: 0.4; transform: translateX(-100%); } to { opacity: 1; transform: translateX(0); } }
   @keyframes sheet-out-left { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(-100%); } }
+  @keyframes assistant-welcome { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes assistant-chip { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes assistant-composer-in { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes assistant-composer-dock { from { opacity: 0.82; transform: translateY(-34vh) scale(1.01); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes assistant-glow { 0%, 100% { opacity: 0.55; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.08); } }
 }
+
+.assistant-welcome { animation: var(--animate-assistant-welcome); }
+.assistant-welcome-glow { animation: var(--animate-assistant-glow); }
+.assistant-composer-centered { animation: var(--animate-assistant-composer-in); }
+.assistant-composer-centered:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent),
+    0 18px 48px -32px color-mix(in srgb, var(--brand) 58%, transparent);
+}
+.assistant-composer-docking { animation: var(--animate-assistant-composer-dock); }
+.assistant-prompt-chip { animation-fill-mode: both; }
 
 /* ─────────────────────────────────────────────────────────────────────────
    Sidebar tab switching — content crossfade + sliding pill.

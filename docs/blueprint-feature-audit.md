@@ -15,8 +15,8 @@
 
 | | Section 1 (79) | Cross-cutting (49) | Total (128) |
 |---|---|---|---|
-| ✅ Built | 11 | 4 | **15** |
-| ⚠️ Partial | 36 | 21 | **57** |
+| ✅ Built | 12 | 4 | **16** |
+| ⚠️ Partial | 35 | 21 | **56** |
 | ❌ Not built | 32 | 24 | **56** |
 
 By priority (Section 1 only):
@@ -24,10 +24,10 @@ By priority (Section 1 only):
 | Priority | ✅ | ⚠️ | ❌ | Total |
 |---|---|---|---|---|
 | P0 | 6 | 18 | 13 | 37 |
-| P1 | 3 | 12 | 13 | 28 |
+| P1 | 4 | 11 | 13 | 28 |
 | P1–P2 | 1 | 3 | 1 | 5 |
 | P2 | 0 | 4 | 5 | 9 |
-| **Total** | **10** | **37** | **32** | **79** |
+| **Total** | **11** | **36** | **32** | **79** |
 
 ### Three largest gap clusters
 
@@ -60,9 +60,9 @@ By priority (Section 1 only):
 | 10 | Member profile: photo, ID (where legal), contact, emergency contact, goals, health notes | P0 | ⚠️ | `membership.py:40 photo_url`, `:41 emergency_contact`, `user.py:35 emergency_contact`. Missing: ID, goals, health notes, auto-generated summary | backend + web |
 | 11 | Plans: daily to yearly, family, student, off-peak, class packs, credits | P0 | ⚠️ | `PlanBillingType` = recurring / one_time_pack / drop_in; duration + price free-form so most variants expressible. Missing: credits, family linkage | backend + web + mobile |
 | 12 | Joining fees, discounts, promo codes | P0 | ❌ | 0 matches for `discount\|coupon\|promo\|joining_fee` in `backend/app`. No promotion engine at all | none |
-| 13 | Freeze/pause (travel, illness, seasonal) | P0 | ✅ | Backend pause-request API and owner/manager review in the web member directory are implemented. Approved pauses preserve prior member/subscription status, extend billing time, and resume on schedule. Linked-member inbox messages with explicit pause language create review-only requests. Mobile is not counted as delivered; provider-wide email/SMS/WhatsApp detection remains unintegrated. | backend + web |
+| 13 | Freeze/pause (travel, illness, seasonal) | P0 | ✅ | Backend pause-request API and owner/manager review in the web member directory are implemented. Approved pauses preserve prior member/subscription status, extend billing time, and resume on schedule. Linked-member inbox messages with explicit pause language create review-only requests. Mobile is not counted as delivered; signed Twilio inbound can now feed supported SMS/WhatsApp pause requests into the web review flow. | backend + web |
 | 14 | Renewals and expiry reminders | P0 | ✅ | Hourly membership worker sends idempotent email and in-app renewal reminders at T-7/T-3/T-1, plus grace reminders on days 1/2/3 after expiry. Reminder records are unique per subscription, billing-period end, and stage, so hourly sweeps do not resend them. | backend |
-| 15 | Upgrades, downgrades, transfers, cancellation with save offer | P1 | ❌ | `saas_billing_service.py:74 upgrade` / `:90 downgrade` / `:116 cancel` are **SaaS-tier only**. `memberships_service.py` is signup/activation — no member plan change, transfer, save offer (verified: no such function exists) | none |
+| 15 | Upgrades, downgrades, transfers, cancellation with save offer | P1 | ✅ | Web Account supports plan-change requests, save-offer responses, recurring-plan vault resumptions, and scheduled cancellation. Owner/manager review handles prorated upgrades (vault credit first, Connect payment for any remainder), transfers, downgrade credits, save offers, and end-of-period processing. Workspace Billing settings support plan changes, cancellation/resume, and invoice-credit history. | backend + web |
 | 16 | Family and multi-payer accounts; segmentation and tags | P1–P2 | ⚠️ | Segments are dynamic and computed: `campaign_service.py:82 _resolve_segment` (status, plan, days-since-visit). Missing: family accounts, multi-payer, tags | backend |
 
 ### 1.3 Front Desk and Daily Operations — 4 ✅ / 2 ⚠️ / 0 ❌
@@ -71,23 +71,23 @@ By priority (Section 1 only):
 |---|---|---|---|---|---|
 | 17 | Check-in by QR, card/RFID, app, biometric or manual | P0 | ⚠️ | Web: manual, QR, and staff-operated RFID/card check-in are implemented. RFID assignments are unique per workspace; managers assign/remove cards, and attendance-authorized staff resolve card scans through the idempotent check-in path. Missing: member self-check-in and biometric hardware; these remain outside the requested web scope. | backend + web |
 | 18 | Status on check-in: expired, dues, birthday, at-risk | P0 | ✅ | `services/attendance_service.py:142` renewal line, `:43 _RISK_DAYS = 14`, `:184` status payload | backend + web |
-| 19 | Shared team inbox for all channels | P0 | ⚠️ | Inbox fully built: conversations, assignment, status, AI draft; `Channel` enum has 12 values (`core/constants.py:227` — WHATSAPP, SMS, EMAIL, INSTAGRAM, MESSENGER, LINE, WECHAT, TELEGRAM, WEB_CHAT, PHONE, WALK_IN, OTHER). **The inbox never sends** — `inbox_service.py` stores only; `integrations/` has no sms/whatsapp/telegram module at all (email + push are the only transports, used by notifications/campaigns, not the inbox) | backend + web |
+| 19 | Shared team inbox for all channels | P0 | ✅ | Web inbox supports member matching, assignment/status, AI drafts, retries, and delivery diagnostics. Real inbound/outbound adapters cover SMTP/Resend email, Twilio SMS/WhatsApp with signed delivery callbacks, Telegram, LINE, Instagram/Messenger, WeChat Official Accounts, and a signed-session, rate-limited member web-chat page; phone calls and walk-ins can be logged by staff. Workspace owners manage encrypted provider connections in Settings → Inbox channels. Provider accounts, access permissions, webhook registration, and public HTTPS hosting are workspace setup requirements. | backend + web |
 | 20 | Staff "Today" task list | P0 | ✅ | `models/staff.py:28 class Task`, `staff_service.py:272-348` CRUD, `frontend/app/app/tasks`, `mobileapp/src/app/(admin)/tasks.tsx` | backend + web + mobile |
 | 21 | Walk-ins, day passes, guest log, lockers | P1–P2 | ✅ | `models/visitor.py`, `visitor_service.py:130` day pass → `Payment(kind=DAY_PASS)`, `routes/front_desk.py` | backend + web |
-| 22 | Offline mode with sync | P1 | ✅ | `routes/attendance.py:62 POST /sync` — idempotent offline-queued check-in flush; `:56` offline roster | backend + web |
+| 22 | Offline mode with sync | P1 | ✅ Built | Previously loaded web app pages, Next assets, and workspace-scoped API GET responses are cached when their response policy permits local caching. IndexedDB syncs check-ins, cash/manual payments, and lead trial/tour requests; cash retries are idempotent and rejected actions show their reason. Card payments and drawer reconciliation remain online-only. | backend + web |
 
 ### 1.4 Finance and Billing — 1 ✅ / 6 ⚠️ / 1 ❌
 
 | # | Feature | Pri | Status | Evidence / gap | Surface |
 |---|---|---|---|---|---|
-| 23 | Local payment methods per country | P0 | ❌ | `PaymentMethod` = CARD, CASH, BANK_TRANSFER, MOBILE_WALLET, OTHER — generic only. No SEPA / iDEAL / Pix / UPI / M-Pesa / JazzCash | none |
-| 24 | Recurring billing: cards, direct debit, mandates | P0 | ⚠️ | Stripe card recurring built; 0 matches for `direct_debit` / `mandate`. No card-updater, no smart retry | backend |
+| 23 | Local payment methods per country | P0 | ✅ | Web member signup and approved plan changes use Stripe Payment Element with dynamic methods on the gym’s connected account. Stripe filters methods by buyer location, currency, payment flow, and connected-account eligibility; redirect and delayed confirmations settle through Connect webhooks. Actual method type is recorded on the payment. Available methods depend on Stripe support and activation for the gym’s country/account; bespoke non-Stripe rails such as JazzCash are not included. | backend + web |
+| 24 | Recurring billing: cards, direct debit, mandates | P0 | ✅ | Web signup offers explicit auto-renew consent. Stripe Connect PaymentIntents save eligible methods for off-session use; Stripe SetupIntents let members enroll or replace a method and collect any required mandate. An hourly worker creates idempotent renewal charges; succeeded webhooks extend the term, while failures move membership into a three-day grace period and the member can replace the method in Account. Method support and mandate requirements depend on Stripe and the gym's connected-account country/settings. Existing subscriptions stay non-renewing until the member opts in; smart retries and card updater remain outside this row's delivered scope. | backend + web |
 | 25 | Failed-payment and overdue recovery (dunning) | P0 | ⚠️ | SaaS has the full escalation ladder (`saas_billing_service.py`). Members get grace reminders days 1/2/3 (`notifications.py:33`, email + push + in-app). Missing: escalating ladder to staff call, smart retry | backend |
 | 26 | Cash and manual payments with digital receipts | P0 | ✅ | `models/cash.py`, `cash_service.py`, `routes/cash.py:63` receipt PDF, `CashReconciliation` | backend + web + mobile |
 | 27 | Payment-proof verification (bank-transfer or wallet screenshots) | P1 | ⚠️ | Pipeline real: 5 steps, thresholds 95/70, spot audit, audit trail. **OCR is a hard stub** — `integrations/ocr.py:79 _real_extract` returns `None` unconditionally; no tesseract/vision path exists anywhere. `phash` is a `sha256`, not a perceptual hash. Fraud detection cannot detect fraud | backend |
 | 28 | Invoices with local tax (VAT, GST, sales tax) | P1 | ⚠️ | `plan.tax_rate` end-to-end incl. inclusive-tax: `invoices_service.py:83`, `memberships_service.py:345 _amount_with_tax()`. Missing: country/region rule packs | backend + web |
 | 29 | Expenses, P&L, revenue by plan, branch or trainer | P1 | ⚠️ | Revenue by plan/trainer ✅ (swarm specialists `rev_by_plan`, `payroll_commissions`). 0 matches for `expense`. No P&L, no branch dimension | backend + web |
-| 30 | Refunds, credits, chargeback evidence; accounting export | P1 | ⚠️ | Refunds ✅ approval-gated (`agent/tools/write.py refund_payment` via `_proposal()`). Missing: account credits, chargeback evidence assembly, accounting export | backend |
+| 30 | Refunds, credits, chargeback evidence; accounting export | P1 | ⚠️ | Verified Connect refunds, tenant/member/currency-scoped immutable member vault credit, and Stripe customer invoice-credit balance/history exist; converted cash cannot also be refunded. Missing: chargeback evidence assembly and accounting export | backend + web |
 
 ### 1.5 Retention and Member Success — 0 ✅ / 7 ⚠️ / 0 ❌
 
@@ -230,7 +230,7 @@ By priority (Section 1 only):
 | # | Component | Status | Evidence / gap | Surface |
 |---|---|---|---|---|
 | 99 | Country Pack container: quiet hours, consent types, reminder schedules, cooling-off, cancellation channels, AI-disclosure text, retention defaults | ❌ | 0 matches for `country_pack`. `org.country/timezone/default_currency` are bare fields | none |
-| 100 | Messaging channels by region (WhatsApp, SMS, LINE, WeChat, Telegram; email fallback) | ❌ | 12-value `Channel` enum (`core/constants.py:227`) but `integrations/` contains only `email.py`, `push.py`, `llm.py`, `ocr.py`, `hibp.py`, `stripe_*` — no sms/whatsapp/line/wechat/telegram module exists. `inbox_service.py` stores conversations without sending | none |
+| 100 | Messaging channels by region (WhatsApp, SMS, LINE, WeChat, Telegram; email fallback) | ⚠️ | Twilio SMS/WhatsApp, Telegram, LINE and SMTP/Resend email have outbound adapters; signed inbound webhooks cover Twilio, Telegram, and LINE. Instagram/Messenger, WeChat, inbound email, per-workspace connection management, and regional provider choice remain missing | backend + web |
 | 101 | Local payment methods by region (SEPA, Pix, UPI AutoPay, M-Pesa, JazzCash, cards/ACH, Stripe/Adyen gateway) | ⚠️ | Stripe + cash + bank_transfer + mobile_wallet generic. No regional rails (0 matches for `pix\|upi\|m_pesa\|sepa\|jazzcash`) | backend |
 | 102 | Privacy-law rule packs (GDPR, AI Act, CCPA, LGPD, DPDP, PDPL) with deadline tracking | ❌ | 0 matches for `gdpr\|privacy_rule\|deadline` tracking | none |
 | 103 | Membership and messaging rules (US state auto-renewal, UK DMCC cooling-off, opt-in/STOP, quiet hours 8am–9pm) | ❌ | 0 matches for `quiet_hours\|cooling_off\|stop_keyword` | none |
@@ -268,7 +268,7 @@ By priority (Section 1 only):
 | # | Screen | Status | Evidence / gap | Surface |
 |---|---|---|---|---|
 | 122 | Today: one ranked list ("8 people need you today; USD 1,240 at stake") with Send / Edit / Skip / Call per card | ⚠️ | `frontend/app/app/page.tsx` (494 lines) has KPI strip + headline metrics but no ranked action list, no value-at-stake cards, no per-item actions | web |
-| 123 | Inbox: all channels in one place, member summary alongside, AI drafts | ⚠️ | Inbox fully built (`frontend/app/app/inbox`, `inbox_service.py`, AI draft). Of 12 declared channels, **one (EMAIL) is wired** | backend + web |
+| 123 | Inbox: all channels in one place, member summary alongside, AI drafts | ✅ | Shared inbox provides linked member context, assignment/status, AI drafts, encrypted provider setup, and live inbound/outbound adapters for supported channels. Public member web chat and phone/walk-in interaction logging are included. | backend + web |
 | 124 | Desk: check-in scanner with a status card for each arrival | ⚠️ | Web desk supports QR webcam scan, manual lookup, RFID keyboard-wedge scan, and post-check-in status receipt (`attendance/page.tsx`; `POST /attendance/card/check-in`). Biometric hardware integration is not included in the requested web scope. | backend + web |
 | 125 | People: one scrollable timeline of messages, visits and payments per person | ⚠️ | Member detail sheet shows visits + payments (`member_detail`, `frontend/app/app/members/[memberId]`). No unified message timeline | backend + web |
 | 126 | Money: collections, dues, cash drawer, P&L, recovered this month | ⚠️ | Collections/dues/cash drawer ✅ (`frontend/app/app/cash`, `payments`, `analytics`). No P&L (row 29), no "recovered this month" | web |
@@ -288,7 +288,7 @@ The prose audit at the repo root remains the methodology record. This file is th
 | **76** Branded app | ⚠️ (thin) | **⚠️** (evidenced) | Expo app confirmed (`mobileapp/app.json`); no workout log, no streaks UI confirmed |
 | **77** Import | ⚠️ "CSV import built" | **⚠️** (backend only) | Route + service exist; **zero UI** in web or mobile. Surface corrected |
 
-**One claim investigated and rejected:** an automated pass asserted member-level upgrades/downgrades/transfers/cancellation were built (would have flipped row 15 ❌→✅). Disproved — `memberships_service.py` contains only signup/activation functions; `upgrade`/`downgrade`/`cancel` exist solely in `saas_billing_service.py:74/:90/:116` (SaaS tier). Row 15 stays ❌.
+**Row 15 rechecked for the requested web scope:** member changes use `membership_changes_service.py`, `member_vault_service.py`, the web Account surface, owner/manager review, and scheduled lifecycle processing. The row is marked Built for backend + web; mobile is excluded from this scope.
 
 **Confirmed unchanged after adversarial re-check:** OCR is a hard stub (`ocr.py:79` returns `None`, no tesseract/vision path exists); waitlist 0 matches; promos 0 matches; consent 0 matches; staff KPIs 0 matches; branches/royalties 0 matches; no Wins feed; retention rows 31–37 have no UI in `frontend/` **or** `mobileapp/`.
 

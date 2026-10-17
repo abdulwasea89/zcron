@@ -16,6 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api";
+import { enqueueOfflineMutation } from "@/lib/offline-mutations";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { money, roleLabel, titleCase } from "@/lib/format";
 import type { CashMemberItem, CashPaymentOut, PlanOut, ReconciliationOut } from "@/lib/types";
 
@@ -56,6 +58,13 @@ export default function CashPage() {
 
   useEffect(() => { queueMicrotask(() => void loadHistory()); }, []);
   useRealtimeEvent(["payment.recorded"], () => void loadHistory());
+  useEffect(() => {
+    const handleSynced = (event: Event) => {
+      if ((event as CustomEvent<{ path?: string }>).detail?.path === "/cash/log") void loadHistory();
+    };
+    window.addEventListener("acron:offline-mutation-synced", handleSynced);
+    return () => window.removeEventListener("acron:offline-mutation-synced", handleSynced);
+  }, []);
 
   const all = history ?? [];
   const filtered = all.filter((item) =>
@@ -415,6 +424,7 @@ function ReceiptRow({ label, value }: { label: string; value: React.ReactNode })
 /* ─── LogPayment ─── */
 
 function LogPayment({ onSaved }: { onSaved: () => void }) {
+  const currentUser = useCurrentUser();
   const [plans, setPlans] = useState<PlanOut[] | null>(null);
   const [selected, setSelected] = useState<CashMemberItem | null>(null);
   const [memberId, setMemberId] = useState("");
@@ -430,6 +440,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
   const [method, setMethod] = useState("cash");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [queuedMessage, setQueuedMessage] = useState("");
   const [result, setResult] = useState<CashPaymentOut | null>(null);
   // The form resets on success, so keep what was paid for alongside the result.
   const [receipt, setReceipt] = useState<{ member: CashMemberItem | null; plan: PlanOut | null; method: string } | null>(null);
@@ -438,9 +449,8 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
   const selectedPlan = plans?.find((p) => p.id === planId) ?? null;
 
   useEffect(() => {
-    if (!memberId || !planId) { setQuote(null); setAmount(""); return; }
+    if (!memberId || !planId) return;
     let cancelled = false;
-    setQuote(null);
     const timer = setTimeout(async () => {
       try {
         const result = await api.post<typeof quote>("/cash/quote", { member_id: memberId, plan_id: planId, promo_code: promoCode.trim() || null });
@@ -484,6 +494,8 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
   }, [query]);
 
   function selectPlan(id: string) {
+    setQuote(null);
+    setAmount("");
     setPlanId(id);
   }
 
@@ -495,18 +507,42 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
     setError("");
     setResult(null);
     setLoading(true);
+    const idempotencyKey = crypto.randomUUID();
     try {
-      const out = await api.post<CashPaymentOut>("/cash/log", {
+      const payload = {
         member_id: memberId, plan_id: planId, amount: amt, method, note: note.trim() || null,
         promo_code: promoCode.trim() || null,
-      });
+      };
+      const out = await api.post<CashPaymentOut>("/cash/log", payload, { "Idempotency-Key": idempotencyKey });
       setResult(out);
       onSaved();
       setReceipt({ member: selected, plan: selectedPlan, method });
       setSelected(null); setMemberId(""); setQuery(""); setResults([]);
       setPlanId(""); setAmount(""); setNote(""); setPromoCode("");
     } catch (e) {
-      setError((e as ApiError).message);
+      const networkOrServerFailure = !(e instanceof ApiError) || e.status >= 500;
+      if (networkOrServerFailure && currentUser?.org_id) {
+        try {
+          await enqueueOfflineMutation({
+            organizationId: currentUser.org_id,
+            path: "/cash/log",
+            body: {
+              member_id: memberId, plan_id: planId, amount: amt, method, note: note.trim() || null,
+              promo_code: promoCode.trim() || null,
+            },
+            // Same key as the attempted request: a response lost after commit
+            // replays the original result instead of recording a second payment.
+            idempotencyKey,
+          });
+          setQueuedMessage("Connection failed. The payment is saved on this device and is not recorded yet. It will sync when the connection returns; check the payment history before retrying.");
+          setSelected(null); setMemberId(""); setQuery(""); setResults([]);
+          setPlanId(""); setAmount(""); setNote(""); setPromoCode(""); setQuote(null);
+        } catch {
+          setError("Connection failed and this payment could not be saved for sync. Keep the payment details and check the ledger before trying again.");
+        }
+      } else {
+        setError((e as ApiError).message);
+      }
     } finally {
       setLoading(false);
     }
@@ -532,6 +568,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
       ) : (
         <form onSubmit={submit} className="grid gap-6 p-5 sm:p-6">
           {error && <Alert onDismiss={() => setError("")}>{error}</Alert>}
+          {queuedMessage && <Alert tone="warning" onDismiss={() => setQueuedMessage("")}>{queuedMessage}</Alert>}
 
           {/* Step 1: Find member */}
           <div>
@@ -542,8 +579,8 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
               query={query}
               onQueryChange={setQuery}
               error={searchError}
-              onChange={(m) => { setSelected(m); setMemberId(m.member_id); }}
-              onClear={() => { setSelected(null); setMemberId(""); setQuery(""); setResults([]); }}
+              onChange={(m) => { setSelected(m); setMemberId(m.member_id); setQuote(null); setAmount(""); }}
+              onClear={() => { setSelected(null); setMemberId(""); setQuery(""); setResults([]); setQuote(null); setAmount(""); }}
             />
           </div>
 
@@ -572,7 +609,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
           </div>
 
           {/* Step 3: Server-calculated amount + Method */}
-          <Input label="Promo code (optional)" value={promoCode} onChange={(e) => setPromoCode(e.target.value.toUpperCase())} placeholder="WELCOME10" />
+          <Input label="Promo code (optional)" value={promoCode} onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setQuote(null); setAmount(""); }} placeholder="WELCOME10" />
           {quoteError && <Alert onDismiss={() => setQuoteError("")}>{quoteError}</Alert>}
           {quote && <div className="grid gap-1 border border-[var(--border)] p-3 text-xs text-muted-foreground">
             <div>Plan price: {money(quote.plan_price, quote.currency)}</div>

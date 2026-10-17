@@ -15,10 +15,12 @@ from app.models.company_contract import CompanyContract
 from app.models.conversation import Conversation
 from app.models.conversation_message import ConversationMessage
 from app.models.freeze_request import MembershipFreezeRequest
+from app.models.membership_change_request import MembershipChangeRequest
 from app.models.gamification import GymChallenge, MemberChallengeProgress, MemberStreak
 from app.models.idempotency_key import IdempotencyKey
 from app.models.inactivity_ladder import InactivityLadderProgress, InactivityLadderRung
 from app.models.inbox import InboxConversation, InboxMessage
+from app.models.inbox_channel import InboxChannelConnection
 from app.models.invoice import Invoice
 from app.models.lead import Lead, LeadBooking, LeadFollowUp
 from app.models.member_trainer import MemberTrainer
@@ -57,6 +59,7 @@ __all__ = [
     "Conversation",
     "ConversationMessage",
     "MembershipFreezeRequest",
+    "MembershipChangeRequest",
     "MembershipReminder",
     "GymChallenge",
     "IdempotencyKey",
@@ -64,6 +67,7 @@ __all__ = [
     "InactivityLadderRung",
     "InboxConversation",
     "InboxMessage",
+    "InboxChannelConnection",
     "Invoice",
     "Lead",
     "LeadBooking",
@@ -100,3 +104,5 @@ __all__ = [
     "Locker",
     "WinBackAttempt",
 ]
+
+from app.models.member_credit import MemberCreditAccount, MemberCreditEntry

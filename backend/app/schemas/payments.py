@@ -13,6 +13,7 @@ class PaymentOut(BaseModel):
     plan_id: str | None
     kind: str
     method: str
+    stripe_payment_method_type: str | None = None
     status: str
     amount: float
     tax_amount: float

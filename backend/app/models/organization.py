@@ -83,3 +83,6 @@ class Organization(UUIDModel, TimestampModel, table=True):
     # Failed-charge lifecycle (Section 3.2.4)
     saas_retry_count: int = 0  # how many consecutive payment-failure webhooks fired
     saas_state_changed_at: datetime | None = None  # when current saas_status was entered
+    onboarding_complete: bool = True
+    stripe_onboarding_session_id: str | None = None
+    stripe_onboarding_attempt: int = 0

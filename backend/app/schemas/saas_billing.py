@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -11,6 +12,10 @@ from app.core.constants import SaasTier
 
 class TierChangeRequest(BaseModel):
     tier: SaasTier
+
+
+class BillingPortalOut(BaseModel):
+    url: str
 
 
 class SaasStatusOut(BaseModel):
@@ -31,3 +36,11 @@ class InvoiceOut(BaseModel):
     currency: str
     status: str
     created_at: datetime
+
+
+class CancelSubscriptionRequest(BaseModel):
+    timing: Literal["now", "period_end"] = "period_end"
+
+
+class SubscriptionCheckoutConfirm(BaseModel):
+    session_id: str

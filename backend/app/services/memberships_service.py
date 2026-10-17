@@ -375,6 +375,10 @@ async def _activate_membership(
         current_period_end=period_end,
         classes_remaining=classes_remaining,
         credits_allowance=classes_remaining,
+        auto_renew=bool(payment.recurring_consent and payment.stripe_payment_method_id
+                         and plan.billing_type.value == "recurring"),
+        prepaid_value_minor=max(0, int(round((payment.amount - payment.joining_fee_amount) * 100))),
+        prepaid_value_at=now_utc(),
     )
     session.add(sub)
     await session.flush()
@@ -405,6 +409,283 @@ async def _activate_membership(
     payment.subscription_id = sub.id
     session.add(payment)
     return sub
+
+
+async def finalize_web_signup_payment(session: AsyncSession, payment: Payment) -> None:
+    """Activate a paid web signup exactly once after Stripe verifies success."""
+    # Confirmation requests and Stripe webhooks can arrive together. Serialize
+    # fulfillment on the payment row so both paths cannot create subscriptions.
+    locked_payment = (await session.execute(
+        select(Payment).where(Payment.id == payment.id).with_for_update()
+    )).scalar_one_or_none()
+    if locked_payment is None:
+        raise HTTPException(status_code=404, detail="Signup payment not found.")
+    payment = locked_payment
+    if payment.note != "web_member_signup" or payment.subscription_id:
+        return
+    org = await session.get(Organization, payment.organization_id)
+    member = await session.get(OrganizationMember, payment.member_id) if payment.member_id else None
+    plan = await session.get(MembershipPlan, payment.plan_id) if payment.plan_id else None
+    user = await session.get(User, member.user_id) if member else None
+    if not org or not member or not plan or not user:
+        raise HTTPException(status_code=409, detail="The signup payment is not linked to an active account and plan.")
+    if member.member_status != MemberStatus.PENDING_PAYMENT:
+        raise HTTPException(status_code=409, detail="This member is not waiting for signup payment.")
+    if payment.recurring_consent and payment.stripe_payment_method_id:
+        member.stripe_default_payment_method_id = payment.stripe_payment_method_id
+        member.stripe_default_payment_method_type = payment.stripe_payment_method_type
+        member.recurring_consent_at = payment.paid_at or now_utc()
+        session.add(member)
+    await _activate_membership(session, org=org, member=member, plan=plan, payment=payment)
+    from app.services.referrals_service import qualify_referral_for_member
+    await qualify_referral_for_member(session, org_id=org.id, member_id=member.id)
+    await record_audit(session, action="member.activated", organization_id=org.id,
+                       actor_user_id=user.id, entity_type="member", entity_id=member.id,
+                       metadata={"plan_id": plan.id, "amount": payment.amount})
+    await events.membership_changed(org.id, member_id=member.id, status=MemberStatus.ACTIVE.value)
+    await send_email(user.email, "Welcome!", f"Your membership at {org.name} is active.")
+    await send_push(None, "Membership active", f"Welcome to {org.name}!")
+
+
+async def create_web_signup_payment(session: AsyncSession, *, org_id: str, user_id: str,
+                                    plan_id: str, promo_code: str | None = None,
+                                    auto_renew: bool = False) -> dict:
+    """Prepare the member's first purchase for Stripe Payment Element."""
+    member = await _member_for(session, org_id, user_id)
+    if member is None or member.role != Role.MEMBER:
+        raise HTTPException(status_code=404, detail="Member account not found.")
+    if member.member_status == MemberStatus.PENDING_APPROVAL:
+        raise HTTPException(status_code=403, detail="Your application is waiting for gym approval.")
+    if member.member_status != MemberStatus.PENDING_PAYMENT:
+        raise HTTPException(status_code=409, detail="This account is not waiting for a signup payment.")
+    org = await session.get(Organization, org_id)
+    plan = await session.get(MembershipPlan, plan_id)
+    if not org or not plan or plan.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Membership plan not found.")
+    if plan.status.value != "published" or plan.visibility.value != "public":
+        raise HTTPException(status_code=409, detail="This plan is not available for public signup.")
+    recurring_consent = bool(auto_renew and plan.billing_type.value == "recurring" and plan.auto_renew and plan.price > 0)
+    if auto_renew and not recurring_consent:
+        raise HTTPException(status_code=422, detail="This plan cannot be set up for automatic renewal.")
+    quote = await quote_member_payment(session, org_id=org_id, member_id=member.id,
+                                       plan=plan, promo_code=promo_code)
+    if recurring_consent and quote.total <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Automatic renewal requires a paid first membership term. Turn off automatic renewal to use a fully discounted signup.",
+        )
+    pending = (await session.execute(select(Payment).where(
+        Payment.organization_id == org_id, Payment.member_id == member.id,
+        Payment.note == "web_member_signup", Payment.status == PaymentStatus.PENDING,
+    ).order_by(Payment.created_at.desc()))).scalars().first()
+    normalized_promo = quote.promo_code
+    if pending and (pending.plan_id != plan.id or pending.promo_code != normalized_promo
+                    or pending.recurring_consent != recurring_consent):
+        raise HTTPException(status_code=409, detail="A signup payment is already in progress. Finish it before changing plans or discount codes.")
+    if pending is None:
+        payment = Payment(
+            organization_id=org_id, member_id=member.id, plan_id=plan.id,
+            kind=PaymentKind.MEMBER_FEE, method=PaymentMethod.CARD,
+            status=PaymentStatus.PENDING, amount=quote.total,
+            tax_amount=quote.tax_amount, plan_price_amount=quote.plan_price,
+            joining_fee_amount=quote.joining_fee, discount_amount=quote.discount_amount,
+            promo_code=normalized_promo, currency=plan.currency,
+            note="web_member_signup",
+            recurring_consent=recurring_consent,
+        )
+        session.add(payment)
+        await session.flush()
+        payment.idempotency_key = f"web-member-signup-{payment.id}"
+        session.add(payment)
+    else:
+        payment = pending
+
+    if payment.amount <= 0:
+        payment.status = PaymentStatus.SUCCEEDED
+        payment.paid_at = now_utc()
+        await finalize_web_signup_payment(session, payment)
+        return {"payment_required": False, "payment_id": payment.id, "amount": payment.amount,
+                "currency": payment.currency, "status": "active"}
+    if org.stripe_connect_status != ConnectStatus.ACTIVE or not org.stripe_connect_account_id:
+        raise HTTPException(status_code=409, detail="This gym has not enabled online member payments.")
+    user = await session.get(User, user_id)
+    customer_id = None
+    if recurring_consent:
+        try:
+            if not member.stripe_customer_id:
+                member.stripe_customer_id = await connect_stripe.create_member_customer(
+                    connected_account_id=org.stripe_connect_account_id,
+                    email=user.email if user else "", member_id=member.id, organization_id=org_id,
+                )
+                session.add(member)
+                await session.flush()
+            customer_id = member.stripe_customer_id
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="Could not set up secure recurring billing.") from exc
+    try:
+        intent = await connect_stripe.create_member_intent(
+            connected_account_id=org.stripe_connect_account_id,
+            amount_cents=int(round(payment.amount * 100)), currency=payment.currency.lower(),
+            idempotency_key=payment.idempotency_key or payment.id,
+            description=f"{org.name} — {plan.name}",
+            metadata={"purpose": "member_signup", "payment_id": payment.id,
+                      "member_id": member.id, "organization_id": org_id,
+                      "plan_id": plan.id, "auto_renew": str(recurring_consent).lower()},
+            customer_id=customer_id, save_for_future=recurring_consent,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Could not start the secure signup payment.") from exc
+    if (intent.amount != int(round(payment.amount * 100))
+            or intent.currency.lower() != payment.currency.lower()):
+        raise HTTPException(status_code=502, detail="Stripe returned an unexpected signup amount.")
+    payment.stripe_payment_intent_id = intent.id
+    session.add(payment)
+    return {"payment_required": True, "payment_id": payment.id,
+            "payment_intent_id": intent.id, "client_secret": intent.client_secret,
+            "amount": payment.amount, "currency": payment.currency, "status": intent.status}
+
+
+async def confirm_web_signup_payment(session: AsyncSession, *, org_id: str, user_id: str,
+                                     payment_intent_id: str) -> dict:
+    member = await _member_for(session, org_id, user_id)
+    if member is None or member.role != Role.MEMBER:
+        raise HTTPException(status_code=404, detail="Member account not found.")
+    payment = (await session.execute(select(Payment).where(
+        Payment.organization_id == org_id, Payment.member_id == member.id,
+        Payment.stripe_payment_intent_id == payment_intent_id,
+        Payment.note == "web_member_signup",
+    ))).scalar_one_or_none()
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Signup payment not found.")
+    if payment.status == PaymentStatus.SUCCEEDED and payment.subscription_id:
+        return {"status": "active", "payment_id": payment.id}
+    org = await session.get(Organization, org_id)
+    if org is None or not org.stripe_connect_account_id:
+        raise HTTPException(status_code=409, detail="Gym payment account is unavailable.")
+    try:
+        intent = await connect_stripe.inspect_member_intent(
+            connected_account_id=org.stripe_connect_account_id, intent_id=payment_intent_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Could not verify the Stripe payment.") from exc
+    if (intent is None or intent.amount != int(round(payment.amount * 100))
+            or intent.currency.lower() != payment.currency.lower()):
+        raise HTTPException(status_code=402, detail="Stripe has not confirmed this payment.")
+    if intent.status == "processing":
+        return {"status": "processing", "payment_id": payment.id}
+    if intent.status != "succeeded":
+        raise HTTPException(status_code=402, detail="Stripe has not confirmed this payment.")
+    payment.status = PaymentStatus.SUCCEEDED
+    payment.paid_at = now_utc()
+    payment.stripe_charge_id = intent.charge_id
+    payment.stripe_payment_method_type = intent.payment_method_type
+    payment.stripe_payment_method_id = intent.payment_method_id
+    session.add(payment)
+    await finalize_web_signup_payment(session, payment)
+    return {"status": "active", "payment_id": payment.id}
+
+
+async def _member_subscription_for_billing(session: AsyncSession, *, org_id: str, user_id: str):
+    member = await _member_for(session, org_id, user_id)
+    if member is None or member.role != Role.MEMBER:
+        raise HTTPException(status_code=404, detail="Member account not found.")
+    sub = (await session.execute(select(Subscription).where(
+        Subscription.organization_id == org_id,
+        Subscription.member_id == member.id,
+        Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE]),
+    ).order_by(Subscription.started_at.desc()).with_for_update())).scalars().first()
+    if sub is None:
+        raise HTTPException(status_code=409, detail="An active recurring membership is required.")
+    plan = await session.get(MembershipPlan, sub.plan_id)
+    if plan is None or plan.billing_type.value != "recurring" or not plan.auto_renew:
+        raise HTTPException(status_code=409, detail="This plan does not support automatic renewal.")
+    return member, sub, plan
+
+
+async def recurring_billing_status(session: AsyncSession, *, org_id: str, user_id: str) -> dict:
+    member = await _member_for(session, org_id, user_id)
+    if member is None or member.role != Role.MEMBER:
+        raise HTTPException(status_code=404, detail="Member account not found.")
+    sub = (await session.execute(select(Subscription).where(
+        Subscription.organization_id == org_id, Subscription.member_id == member.id,
+        Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE]),
+    ).order_by(Subscription.started_at.desc()))).scalars().first()
+    plan = await session.get(MembershipPlan, sub.plan_id) if sub else None
+    return {
+        "eligible": bool(sub and plan and plan.billing_type.value == "recurring" and plan.auto_renew),
+        "active": bool(sub and sub.auto_renew and not sub.cancel_at_period_end),
+        "cancel_at_period_end": bool(sub and sub.cancel_at_period_end),
+        "has_payment_method": bool(member.stripe_customer_id and member.stripe_default_payment_method_id),
+        "payment_method_type": member.stripe_default_payment_method_type,
+        "status": sub.status.value if sub else None,
+        "next_renewal_at": sub.current_period_end if sub and sub.auto_renew else None,
+        "renewal_amount": (sub.price_snapshot * (1 + plan.tax_rate if plan.tax_mode.value == "added" else 1)) if sub and plan else None,
+        "currency": sub.currency if sub else None,
+        "cycle_length": plan.cycle_length if plan else None,
+        "cycle_unit": plan.cycle_unit if plan else None,
+    }
+
+
+async def create_recurring_setup_intent(session: AsyncSession, *, org_id: str, user_id: str) -> dict:
+    member, _, _ = await _member_subscription_for_billing(session, org_id=org_id, user_id=user_id)
+    org = await session.get(Organization, org_id)
+    user = await session.get(User, user_id)
+    if not org or org.stripe_connect_status != ConnectStatus.ACTIVE or not org.stripe_connect_account_id:
+        raise HTTPException(status_code=409, detail="This gym has not enabled online member payments.")
+    if not user:
+        raise HTTPException(status_code=404, detail="Member account not found.")
+    try:
+        if not member.stripe_customer_id:
+            member.stripe_customer_id = await connect_stripe.create_member_customer(
+                connected_account_id=org.stripe_connect_account_id,
+                email=user.email, member_id=member.id, organization_id=org_id,
+            )
+            session.add(member)
+            await session.flush()
+        return await connect_stripe.create_member_setup_intent(
+            connected_account_id=org.stripe_connect_account_id,
+            customer_id=member.stripe_customer_id,
+            member_id=member.id, organization_id=org_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Could not open secure payment-method setup.") from exc
+
+
+async def confirm_recurring_setup(
+    session: AsyncSession, *, org_id: str, user_id: str, setup_intent_id: str,
+) -> dict:
+    member, sub, _ = await _member_subscription_for_billing(session, org_id=org_id, user_id=user_id)
+    org = await session.get(Organization, org_id)
+    if not org or not org.stripe_connect_account_id or not member.stripe_customer_id:
+        raise HTTPException(status_code=409, detail="Recurring billing is not configured for this gym.")
+    try:
+        setup = await connect_stripe.inspect_member_setup_intent(
+            connected_account_id=org.stripe_connect_account_id,
+            setup_intent_id=setup_intent_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Could not verify the payment-method setup.") from exc
+    if (not setup or setup["status"] != "succeeded"
+            or setup["customer_id"] != member.stripe_customer_id
+            or setup["member_id"] != member.id
+            or setup["organization_id"] != org_id
+            or not setup["payment_method_id"]):
+        raise HTTPException(status_code=402, detail="Stripe has not confirmed the reusable payment method.")
+    member.stripe_default_payment_method_id = setup["payment_method_id"]
+    member.stripe_default_payment_method_type = setup["payment_method_type"]
+    member.recurring_consent_at = now_utc()
+    member.stripe_recurring_setup_intent_id = setup_intent_id
+    sub.auto_renew = True
+    sub.renewal_attempt_count = 0
+    sub.next_renewal_attempt_at = now_utc() if sub.status == SubscriptionStatus.GRACE else None
+    session.add(member)
+    session.add(sub)
+    await record_audit(session, action="member.recurring_billing_enabled",
+                       organization_id=org_id, actor_user_id=user_id,
+                       entity_type="subscription", entity_id=sub.id,
+                       metadata={"setup_intent_id": setup_intent_id})
+    return {"active": True, "status": sub.status.value,
+            "retry_scheduled": sub.status == SubscriptionStatus.GRACE}
 
 
 async def pay_and_activate(

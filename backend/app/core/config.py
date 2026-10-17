@@ -108,6 +108,7 @@ class Settings(BaseSettings):
 
     # ----------------------------------------------------------------- stripe
     stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_connect_webhook_secret: str = ""
     stripe_connect_client_id: str = ""
@@ -129,6 +130,11 @@ class Settings(BaseSettings):
     smtp_from: str = os.getenv("SMTP_FROM", "")
     smtp_use_tls: bool = os.getenv("SMTP_USE_TLS", "1") != "0"
     resend_api_key: str | None = os.getenv("RESEND_API_KEY")
+    # Inbox provider credentials are Fernet-encrypted per workspace; keep this
+    # key stable and use the base URL when providers need inbound webhooks.
+    inbox_public_webhook_base_url: str = os.getenv("INBOX_PUBLIC_WEBHOOK_BASE_URL", "")
+    inbox_encryption_key: str = os.getenv("INBOX_ENCRYPTION_KEY", "")
+    inbox_meta_graph_version: str = os.getenv("INBOX_META_GRAPH_VERSION", "v25.0")
     expo_push_url: str = "https://exp.host/--/api/v2/push/send"
     ocr_provider_api_key: str = ""
     openai_api_key: str = ""
