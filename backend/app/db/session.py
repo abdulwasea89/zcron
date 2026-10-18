@@ -16,11 +16,11 @@ from sqlmodel import SQLModel
 from app.core.config import settings
 
 # SQLite needs check_same_thread disabled for async usage. Cloud Postgres
-# (Neon/Supabase) requires TLS — asyncpg enables it via ssl="require".
+# (Neon/Supabase) requires TLS by default; local CI Postgres can opt out.
 if settings.is_sqlite:
     _connect_args: dict = {"check_same_thread": False}
 else:
-    _connect_args = {"ssl": "require"}
+    _connect_args = {"ssl": settings.database_ssl_mode}
 
 engine = create_async_engine(
     settings.database_url,
@@ -301,6 +301,8 @@ def _upgrade_sqlite_recurring_billing_schema(connection) -> None:
         "payments": {
             "recurring_consent": "BOOLEAN NOT NULL DEFAULT 0",
             "stripe_payment_method_id": "VARCHAR",
+            "stripe_failure_code": "VARCHAR(64)",
+            "stripe_failure_decline_code": "VARCHAR(64)",
         },
     }
     for table, columns in additions.items():

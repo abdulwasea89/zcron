@@ -351,7 +351,7 @@ export default function TasksPage() {
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search tasks…"
-        children={(
+      >
           <ListFilterSheet title="Filter tasks" description="Focus on ownership and upcoming deadlines." activeCount={activeTaskFilterCount} resultCount={filtered.length} onClear={clearTaskFilters}>
             <FieldSelect label="Assigned to" value={assigneeFilter} onChange={setAssigneeFilter}>
               <SelectItem value={NONE}>Anyone</SelectItem><SelectItem value="__unassigned__">Unassigned</SelectItem>
@@ -361,8 +361,7 @@ export default function TasksPage() {
               <SelectItem value={NONE}>Any deadline</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="week">Due in the next 7 days</SelectItem><SelectItem value="later">Due later</SelectItem><SelectItem value="no_deadline">No deadline</SelectItem>
             </FieldSelect>
           </ListFilterSheet>
-        )}
-      />
+      </ListToolbar>
 
       {/* Flat workspace, not a card: rows are held by hairlines. */}
       <div className="mt-3">

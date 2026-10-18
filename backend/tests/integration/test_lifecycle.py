@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import pytest
 from sqlmodel import select
@@ -16,7 +16,6 @@ from app.models.celebration import MemberCelebration
 from app.models.membership import OrganizationMember
 from app.models.subscription import Subscription
 from app.models.user import User
-from app.models.winback import WinBackAttempt
 from app.services import celebrations_service as celebrations
 from app.services import winback_service as winback
 from tests.helpers import OWNER_PROFILE, latest_code_for

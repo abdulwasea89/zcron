@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 

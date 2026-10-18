@@ -327,8 +327,6 @@ async def _connect_payment_succeeded(session: AsyncSession, obj: dict, account_i
             sub.status = SubscriptionStatus.ACTIVE
             session.add(sub)
     if payment.member_id:
-        from app.models.membership import OrganizationMember
-
         member = await session.get(OrganizationMember, payment.member_id)
         if member is not None:
             member.member_status = MemberStatus.ACTIVE

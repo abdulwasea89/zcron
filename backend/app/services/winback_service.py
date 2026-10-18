@@ -9,7 +9,7 @@ into a measurable "money recovered" number (the seed of the Wins feed, #67).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession

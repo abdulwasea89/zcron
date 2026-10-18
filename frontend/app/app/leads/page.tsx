@@ -206,7 +206,7 @@ export default function LeadsPage() {
           { value: "lost", label: "Lost", count: (leads ?? []).filter((lead) => lead.stage === "lost").length },
         ]}
         value={filter} onChange={setFilter} search={query} onSearch={setQuery} searchPlaceholder="Search leads…"
-        children={(
+      >
           <ListFilterSheet title="Filter leads" description="Focus on a source, lead quality, or contact readiness." activeCount={activeLeadFilterCount} resultCount={filtered.length} onClear={clearLeadFilters}>
             <FieldSelect label="Lead source" value={sourceFilter} onChange={setSourceFilter}>
               <SelectItem value={NONE}>All sources</SelectItem>
@@ -222,8 +222,7 @@ export default function LeadsPage() {
               <SelectItem value={NONE}>Any permission status</SelectItem><SelectItem value="yes">Permission granted</SelectItem><SelectItem value="no">No permission</SelectItem>
             </FieldSelect>
           </ListFilterSheet>
-        )}
-      />
+      </ListToolbar>
       <div className="mt-3 overflow-x-auto">
         {leads === null ? <Spinner label="Loading leads…" /> : filtered.length === 0 ?
           <EmptyState title={query || activeLeadFilterCount ? "No matching leads" : `No ${filter} leads`} hint={query || activeLeadFilterCount ? "Adjust your search or filters and try again." : "Add a lead to start tracking prospects."} /> :

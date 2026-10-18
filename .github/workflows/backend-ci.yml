@@ -1,0 +1,113 @@
+name: Production checks
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: acron_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d acron_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install Python
+        run: uv python install ${{ matrix.python-version }}
+      - name: Install locked dependencies
+        run: uv sync --locked --python ${{ matrix.python-version }} --group dev
+      - name: Lint backend
+        run: uv run --frozen ruff check app tests
+      - name: Run backend unit and integration tests
+        env:
+          APP_ENV: test
+          DEBUG: "false"
+          SECRET_KEY: ci-only-not-a-production-secret
+          LOCAL_DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+          USE_CLOUD_DB: "no"
+          STRIPE_SECRET_KEY: ""
+          STRIPE_WEBHOOK_SECRET: ""
+        run: uv run --frozen pytest -q
+      - name: Exercise PostgreSQL migrations up, down, and up
+        env:
+          APP_ENV: test
+          DEBUG: "false"
+          SECRET_KEY: ci-only-not-a-production-secret
+          USE_CLOUD_DB: "yes"
+          CLOUD_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/acron_ci"
+          DATABASE_SSL_MODE: disable
+        run: |
+          uv run --frozen alembic upgrade head
+          uv run --frozen alembic downgrade f3a4b5c6d7e8
+          uv run --frozen alembic upgrade head
+          test "$(uv run --frozen alembic current | awk '{print $1}')" = "h2b3c4d5e6f7"
+
+  frontend:
+    name: Frontend production build and smoke checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Lint frontend
+        run: npm run lint
+      - name: Type-check frontend
+        run: npx tsc --noEmit --incremental false
+      - name: Build production frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+        run: npm run build
+      - name: Start and smoke-test production server
+        env:
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+        run: |
+          npm run start -- --hostname 127.0.0.1 --port 3100 > /tmp/acron-next.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3100/login >/dev/null; then break; fi
+            sleep 2
+          done
+          node scripts/production-smoke.mjs

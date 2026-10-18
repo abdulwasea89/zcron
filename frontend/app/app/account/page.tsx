@@ -411,11 +411,14 @@ export default function AccountPage() {
     const setupIntentId = params.get("setup_intent");
     if (params.get("recurring_setup") !== "1" || !setupIntentId) return;
     let active = true;
-    void finishRecurringSetup(setupIntentId).catch((cause) => {
+    queueMicrotask(() => {
+      if (!active) return;
+      void finishRecurringSetup(setupIntentId).catch((cause) => {
       if (active) setError((cause as ApiError).message || "Could not confirm recurring payment setup.");
     }).finally(() => {
       params.delete("recurring_setup"); params.delete("setup_intent"); params.delete("setup_intent_client_secret"); params.delete("redirect_status");
       window.history.replaceState({}, "", `${window.location.pathname}${params.size ? `?${params}` : ""}`);
+      });
     });
     return () => { active = false; };
   }, []);

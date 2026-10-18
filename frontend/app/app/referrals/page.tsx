@@ -119,7 +119,7 @@ export default function ReferralsPage() {
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search referrals…"
-        children={(
+      >
           <ListFilterSheet title="Filter referrals" description="Find referrals by reward delivery and signup progress." activeCount={activeReferralFilterCount} resultCount={filteredReferrals.length} onClear={clearReferralFilters}>
             <FieldSelect label="Reward delivery" value={rewardFilter} onChange={setRewardFilter}>
               <SelectItem value={NONE}>Any reward status</SelectItem><SelectItem value="pending">Reward pending</SelectItem><SelectItem value="fulfilled">Reward delivered</SelectItem>
@@ -128,8 +128,7 @@ export default function ReferralsPage() {
               <SelectItem value={NONE}>All signups</SelectItem><SelectItem value="complete">Email captured</SelectItem><SelectItem value="incomplete">Signup in progress</SelectItem>
             </FieldSelect>
           </ListFilterSheet>
-        )}
-      />
+      </ListToolbar>
       <div className="mt-3 overflow-x-auto">
         <table className={`${TABLE} min-w-[760px]`}>
           <thead><tr className={THEAD_ROW}>

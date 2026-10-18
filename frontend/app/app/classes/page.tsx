@@ -426,7 +426,7 @@ export default function ClassesPage() {
         search={search}
         onSearch={(v) => setSearch(v)}
         searchPlaceholder="Search classes…"
-        children={(
+      >
           <ListFilterSheet title="Filter classes" description="Narrow sessions by trainer and available capacity." activeCount={activeClassFilterCount} resultCount={filtered.length} onClear={clearClassFilters}>
             <FieldSelect label="Trainer" value={trainerFilter} onChange={setTrainerFilter}>
               <SelectItem value={NONE}>Any trainer</SelectItem><SelectItem value="__unassigned__">Unassigned</SelectItem>
@@ -436,8 +436,7 @@ export default function ClassesPage() {
               <SelectItem value={NONE}>Any capacity</SelectItem><SelectItem value="available">Has open spots</SelectItem><SelectItem value="full">Fully booked</SelectItem>
             </FieldSelect>
           </ListFilterSheet>
-        )}
-      />
+      </ListToolbar>
 
       {/* Flat workspace, not a card: rows are held by hairlines. */}
       <div className="mt-3">

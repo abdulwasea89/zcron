@@ -9,6 +9,7 @@ zero external accounts. Provide real keys to activate real calls.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -85,6 +86,8 @@ class Settings(BaseSettings):
     )
     # Paste your Neon connection string here (or in .env as CLOUD_DATABASE_URL).
     cloud_database_url: str = os.getenv("CLOUD_DATABASE_URL", "")
+    # Cloud databases default to TLS; CI's local Postgres opts out explicitly.
+    database_ssl_mode: Literal["require", "disable"] = "require"
     # Local fallback file used when USE_CLOUD_DB is off.
     local_database_url: str = os.getenv(
         "LOCAL_DATABASE_URL", "sqlite+aiosqlite:///./gym_platform.db"

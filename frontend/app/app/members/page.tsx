@@ -33,6 +33,8 @@ import { statusTone, titleCase } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { MemberDirectoryItem } from "@/lib/types";
 
+const MEMBERS_FILTER_REFERENCE_TIME = Date.now();
+
 interface InviteResult {
   member_id: string;
   email: string;
@@ -327,7 +329,7 @@ export default function MembersPage() {
     const hasTrainer = m.assigned_trainers.length > 0;
     const matchesTrainer = trainerFilter === NONE ||
       (trainerFilter === "__assigned__" ? hasTrainer : !hasTrainer);
-    const ageDays = (Date.now() - new Date(m.created_at).getTime()) / 86_400_000;
+    const ageDays = (MEMBERS_FILTER_REFERENCE_TIME - new Date(m.created_at).getTime()) / 86_400_000;
     const matchesJoined = joinedFilter === NONE ||
       (joinedFilter === "30" ? ageDays <= 30 :
         joinedFilter === "90" ? ageDays <= 90 :
@@ -611,7 +613,7 @@ export default function MembersPage() {
         search={query}
         onSearch={(v) => setQuery(v)}
         searchPlaceholder="Search members…"
-        children={(
+      >
           <Button
             type="button"
             variant={filtersOpen || activeFilterCount > 0 ? "secondary" : "ghost"}
@@ -624,8 +626,7 @@ export default function MembersPage() {
             </svg>
             Filters{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ""}
           </Button>
-        )}
-      />
+      </ListToolbar>
 
       <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
         <SheetContent side="right" className="sm:max-w-[420px]">

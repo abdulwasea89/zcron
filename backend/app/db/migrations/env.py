@@ -49,8 +49,8 @@ def do_run_migrations(connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    # Cloud Postgres (Neon/Supabase) requires TLS; SQLite takes no ssl arg.
-    connect_args = {} if settings.is_sqlite else {"ssl": "require"}
+    # Cloud Postgres defaults to TLS; ephemeral local Postgres can disable it.
+    connect_args = {} if settings.is_sqlite else {"ssl": settings.database_ssl_mode}
     connectable = async_engine_from_config(
         {"sqlalchemy.url": settings.database_url},
         prefix="sqlalchemy.",

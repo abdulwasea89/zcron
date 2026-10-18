@@ -52,7 +52,6 @@ from app.services import auth_service, idempotency_service
 from app.services import verification_service as verif
 from app.services.audit_service import record_audit
 from app.services.pricing_service import quote_member_payment
-from app.schemas.promotions import PriceQuoteOut
 
 
 # ----------------------------------------------------------------- helpers

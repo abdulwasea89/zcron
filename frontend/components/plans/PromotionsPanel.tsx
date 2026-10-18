@@ -54,7 +54,7 @@ export function PromotionsPanel({ plans }: { plans: PlanOut[] }) {
   }
 
   useEffect(() => {
-    void load();
+    queueMicrotask(() => void load());
   }, []);
 
   async function create(event: React.FormEvent) {

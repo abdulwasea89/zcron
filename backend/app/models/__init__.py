@@ -103,6 +103,8 @@ __all__ = [
     "Visitor",
     "Locker",
     "WinBackAttempt",
+    "MemberCreditAccount",
+    "MemberCreditEntry",
 ]
 
 from app.models.member_credit import MemberCreditAccount, MemberCreditEntry

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timezone
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
-from app.core.constants import Gender
 from app.schemas.common import TokenPair
 from app.schemas.members import MemberProfileUpdate
 

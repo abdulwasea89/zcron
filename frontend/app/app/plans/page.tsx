@@ -401,7 +401,8 @@ export default function PlansPage() {
         onSearch={setSearch}
         searchPlaceholder="Search plans…"
         hideSearch={filter === "promotions"}
-        children={filter !== "promotions" ? (
+        >
+        {filter !== "promotions" ? (
           <ListFilterSheet title="Filter plans" description="Narrow plans by billing, visibility, and featured status." activeCount={activePlanFilterCount} resultCount={filtered?.length ?? 0} onClear={clearPlanFilters}>
             <FieldSelect label="Billing type" value={billingFilter} onChange={setBillingFilter}>
               <SelectItem value={NONE}>All billing types</SelectItem>
@@ -416,7 +417,7 @@ export default function PlansPage() {
             </FieldSelect>
           </ListFilterSheet>
         ) : undefined}
-      />
+      </ListToolbar>
 
       {filter === "promotions" && isGym ? <PromotionsPanel plans={plans ?? []} /> : (
       <div className="mt-3 overflow-x-auto">

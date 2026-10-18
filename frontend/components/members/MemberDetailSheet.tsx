@@ -192,9 +192,13 @@ export function MemberDetailSheet({
 
   useEffect(() => {
     if (!memberId) return;
-    setDetailSheet(null);
-    setQrOpen(false);
-    setAssignOpen(false);
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setDetailSheet(null);
+      setQrOpen(false);
+      setAssignOpen(false);
+    });
     queueMicrotask(() => void load(memberId));
     queueMicrotask(() => {
       api
@@ -202,6 +206,7 @@ export function MemberDetailSheet({
         .then(setVisits)
         .catch(() => setVisits([]));
     });
+    return () => { active = false; };
   }, [memberId, load]);
 
   async function openAssign() {

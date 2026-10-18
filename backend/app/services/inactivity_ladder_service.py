@@ -25,7 +25,7 @@ row remains as history. Frozen members are skipped (a pause is not a relapse).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import func

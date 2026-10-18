@@ -42,7 +42,6 @@ from app.integrations.email import send_email_safe as send_email
 from app.models.attendance import Attendance
 from app.models.membership import OrganizationMember
 from app.models.onboarding import OnboardingJourney, OnboardingMilestoneProgress
-from app.models.organization import Organization
 from app.models.staff import Task
 from app.models.user import User
 from app.services.audit_service import record_audit

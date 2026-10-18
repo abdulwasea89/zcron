@@ -133,7 +133,7 @@ export default function PaymentsPage() {
         search={search}
         onSearch={(v) => setSearch(v)}
         searchPlaceholder="Search payments…"
-        children={(
+      >
           <ListFilterSheet title="Filter payments" description="Narrow the ledger by transaction type and refund status." activeCount={activePaymentFilterCount} resultCount={filtered.length} onClear={clearPaymentFilters}>
             <FieldSelect label="Payment status" value={statusFilter} onChange={setStatusFilter}>
               <SelectItem value={NONE}>Any status</SelectItem>
@@ -147,8 +147,7 @@ export default function PaymentsPage() {
               <SelectItem value={NONE}>Any refund status</SelectItem><SelectItem value="refundable">Can be refunded</SelectItem><SelectItem value="refunded">Has refund</SelectItem><SelectItem value="not_refunded">No refund</SelectItem>
             </FieldSelect>
           </ListFilterSheet>
-        )}
-      />
+      </ListToolbar>
 
       {/* Table surface: hairline border, square corners, flat background. */}
       <div className="mt-3">
