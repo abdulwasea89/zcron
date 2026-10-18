@@ -4,14 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Alert,
-  Avatar,
   Badge,
   Button,
   Card,
   CardHeader,
   EmptyState,
   Spinner,
-  TableToolbar,
 } from "@/components/ui";
 import { Dialog } from "@/components/Dialog";
 import { FieldSelect, NONE } from "@/components/FieldSelect";
@@ -53,15 +51,6 @@ function pendingTone(kind: string) {
   return kind === "failed_attempt" ? ("danger" as const) : ("warning" as const);
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="font-mono text-[10px] font-medium uppercase tracking-widest text-[var(--muted-foreground)]">{label}</dt>
-      <dd className="mt-1 text-sm text-[var(--foreground)]">{children}</dd>
-    </div>
-  );
-}
-
 function PendingList({ items }: { items: PendingPaymentItem[] }) {
   if (items.length === 0) {
     return (
@@ -96,13 +85,30 @@ function PendingList({ items }: { items: PendingPaymentItem[] }) {
   );
 }
 
-/** Summary strip cell: mono label + tabular value. */
-function SummaryCell({ label, value }: { label: string; value: string }) {
+function SheetInfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="bg-card px-4 py-3">
-      <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-[15px] font-semibold tabular-nums text-foreground">{value}</p>
+    <div className="grid grid-cols-[minmax(110px,0.8fr)_minmax(0,1.4fr)] items-center gap-4 border-b border-foreground/[0.07] py-3 last:border-0">
+      <dt className="text-[12px] text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-[13px] text-foreground">{children}</dd>
     </div>
+  );
+}
+
+function MemberDetailLink({ title, detail, onClick }: { title: string; detail: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-[60px] min-w-0 items-center justify-between gap-3 border border-foreground/[0.1] px-3.5 py-2.5 text-left transition-colors hover:border-foreground/20 hover:bg-foreground/[0.025] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand/60"
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-[12px] font-medium text-foreground">{title}</span>
+        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{detail}</span>
+      </span>
+      <svg className="h-4 w-4 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="m9 18 6-6-6-6" />
+      </svg>
+    </button>
   );
 }
 
@@ -161,6 +167,7 @@ export function MemberDetailSheet({
   const [error, setError] = useState("");
   const [visits, setVisits] = useState<AttendanceOut[] | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const [detailSheet, setDetailSheet] = useState<"profile" | "visits" | "pending" | "payments" | null>(null);
 
   // Assign trainer sheet
   const [assignOpen, setAssignOpen] = useState(false);
@@ -185,6 +192,9 @@ export function MemberDetailSheet({
 
   useEffect(() => {
     if (!memberId) return;
+    setDetailSheet(null);
+    setQrOpen(false);
+    setAssignOpen(false);
     queueMicrotask(() => void load(memberId));
     queueMicrotask(() => {
       api
@@ -234,7 +244,6 @@ export function MemberDetailSheet({
 
   const m = data?.member;
   const name = m ? m.display_name || m.full_name || m.email : "";
-  const isStaff = m ? ["trainer", "front_desk", "manager", "owner"].includes(m.role) : false;
   const sub = data?.subscription;
 
   // Header summary numbers (lifetime collected excludes failed/pending attempts).
@@ -242,6 +251,12 @@ export function MemberDetailSheet({
   const collected = (data?.payments ?? [])
     .filter((p) => p.status === "succeeded" || p.status === "partially_refunded")
     .reduce((sum, p) => sum + (p.amount - p.refunded_amount), 0);
+  const successfulPaymentCount = (data?.payments ?? []).filter(
+    (payment) => payment.status === "succeeded" || payment.status === "partially_refunded",
+  ).length;
+  const unsettledPaymentCount = (data?.payments ?? []).filter(
+    (payment) => payment.status === "pending" || payment.status === "failed",
+  ).length;
   const currency = sub?.currency ?? data?.payments?.[0]?.currency ?? "USD";
 
   return (
@@ -252,13 +267,13 @@ export function MemberDetailSheet({
           if (!open) {
             setQrOpen(false);
             setAssignOpen(false);
+            setDetailSheet(null);
             onClose();
           }
         }}
       >
-        <SheetContent style={{ "--sheet-max-w": "820px" } as React.CSSProperties}>
+        <SheetContent style={{ "--sheet-max-w": "540px" } as React.CSSProperties}>
           <SheetHeader className="flex items-center gap-4 py-4">
-            <Avatar name={name || "?"} size="lg" photoUrl={data?.profile.photo_url} />
             <div className="min-w-0 flex-1">
               <SheetTitle className="truncate text-[17px]">{name || "Member"}</SheetTitle>
               {m && (
@@ -291,264 +306,133 @@ export function MemberDetailSheet({
 
             {data && m && (
               <>
-                {/* Summary strip: the four numbers you want before scrolling. */}
-                <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-foreground/10 bg-foreground/10 sm:grid-cols-4">
-                  <SummaryCell label="Membership" value={titleCase(m.member_status)} />
-                  <SummaryCell label="Plan" value={sub?.plan_name ?? "No plan"} />
-                  <SummaryCell label="Visits" value={String(visitCount)} />
-                  <SummaryCell label="Lifetime paid" value={money(collected, currency)} />
-                </div>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  {/* Member details */}
-                  <Card>
-                    <CardHeader title="Member details" subtitle="Profile and contact information" />
-                    <div className="flex items-center gap-3 px-5 pt-5">
-                      <Avatar name={name} size="lg" photoUrl={data.profile.photo_url} />
-                      <div className="min-w-0">
-                        <p className="font-medium text-[var(--foreground)]">{name}</p>
-                        <p className="text-xs text-[var(--muted)]">
-                          {m.profile_complete ? "Profile complete" : "Profile incomplete"}
-                        </p>
-                      </div>
-                    </div>
-                    <dl className="grid gap-4 px-5 py-5 sm:grid-cols-2">
-                      <Field label="Email">{m.email}</Field>
-                      <Field label="Phone">{m.phone || "—"}</Field>
-                      <Field label="Role">{titleCase(m.role)}</Field>
-                      <Field label="Status"><Badge tone={statusTone(m.member_status)}>{titleCase(m.member_status)}</Badge></Field>
-                      <Field label="Trainers">
-                        {m.role === "member" ? (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {data.trainer_assignments.length ? (
-                              data.trainer_assignments.map((t) => (
-                                <span key={t.trainer_member_id} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--background)] px-2 py-0.5 text-xs text-[var(--foreground)]">
-                                  {t.trainer_name}
-                                  {canManage && (
-                                    <button
-                                      type="button"
-                                      onClick={() => unassignTrainer(t.trainer_member_id)}
-                                      aria-label={`Unassign ${t.trainer_name}`}
-                                      className="text-[var(--muted)] transition-colors hover:text-[var(--danger)]"
-                                    >
-                                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18L18 6M6 6l12 12" /></svg>
-                                    </button>
-                                  )}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-[var(--muted)]">—</span>
-                            )}
-                            {canManage && (
-                              <Button variant="secondary" onClick={() => openAssign()}>
-                                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                                Assign trainer
-                              </Button>
-                            )}
-                          </div>
-                        ) : (
-                          "—"
-                        )}
-                      </Field>
-                      <Field label="Joined">{new Date(m.created_at).toLocaleDateString()}</Field>
-                      {isStaff && (
-                        <>
-                          <Field label="Fixed salary">
-                            {m.fixed_monthly_salary > 0 ? money(m.fixed_monthly_salary) : "—"}
-                          </Field>
-                          <Field label="Hourly rate">
-                            {m.hourly_rate > 0 ? money(m.hourly_rate) : "—"}
-                          </Field>
-                          <Field label="Per class">
-                            {m.per_class_rate > 0 ? money(m.per_class_rate) : "—"}
-                          </Field>
-                          <Field label="Commission">
-                            {m.commission_rate > 0 ? `${(m.commission_rate * 100).toFixed(0)}%` : "—"}
-                          </Field>
-                        </>
-                      )}
-                    </dl>
-                  </Card>
+                {/* Key facts first, followed by a brief account summary. */}
+                <section className="border-y border-foreground/[0.08]">
+                  <dl>
+                    <SheetInfoRow label="Joined">{new Date(m.created_at).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</SheetInfoRow>
+                    {m.phone && <SheetInfoRow label="Phone">{m.phone}</SheetInfoRow>}
+                    {sub ? <>
+                      <SheetInfoRow label="Membership plan">{sub.plan_name}</SheetInfoRow>
+                      <SheetInfoRow label="Plan price">{money(sub.price_snapshot, sub.currency)} <span className="text-muted-foreground">/ {sub.billing_type === "one_time_pack" ? "pack" : "cycle"}</span></SheetInfoRow>
+                      <SheetInfoRow label="Plan status"><Badge tone={statusTone(sub.status)} size="sm">{titleCase(sub.status)}</Badge></SheetInfoRow>
+                      <SheetInfoRow label="Started">{new Date(sub.started_at).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</SheetInfoRow>
+                      {sub.current_period_end && <SheetInfoRow label="Renews / ends">{new Date(sub.current_period_end).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</SheetInfoRow>}
+                      {sub.classes_remaining != null && <SheetInfoRow label="Visit credits">{sub.classes_remaining}{sub.credits_allowance ? ` of ${sub.credits_allowance}` : " remaining"}</SheetInfoRow>}
+                      {data.family_owner && <SheetInfoRow label="Family plan payer">{data.family_owner.name}</SheetInfoRow>}
+                    </> : <SheetInfoRow label="Membership plan"><span className="text-muted-foreground">No current plan</span></SheetInfoRow>}
+                  </dl>
+                </section>
 
-                  {/* Current plan */}
-                  <Card>
-                    <CardHeader title="Current plan" subtitle="Active subscription and plan details" />
-                    {!sub ? (
-                      <EmptyState
-                        title="No plan yet"
-                        hint="This member hasn't subscribed to a plan."
-                        icon={
-                          <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
-                        }
-                      />
-                    ) : (
-                      <>
-                        <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5">
-                          <div>
-                            <p className="font-heading text-xl text-[var(--foreground)]">{sub.plan_name}</p>
-                            <p className="text-xs text-[var(--muted)]">{titleCase(sub.billing_type)} plan</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-heading text-2xl tabular-nums text-[var(--foreground)]">{money(sub.price_snapshot, sub.currency)}</p>
-                            <p className="text-xs text-[var(--muted)]">per {sub.billing_type === "one_time_pack" ? "pack" : "cycle"}</p>
-                          </div>
-                        </div>
-                        <dl className="grid gap-4 px-5 py-5 sm:grid-cols-2">
-                          <Field label="Subscription status"><Badge tone={statusTone(sub.status)}>{titleCase(sub.status)}</Badge></Field>
-                          <Field label="Started">{new Date(sub.started_at).toLocaleDateString()}</Field>
-                          {sub.current_period_end && (
-                            <Field label="Valid until">{new Date(sub.current_period_end).toLocaleDateString()}</Field>
-                          )}
-                          {sub.classes_remaining != null && (
-                            <Field label="Visit credits">{sub.classes_remaining}{sub.credits_allowance ? ` of ${sub.credits_allowance} left` : " left"}</Field>
-                          )}
-                          {data.family_owner && <Field label="Family plan payer">{data.family_owner.name}</Field>}
-                          {sub.grace_until && (
-                            <Field label="Grace until">{new Date(sub.grace_until).toLocaleDateString()}</Field>
-                          )}
-                          {sub.cancelled_at && (
-                            <Field label="Cancelled">{new Date(sub.cancelled_at).toLocaleDateString()}</Field>
-                          )}
-                        </dl>
-                      </>
-                    )}
-                  </Card>
-                </div>
+                <section className="border-b border-foreground/[0.08] pb-5">
+                  <h2 className="mb-2 text-[12px] font-medium text-muted-foreground">Account summary</h2>
+                  <p className="text-[13px] leading-relaxed text-foreground/90">
+                    {name} joined on {new Date(m.created_at).toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })} and is {m.member_status.replaceAll("_", " ").toLowerCase()}
+                    {sub ? ` on the ${sub.plan_name} plan` : " without a current plan"}. The account has {visits === null ? "a visit history that is still loading" : `${visitCount} recorded ${visitCount === 1 ? "visit" : "visits"}`} and {money(collected, currency)} collected across {successfulPaymentCount} successful {successfulPaymentCount === 1 ? "payment" : "payments"}{unsettledPaymentCount > 0 ? `, with ${unsettledPaymentCount} pending or failed attempts` : ""}.
+                  </p>
+                </section>
 
-                <MemberProfileCard
-                  key={m.member_id}
-                  memberId={m.member_id}
-                  profile={data.profile}
-                  canManage={canManage}
-                  onSaved={() => load(m.member_id)}
-                />
-                <FamilyPlanCard detail={data} canManage={canManage} onSaved={() => load(m.member_id)} />
-
-                {/* Visits (#18) */}
-                <Card>
-                  <CardHeader
-                    title="Visits"
-                    subtitle={
-                      visits === null
-                        ? "Loading…"
-                        : visits.length === 0
-                          ? "No visits yet"
-                          : `${visits.length} recent check-in${visits.length === 1 ? "" : "s"} · last here ${new Date(visits[0].checked_in_at + "Z").toLocaleDateString()}`
-                    }
-                    action={
-                      m.role === "member" ? (
-                        <Button variant="secondary" onClick={() => setQrOpen(true)}>
-                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 12h10" />
-                          </svg>
-                          Show QR
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                  {visits === null ? (
-                    <div className="p-5">
-                      <Spinner label="Loading visits..." />
-                    </div>
-                  ) : visits.length === 0 ? (
-                    <EmptyState
-                      title="No visits yet"
-                      hint="Check this member in from the Check-in page; visits will appear here."
-                    />
-                  ) : (
-                    <div className="overflow-x-auto px-5 pb-4 pt-4">
-                      <table className={TABLE}>
-                        <thead>
-                          <tr className={THEAD_ROW}>
-                            <th className={`${TH} ${CELL_FIRST}`}>Date</th>
-                            <th className={`${TH} ${CELL}`}>Time</th>
-                            <th className={`${TH} ${CELL}`}>Method</th>
-                            <th className={`${TH} ${CELL_LAST} text-right`}>Ago</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {visits.slice(0, 8).map((v) => (
-                            <tr key={v.id} className={`${TR} transition-colors hover:bg-foreground/[0.02]`}>
-                              <td className={`${TD} ${CELL_FIRST} py-2.5 whitespace-nowrap tabular-nums`}>
-                                {new Date(v.checked_in_at + "Z").toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}
-                              </td>
-                              <td className={`${TD} ${CELL} py-2.5 whitespace-nowrap tabular-nums text-[var(--foreground-muted)]`}>
-                                {new Date(v.checked_in_at + "Z").toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                              </td>
-                              <td className={`${TD} ${CELL} py-2.5`}>
-                                <Badge tone="neutral" size="sm">{titleCase(v.method)}</Badge>
-                              </td>
-                              <td className={`${TD} ${CELL_LAST} py-2.5 text-right text-[12px] text-[var(--foreground-muted)]`}>
-                                {ago(v.checked_in_at)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {visits.length > 8 && (
-                        <p className="pt-3 text-center text-[12px] text-muted-foreground">
-                          Showing the latest 8 of {visits.length} visits.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </Card>
-
-                {/* Pending payments */}
-                <Card>
-                  <CardHeader title="Pending payments" subtitle="Amounts owed and unsettled attempts" />
-                  <PendingList items={data.pending_payments} />
-                </Card>
-
-                {/* Payment history */}
-                <div>
-                  <TableToolbar
-                    title="Payment history"
-                    subtitle={
-                      data.payments.length
-                        ? `${data.payments.length} payment${data.payments.length === 1 ? "" : "s"} · ${money(collected, currency)} collected`
-                        : "No payments yet"
-                    }
-                  />
-                  {data.payments.length === 0 ? (
-                    <EmptyState
-                      title="No payments yet"
-                      hint="Payments will appear here once this member pays."
-                      icon={
-                        <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75a.75.75 0 01-.75.75h-3m-2.25 0h.75c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125H3.75m0 0a1.5 1.5 0 01-1.5-1.5V15a1.5 1.5 0 011.5-1.5h1.5M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" /></svg>
-                      }
-                    />
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className={TABLE}>
-                        <thead>
-                          <tr className={THEAD_ROW}>
-                            <th className={`${TH} ${CELL_FIRST}`}>Date</th>
-                            <th className={`${TH} ${CELL}`}>Method</th>
-                            <th className={`${TH} ${CELL} text-right`}>Amount</th>
-                            <th className={`${TH} ${CELL} text-right`}>Refunded</th>
-                            <th className={`${TH} ${CELL_LAST}`}>Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {data.payments.map((p) => (
-                            <tr key={p.id} className={`${TR} transition-colors hover:bg-foreground/[0.02]`}>
-                              <td className={`${TD} ${CELL_FIRST} py-2.5 whitespace-nowrap tabular-nums`}>{(p.paid_at || p.created_at).slice(0, 10)}</td>
-                              <td className={`${TD} ${CELL} py-2.5`}><MethodCell method={p.method} /></td>
-                              <td className={`${TD} ${CELL} py-2.5 text-right tabular-nums font-medium text-[var(--foreground)]`}>{money(p.amount, p.currency)}</td>
-                              <td className={`${TD} ${CELL} py-2.5 text-right tabular-nums text-[var(--foreground-muted)]`}>
-                                {p.refunded_amount > 0 ? money(p.refunded_amount, p.currency) : "—"}
-                              </td>
-                              <td className={`${TD} ${CELL_LAST} py-2.5`}>
-                                <Badge tone={statusTone(p.status)}>{titleCase(p.status)}</Badge>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <MemberDetailLink title="Visits" detail={visits === null ? "Loading activity…" : `${visitCount} recorded`} onClick={() => setDetailSheet("visits")} />
+                  <MemberDetailLink title="Pending payments" detail={`${data.pending_payments.length} to review`} onClick={() => setDetailSheet("pending")} />
+                  <MemberDetailLink title="Payment history" detail={`${data.payments.length} recorded · ${money(collected, currency)} collected`} onClick={() => setDetailSheet("payments")} />
+                  <MemberDetailLink title="Member profile" detail="Goals, contact and private notes" onClick={() => setDetailSheet("profile")} />
                 </div>
               </>
+            )}
+          </SheetBody>
+          <SheetFooter>
+            <SheetClose asChild><Button type="button" variant="secondary">Close</Button></SheetClose>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={detailSheet === "profile"} onOpenChange={(open) => { if (!open) setDetailSheet(null); }}>
+        <SheetContent style={{ "--sheet-max-w": "560px" } as React.CSSProperties}>
+          <SheetHeader>
+            <SheetTitle>Member profile</SheetTitle>
+            <SheetDescription>{name} · contact, goals and family membership</SheetDescription>
+          </SheetHeader>
+          <SheetBody className="space-y-4">
+            {data && m && <>
+              <MemberProfileCard key={m.member_id} memberId={m.member_id} profile={data.profile} canManage={canManage} onSaved={() => load(m.member_id)} />
+              <FamilyPlanCard detail={data} canManage={canManage} onSaved={() => load(m.member_id)} />
+              {m.role === "member" && <Card>
+                <CardHeader title="Trainers" subtitle="Staff assigned to this member" action={canManage ? <Button variant="secondary" onClick={() => void openAssign()}>Assign trainer</Button> : undefined} />
+                {data.trainer_assignments.length === 0 ? <p className="px-5 pb-5 text-sm text-muted-foreground">No trainer assigned.</p> : <ul className="divide-y divide-foreground/[0.08]">{data.trainer_assignments.map((trainer) => <li key={trainer.trainer_member_id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm"><span>{trainer.trainer_name}</span>{canManage && <button type="button" onClick={() => void unassignTrainer(trainer.trainer_member_id)} className="text-xs text-muted-foreground hover:text-danger">Remove</button>}</li>)}</ul>}
+              </Card>}
+            </>}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={detailSheet === "visits"} onOpenChange={(open) => { if (!open) setDetailSheet(null); }}>
+        <SheetContent style={{ "--sheet-max-w": "560px" } as React.CSSProperties}>
+          <SheetHeader>
+            <SheetTitle>Visit history</SheetTitle>
+            <SheetDescription>{visits === null ? "Loading member visits…" : visits.length + " recorded check-ins"}</SheetDescription>
+          </SheetHeader>
+          <SheetBody className="p-0">
+            {m?.role === "member" && <div className="flex justify-end px-6 pt-4"><Button variant="secondary" onClick={() => setQrOpen(true)}>Show member QR</Button></div>}
+            {visits === null ? <div className="p-6"><Spinner label="Loading visits…" /></div> : visits.length === 0 ? <EmptyState title="No visits yet" hint="Member check-ins will appear here." /> : (
+              <div className="overflow-x-auto px-5 py-4">
+                <table className={TABLE}>
+                  <thead><tr className={THEAD_ROW}>
+                    <th className={TH + " " + CELL_FIRST}>Date</th>
+                    <th className={TH + " " + CELL}>Time</th>
+                    <th className={TH + " " + CELL}>Method</th>
+                    <th className={TH + " " + CELL_LAST + " text-right"}>Ago</th>
+                  </tr></thead>
+                  <tbody>{visits.map((visit) => <tr key={visit.id} className={TR}>
+                    <td className={TD + " " + CELL_FIRST + " py-2.5 whitespace-nowrap"}>{new Date(visit.checked_in_at + "Z").toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}</td>
+                    <td className={TD + " " + CELL + " py-2.5 whitespace-nowrap"}>{new Date(visit.checked_in_at + "Z").toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</td>
+                    <td className={TD + " " + CELL + " py-2.5"}><Badge tone="neutral" size="sm">{titleCase(visit.method)}</Badge></td>
+                    <td className={TD + " " + CELL_LAST + " py-2.5 text-right text-xs text-muted-foreground"}>{ago(visit.checked_in_at)}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            )}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={detailSheet === "pending"} onOpenChange={(open) => { if (!open) setDetailSheet(null); }}>
+        <SheetContent style={{ "--sheet-max-w": "560px" } as React.CSSProperties}>
+          <SheetHeader>
+            <SheetTitle>Pending payments</SheetTitle>
+            <SheetDescription>{data ? data.pending_payments.length + " items needing attention" : "Loading payment status…"}</SheetDescription>
+          </SheetHeader>
+          <SheetBody className="p-0">
+            {data && <PendingList items={data.pending_payments} />}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={detailSheet === "payments"} onOpenChange={(open) => { if (!open) setDetailSheet(null); }}>
+        <SheetContent style={{ "--sheet-max-w": "720px" } as React.CSSProperties}>
+          <SheetHeader>
+            <SheetTitle>Payment history</SheetTitle>
+            <SheetDescription>{data ? data.payments.length + " recorded payments · " + money(collected, currency) + " net collected" : "Loading payments…"}</SheetDescription>
+          </SheetHeader>
+          <SheetBody className="p-0">
+            {!data ? <div className="p-6"><Spinner label="Loading payments…" /></div> : data.payments.length === 0 ? <EmptyState title="No payments yet" hint="Payments will appear here once they are recorded." /> : (
+              <div className="overflow-x-auto">
+                <table className={TABLE}>
+                  <thead><tr className={THEAD_ROW}>
+                    <th className={TH + " " + CELL_FIRST}>Date</th>
+                    <th className={TH + " " + CELL}>Method</th>
+                    <th className={TH + " " + CELL + " text-right"}>Amount</th>
+                    <th className={TH + " " + CELL + " text-right"}>Refunded</th>
+                    <th className={TH + " " + CELL_LAST}>Status</th>
+                  </tr></thead>
+                  <tbody>{data.payments.map((payment) => <tr key={payment.id} className={TR}>
+                    <td className={TD + " " + CELL_FIRST + " py-2.5 whitespace-nowrap"}>{(payment.paid_at || payment.created_at).slice(0, 10)}</td>
+                    <td className={TD + " " + CELL + " py-2.5"}><MethodCell method={payment.method} /></td>
+                    <td className={TD + " " + CELL + " py-2.5 text-right tabular-nums"}>{money(payment.amount, payment.currency)}</td>
+                    <td className={TD + " " + CELL + " py-2.5 text-right tabular-nums"}>{payment.refunded_amount > 0 ? money(payment.refunded_amount, payment.currency) : "—"}</td>
+                    <td className={TD + " " + CELL_LAST + " py-2.5"}><Badge tone={statusTone(payment.status)} size="sm">{titleCase(payment.status)}</Badge></td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
             )}
           </SheetBody>
         </SheetContent>

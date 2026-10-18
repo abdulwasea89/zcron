@@ -89,10 +89,6 @@ export function MemberProfileCard({ memberId, profile, canManage, onSaved }: {
           </div>
         ) : (
           <>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Current summary</p>
-              <p className="mt-1 text-sm text-foreground">{profile.summary}</p>
-            </div>
             <dl className="grid gap-4 sm:grid-cols-2">
               <div><dt className="text-xs text-muted-foreground">Goals</dt><dd className="mt-1 whitespace-pre-wrap text-sm">{profile.goals || "—"}</dd></div>
               <div><dt className="text-xs text-muted-foreground">Emergency contact</dt><dd className="mt-1 text-sm">{profile.emergency_contact || "—"}</dd></div>
