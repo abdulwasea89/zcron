@@ -1,14 +1,14 @@
-"""ReceiptUpload: AI receipt-verification pipeline artifacts (Section 10).
+"""ReceiptUpload: payment-proof evidence and staff-review artifacts (Section 10).
 
-Stores original + processed image refs, OCR output, authenticity/duplicate/
-cross-validation signals, the final confidence score, the routing decision, and
-the admin review trail.
+Stores the submitted image, extracted text fields, duplicate/cross-validation
+signals, staff-review status, and the admin decision trail.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
+from sqlalchemy import Column, LargeBinary
 from sqlmodel import Field
 
 from app.core.constants import ReceiptStatus
@@ -25,6 +25,11 @@ class ReceiptUpload(UUIDModel, TimestampModel, table=True):
     # Images (Section 10.2)
     original_image_url: str | None = None
     processed_image_url: str | None = None
+    image_data: bytes | None = Field(
+        default=None,
+        sa_column=Column(LargeBinary, nullable=True),
+    )
+    image_media_type: str | None = Field(default=None, max_length=32)
 
     # Step 1 OCR (Section 10.3)
     ocr_raw: str | None = None
@@ -35,7 +40,8 @@ class ReceiptUpload(UUIDModel, TimestampModel, table=True):
     extracted_txn_id: str | None = None
     extracted_method: str | None = None
 
-    # Step 2 authenticity / Step 3 duplicate / Step 4 cross-validation
+    # Step 2 authenticity is intentionally not inferred from image content.
+    # Keep the nullable legacy column for existing records.
     authenticity_score: float | None = None
     perceptual_hash: str | None = Field(default=None, index=True)
     is_duplicate: bool = False

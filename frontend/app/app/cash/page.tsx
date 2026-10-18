@@ -84,7 +84,7 @@ export default function CashPage() {
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
 
       <Sheet open={showPayment} onOpenChange={setShowPayment}>
-        <SheetContent className="[--sheet-max-w:560px]">
+        <SheetContent className="w-full min-w-0 overflow-hidden [--sheet-max-w:560px]">
           <SheetHeader><SheetTitle>Log a payment</SheetTitle><SheetDescription>Record an offline payment and activate the member.</SheetDescription></SheetHeader>
           <SheetBody className="p-0"><LogPayment onSaved={() => void loadHistory()} /></SheetBody>
         </SheetContent>
@@ -265,7 +265,7 @@ function MethodCard({ value, selected, onSelect }: { value: string; selected: bo
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={`flex h-10 flex-1 items-center justify-center gap-2 rounded-md border px-4 whitespace-nowrap transition-colors duration-150 ${
+      className={`flex h-10 min-w-0 items-center justify-center gap-2 rounded-md border px-2 transition-colors duration-150 ${
         selected
           ? "border-brand/50 bg-brand/[0.08]"
           : "border-[var(--border)] bg-[var(--surface)] hover:border-foreground/25 hover:bg-foreground/[0.04]"
@@ -274,7 +274,7 @@ function MethodCard({ value, selected, onSelect }: { value: string; selected: bo
       <svg className={`h-4 w-4 shrink-0 ${selected ? "text-brand" : "text-muted-foreground"}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <path d={METHOD_ICONS[value]} />
       </svg>
-      <span className={`text-[12px] font-medium leading-none whitespace-nowrap ${selected ? "text-brand" : "text-muted-foreground"}`}>
+      <span className={`min-w-0 text-center text-[11px] font-medium leading-tight ${selected ? "text-brand" : "text-muted-foreground"}`}>
         {METHOD_LABELS[value]}
       </span>
     </button>
@@ -566,7 +566,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
           />
         </div>
       ) : (
-        <form onSubmit={submit} className="grid gap-6 p-5 sm:p-6">
+        <form onSubmit={submit} className="grid min-w-0 gap-6 overflow-x-hidden p-5 sm:p-6">
           {error && <Alert onDismiss={() => setError("")}>{error}</Alert>}
           {queuedMessage && <Alert tone="warning" onDismiss={() => setQueuedMessage("")}>{queuedMessage}</Alert>}
 
@@ -618,7 +618,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
             {quote.tax_amount > 0 && <div>Tax: {money(quote.tax_amount, quote.currency)}</div>}
             <strong className="text-foreground">Due now: {money(quote.total, quote.currency)}</strong>
           </div>}
-          <div className="grid gap-5 sm:grid-cols-[1fr_auto]">
+          <div className="grid min-w-0 gap-5">
             <Input
               label="Amount due"
               type="number"
@@ -632,9 +632,9 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
               hint="Calculated from the plan, first-time joining fee, promotion, and tax."
               className="tabular-nums"
             />
-            <div>
+            <div className="min-w-0">
               <p className="mb-2 text-[10px] font-semibold text-muted-foreground">Method</p>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {methods.map((m) => (
                   <MethodCard key={m} value={m} selected={method === m} onSelect={() => setMethod(m)} />
                 ))}

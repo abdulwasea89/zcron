@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ReceiptOut(BaseModel):
@@ -30,6 +30,8 @@ class ReceiptReviewItem(BaseModel):
     extracted_date: str | None
     extracted_payer: str | None
     extracted_payee: str | None
+    extracted_txn_id: str | None
+    extracted_method: str | None
     is_duplicate: bool
     flags: list[str] = []
     original_image_url: str | None
@@ -38,3 +40,5 @@ class ReceiptReviewItem(BaseModel):
 class ReceiptReviewAction(BaseModel):
     action: str  # approve | reject | request_info
     reason: str | None = None
+    settlement_confirmed: bool = False
+    verified_amount: float | None = Field(default=None, gt=0, le=1_000_000_000)

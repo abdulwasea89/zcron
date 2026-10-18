@@ -343,6 +343,8 @@ export interface ReceiptReviewItem {
   extracted_date: string | null;
   extracted_payer: string | null;
   extracted_payee: string | null;
+  extracted_txn_id: string | null;
+  extracted_method: string | null;
   is_duplicate: boolean;
   flags: string[];
   original_image_url: string | null;

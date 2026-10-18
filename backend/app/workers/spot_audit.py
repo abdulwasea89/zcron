@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 from sqlmodel import select
 
 from app.core.constants import ReceiptStatus
@@ -27,7 +28,7 @@ async def collect_spot_audits(session: AsyncSession, *, org_id: str) -> list[Rec
     return list(
         (
             await session.execute(
-                select(ReceiptUpload).where(
+                select(ReceiptUpload).options(defer(ReceiptUpload.image_data)).where(
                     ReceiptUpload.organization_id == org_id,
                     ReceiptUpload.status == ReceiptStatus.AUTO_APPROVED,
                     ReceiptUpload.spot_audit_selected == True,  # noqa: E712
@@ -47,7 +48,7 @@ async def weekly_reversal_rate(session: AsyncSession, *, org_id: str) -> float:
     cutoff = now_utc() - timedelta(days=7)
     rows = (
         await session.execute(
-            select(ReceiptUpload).where(
+            select(ReceiptUpload).options(defer(ReceiptUpload.image_data)).where(
                 ReceiptUpload.organization_id == org_id,
                 ReceiptUpload.created_at >= cutoff,
                 ReceiptUpload.auto_approved == True,  # noqa: E712

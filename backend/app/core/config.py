@@ -168,10 +168,6 @@ class Settings(BaseSettings):
     signup_max_per_org_code_per_day: int = 50
     email_resend_max_per_hour: int = 3
 
-    receipt_auto_approve_threshold: int = 95
-    receipt_review_threshold: int = 70
-    receipt_spot_audit_rate: float = 0.05
-
     idempotency_stuck_seconds: int = 30
 
     tier_starter_cap: int = 25

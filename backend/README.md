@@ -2,13 +2,13 @@
 
 FastAPI backend for the Gym Operations Platform (see `Gym_Platform_Full_Plan.pdf`).
 Multi-tenant (one org per gym), Stripe Connect Standard for member payments,
-platform SaaS billing, payroll, and AI receipt verification.
+platform SaaS billing, payroll, and member payment-proof review.
 
 ## Stack
 
 - **API**: FastAPI + Pydantic v2
 - **DB**: PostgreSQL (SQLAlchemy 2 async + Alembic migrations, row-level tenant isolation)
-- **Workers**: Celery + Redis (payment reconciliation, receipt AI pipeline, payroll, spot audits)
+- **Workers**: Celery + Redis (payment reconciliation, receipt review support, payroll, legacy spot audits)
 - **Payments**: Stripe (SaaS subscriptions) + Stripe Connect Standard (member → gym)
 - **Auth**: JWT (15-min access / 7-day refresh), org-scoped tokens, optional MFA
 
@@ -34,6 +34,11 @@ tests/
 ```
 
 ## Development
+
+Receipt image upload and OCR require ImageMagick (`identify`, `convert`) and
+Tesseract on the API host. On Debian/Ubuntu install them with
+`sudo apt-get install imagemagick tesseract-ocr`. Receipts remain in staff
+review if OCR is unavailable; OCR never confirms that a transfer settled.
 
 ```bash
 # Install (uses uv; pip install -e . also works)

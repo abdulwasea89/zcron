@@ -12,6 +12,7 @@ import json
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 from sqlmodel import select
 
 from app.core.constants import MemberStatus, ReceiptStatus
@@ -40,7 +41,7 @@ async def _member_for(session: AsyncSession, org_id: str, user_id: str) -> Organ
 
 async def upload_receipt(
     session: AsyncSession, *, org_id: str, user_id: str, image_bytes: bytes,
-    plan_id: str | None, filename: str | None = None,
+    plan_id: str | None,
 ) -> ReceiptUpload:
     """Persist the upload, run the pipeline inline, return the scored receipt."""
 
@@ -51,6 +52,12 @@ async def upload_receipt(
         raise HTTPException(status_code=422, detail="Empty image.")
     if len(image_bytes) > 10 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image exceeds 10MB limit.")
+    from app.integrations.ocr import validate_image
+
+    try:
+        detected_media_type = validate_image(image_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if plan_id is not None:
         plan = await session.get(MembershipPlan, plan_id)
@@ -61,10 +68,12 @@ async def upload_receipt(
         organization_id=org_id,
         member_id=member.id,
         plan_id=plan_id,
-        original_image_url=f"receipts/original/{filename or 'upload'}",
+        image_data=image_bytes,
+        image_media_type=detected_media_type,
         processed_image_url=None,
         status=ReceiptStatus.UPLOADED,
     )
+    receipt.original_image_url = f"/receipts/{receipt.id}/image"
     session.add(receipt)
     await session.flush()
 
@@ -85,7 +94,7 @@ async def review_queue(session: AsyncSession, *, org_id: str) -> list[ReceiptUpl
     return list(
         (
             await session.execute(
-                select(ReceiptUpload).where(
+                select(ReceiptUpload).options(defer(ReceiptUpload.image_data)).where(
                     ReceiptUpload.organization_id == org_id,
                     ReceiptUpload.status == ReceiptStatus.PENDING_REVIEW,
                 ).order_by(ReceiptUpload.created_at)
@@ -96,7 +105,8 @@ async def review_queue(session: AsyncSession, *, org_id: str) -> list[ReceiptUpl
 
 async def review(
     session: AsyncSession, *, org_id: str, receipt_id: str, action: str,
-    reason: str | None, reviewer_user_id: str,
+    reason: str | None, reviewer_user_id: str, settlement_confirmed: bool = False,
+    verified_amount: float | None = None,
 ) -> ReceiptUpload:
     receipt = await session.get(ReceiptUpload, receipt_id)
     if receipt is None or receipt.organization_id != org_id:
@@ -106,9 +116,21 @@ async def review(
 
     action = action.lower()
     if action == "approve":
+        if not settlement_confirmed:
+            raise HTTPException(
+                status_code=422,
+                detail="Confirm that funds settled in the bank or wallet before approving.",
+            )
         org = await session.get(Organization, org_id)
         plan = await session.get(MembershipPlan, receipt.plan_id) if receipt.plan_id else None
-        await receipt_pipeline._activate_via_receipt(session, org=org, receipt=receipt, plan=plan)
+        if plan is None and (verified_amount is None or verified_amount <= 0):
+            raise HTTPException(
+                status_code=422,
+                detail="Enter the amount you verified in the bank or wallet before approving this receipt.",
+            )
+        await receipt_pipeline._activate_via_receipt(
+            session, org=org, receipt=receipt, plan=plan, verified_amount=verified_amount
+        )
         receipt.status = ReceiptStatus.APPROVED
         await _notify(session, receipt, "Receipt approved", "Your payment receipt was approved; "
                       "your membership is active.")
