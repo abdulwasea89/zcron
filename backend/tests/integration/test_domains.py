@@ -376,30 +376,29 @@ async def test_analytics_revenue_and_headline(client):
 
 # -------------------------------------------------------------- saas billing
 @pytest.mark.asyncio
-async def test_saas_downgrade_blocked_by_member_cap(client):
+async def test_saas_downgrade_fails_closed_without_stripe(client):
     headers, org_id, org_code, plan_id = await _provision_gym(client, tier="pro")
     r = await client.get("/api/v1/saas-billing/status", headers=headers)
     assert r.status_code == 200, r.text
     assert r.json()["saas_tier"] == "pro"
 
-    # Downgrade pro -> starter should succeed (0 members < 25 cap).
+    # CI deliberately has no Stripe credentials. Billing mutations must fail
+    # closed instead of pretending that a live subscription changed.
     r = await client.post("/api/v1/saas-billing/downgrade",
                           headers={**headers, "Idempotency-Key": "saas-downgrade"},
                           json={"tier": "starter"})
-    assert r.status_code == 200, r.text
-    assert r.json()["saas_tier"] == "starter"
-    assert r.json()["member_cap"] == 25
+    assert r.status_code == 503, r.text
+    assert r.json()["detail"] == "Stripe billing is not configured."
 
 
 @pytest.mark.asyncio
-async def test_saas_upgrade(client):
+async def test_saas_upgrade_fails_closed_without_stripe(client):
     headers, org_id, org_code, plan_id = await _provision_gym(client, tier="starter")
     r = await client.post("/api/v1/saas-billing/upgrade",
                           headers={**headers, "Idempotency-Key": "saas-upgrade"},
                           json={"tier": "pro"})
-    assert r.status_code == 200, r.text
-    assert r.json()["saas_tier"] == "pro"
-    assert r.json()["member_cap"] == 100
+    assert r.status_code == 503, r.text
+    assert r.json()["detail"] == "Stripe billing is not configured."
 
 
 # --------------------------------------------------------- mobile/web split

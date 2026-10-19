@@ -47,6 +47,10 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Install Python
         run: uv python install ${{ matrix.python-version }}
+      - name: Install receipt image processing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends imagemagick
       - name: Install locked dependencies
         run: uv sync --locked --python ${{ matrix.python-version }} --group dev
       - name: Lint backend
