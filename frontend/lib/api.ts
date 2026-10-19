@@ -3,6 +3,8 @@
 // httpOnly auth cookie server-side. This keeps tokens out of JS entirely.
 "use client";
 
+import { toast } from "sonner";
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -14,16 +16,30 @@ export class ApiError extends Error {
 async function request<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
   const h: Record<string, string> = { ...headers };
   if (body !== undefined) h["Content-Type"] = "application/json";
-  const res = await fetch(`/api/proxy${path}`, {
-    method,
-    headers: Object.keys(h).length > 0 ? h : undefined,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/api/proxy${path}`, {
+      method,
+      headers: Object.keys(h).length > 0 ? h : undefined,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    const message = "Acron could not reach the server. Check your connection and try again.";
+    toast.error(message, { id: "acron-network-error" });
+    throw new ApiError(0, message);
+  }
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(res.headers.get("X-Acron-Offline") === "1" ? "acron:offline-data" : "acron:fresh-data"));
   }
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
   if (!res.ok) {
     const raw = data && typeof data === "object" && "detail" in data
       ? (data as { detail: unknown }).detail
@@ -36,7 +52,13 @@ async function request<T>(method: string, path: string, body?: unknown, headers?
           return [field, issue.msg].filter(Boolean).join(": ");
         }).filter(Boolean).join("; ") || `Request failed (${res.status})`
       : typeof raw === "string" ? raw : `Request failed (${res.status})`;
+    if (res.status >= 500) {
+      toast.error(detail.slice(0, 220), { id: `acron-api-${res.status}-${detail}` });
+    }
     throw new ApiError(res.status, detail);
+  }
+  if (method !== "GET" && res.status === 201) {
+    toast.success("Created successfully.");
   }
   return data as T;
 }
@@ -85,12 +107,19 @@ export async function* streamPost<T>(
   const h: Record<string, string> = { ...headers };
   if (body !== undefined) h["Content-Type"] = "application/json";
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: h,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: h,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
+    });
+  } catch {
+    const message = "Acron could not reach the server. Check your connection and try again.";
+    toast.error(message, { id: "acron-network-error" });
+    throw new ApiError(0, message);
+  }
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
@@ -100,6 +129,9 @@ export async function* streamPost<T>(
       if (typeof parsed?.detail === "string") detail = parsed.detail;
     } catch {
       /* non-JSON error body — keep the generic message */
+    }
+    if (res.status >= 500) {
+      toast.error(detail.slice(0, 220), { id: `acron-stream-${res.status}-${detail}` });
     }
     throw new ApiError(res.status, detail);
   }

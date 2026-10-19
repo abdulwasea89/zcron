@@ -107,7 +107,7 @@ async def test_front_desk_can_search_members(client):
     assert hits[0]["member_email"] == "findme@att.com"
 
     # Staff are searchable too: the owner ("Alex") can be checked in.
-    r = await client.get("/api/v1/attendance/members", headers=desk, params={"q": "alex"})
+    r = await client.get("/api/v1/attendance/members", headers=desk, params={"q": "owner@att.com"})
     assert r.status_code == 200, r.text
     assert any(h["member_email"] == "owner@att.com" for h in r.json())
 

@@ -14,7 +14,7 @@ from sqlmodel import SQLModel
 from app.core.security import now_utc
 from app.models.audit_log import AuditLog
 from app.models.class_session import ClassSession
-from app.models.lead import Lead, LeadBooking
+from app.models.lead import Lead, LeadBooking, LeadFollowUp
 from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.leads import LeadBookingCreate, LeadCreate
@@ -23,13 +23,14 @@ from app.services import leads_service
 
 @pytest_asyncio.fixture
 async def booking_db():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", hide_parameters=True)
     tables = [
         Organization.__table__,
         User.__table__,
         ClassSession.__table__,
         Lead.__table__,
         LeadBooking.__table__,
+        LeadFollowUp.__table__,
         AuditLog.__table__,
     ]
     async with engine.begin() as connection:

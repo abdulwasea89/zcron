@@ -22,6 +22,7 @@ async def engine():
     eng = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
+        hide_parameters=True,
     )
     async with eng.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)

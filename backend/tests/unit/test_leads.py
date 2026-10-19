@@ -148,7 +148,10 @@ async def test_stage_history_transitions_legacy_and_rollback(db):
     )
     for stage in ["contacted", "trial_booked", "visited", "joined", "lost", "new"]:
         await leads_service.update_lead(db, org_id=org.id, actor_id=actor.id,
-                                       lead_id=lead.id, data=LeadUpdate(stage=stage))
+                                       lead_id=lead.id, data=LeadUpdate(
+                                           stage=stage,
+                                           lost_reason="other" if stage == "lost" else None,
+                                       ))
     await leads_service.update_lead(db, org_id=org.id, actor_id=actor.id,
                                    lead_id=lead.id, data=LeadUpdate(stage="new", goal="Strength"))
     await record_audit(db, action="lead.updated", organization_id=org.id,

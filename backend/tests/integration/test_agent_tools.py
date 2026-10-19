@@ -17,7 +17,7 @@ from app.agent.context import AgentContext, bind_context, clear_context
 from app.agent.model import StubChatModel
 from app.agent.tools.read import list_plans, list_pending_receipts
 from app.agent.tools.write import lock_payroll
-from app.core.constants import Role
+from app.core.constants import MemberStatus, Role
 from app.models.audit_log import AuditLog
 from app.models.membership import OrganizationMember
 
@@ -63,6 +63,11 @@ async def _add_member(client, db, *, org_code: str, org_id: str, email: str) -> 
         )
     ).scalars().first()
     assert member is not None
+    # Freezing an unpaid signup is intentionally rejected by the membership
+    # service. Seed the active-state precondition for this guarded-write test.
+    member.member_status = MemberStatus.ACTIVE
+    db.add(member)
+    await db.flush()
     return member.id
 
 

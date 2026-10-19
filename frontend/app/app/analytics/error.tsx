@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Button, Card } from "@/components/ui";
+import { toast } from "sonner";
 
 export default function AnalyticsErrorPage({
   error,
@@ -11,8 +12,8 @@ export default function AnalyticsErrorPage({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
-  }, [error]);
+    toast.error("Analytics could not load. Please try again.");
+  }, [error.digest]);
 
   return (
     <div className="flex items-start justify-center py-16">

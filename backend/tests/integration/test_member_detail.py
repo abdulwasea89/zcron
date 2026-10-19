@@ -112,7 +112,7 @@ async def test_cash_payment_appears_in_history(client):
     await _signup_and_pay(client, org_code, plan_id, email)
     member_id = await _member_id(client, headers, email)
 
-    r = await client.post("/api/v1/cash/log", headers=headers, json={
+    r = await client.post("/api/v1/cash/log", headers={**headers, "Idempotency-Key": "member-detail-cash"}, json={
         "member_id": member_id, "plan_id": plan_id, "amount": 149.0, "method": "cash"})
     assert r.status_code == 201, r.text
 

@@ -9,6 +9,7 @@ Plus cross-industry isolation and the invite-only signup guard.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -326,7 +327,8 @@ async def test_office_space_slot_booking_idempotent(client):
 
     # Admin creates a desk slot (reception/owner).
     r = await client.post("/api/v1/space", headers=headers, json={
-        "title": "Desk 14", "starts_at": "2026-10-01T09:00:00", "capacity": 1})
+        "title": "Desk 14", "starts_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(),
+        "capacity": 1})
     assert r.status_code == 201, r.text
     slot_id = r.json()["id"]
     assert r.json()["category"] == "space_slot"

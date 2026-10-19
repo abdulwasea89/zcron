@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Button, Card } from "@/components/ui";
+import { toast } from "sonner";
 
 export default function AppErrorPage({
   error,
@@ -11,8 +12,8 @@ export default function AppErrorPage({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
-  }, [error]);
+    toast.error("This page could not load. Please try again.");
+  }, [error.digest]);
 
   return (
     <div className="flex h-dvh items-center justify-center p-6">

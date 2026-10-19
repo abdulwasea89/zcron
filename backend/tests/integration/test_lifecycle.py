@@ -171,7 +171,7 @@ async def test_win_back_campaign_cooldown_and_recovery(client, db):
     assert r["sent"] == 0
 
     # Reactivation (here via cash log) resolves the open win-back.
-    r = await client.post("/api/v1/cash/log", headers=headers, json={
+    r = await client.post("/api/v1/cash/log", headers={**headers, "Idempotency-Key": "winback-reactivation"}, json={
         "member_id": member_id, "plan_id": plan_id, "amount": 149.0, "method": "cash"})
     assert r.status_code == 201, r.text
 

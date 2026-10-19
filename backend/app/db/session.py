@@ -25,6 +25,7 @@ else:
 engine = create_async_engine(
     settings.database_url,
     echo=settings.db_echo,
+    hide_parameters=True,
     future=True,
     connect_args=_connect_args,
     # pool_pre_ping is harmless on sqlite and useful on postgres.

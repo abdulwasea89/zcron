@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
+import { Toaster, toast } from "sonner";
+
 export default function GlobalError({
   error,
   reset,
@@ -7,9 +10,14 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    toast.error("Acron hit an unexpected problem. Please try again.");
+  }, [error.digest]);
+
   return (
     <html lang="en">
       <body style={{ margin: 0, backgroundColor: "#f1f5f9", color: "#0f172a", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+        <Toaster position="bottom-right" richColors closeButton />
         <div style={{ display: "flex", minHeight: "100dvh", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}>
           <div style={{ maxWidth: "400px", width: "100%", textAlign: "center" }}>
             <div style={{ fontSize: "48px", marginBottom: "1rem", lineHeight: 1 }}>⚠</div>

@@ -7,6 +7,7 @@ exercises the domain through the HTTP API to verify the wired behaviour.
 
 from __future__ import annotations
 
+import base64
 import uuid
 
 import pytest
@@ -85,7 +86,7 @@ async def test_cash_payment_logging_activates_member(client):
                           json={"org_code": org_code, "email": email, "password": MEMBER_PWD})
     member_id = r.json()["member_id"]
 
-    r = await client.post("/api/v1/cash/log", headers=headers, json={
+    r = await client.post("/api/v1/cash/log", headers={**headers, "Idempotency-Key": "cash-activate"}, json={
         "member_id": member_id, "plan_id": plan_id, "amount": 149.0, "method": "cash"})
     assert r.status_code == 201, r.text
     assert r.json()["member_status"] == "active"
@@ -114,7 +115,7 @@ async def test_cash_receipt_is_tenant_scoped(client):
                           json={"org_code": org_code, "email": email, "password": MEMBER_PWD})
     member_id = r.json()["member_id"]
 
-    r = await client.post("/api/v1/cash/log", headers=headers, json={
+    r = await client.post("/api/v1/cash/log", headers={**headers, "Idempotency-Key": "cash-receipt-scope"}, json={
         "member_id": member_id, "plan_id": plan_id, "amount": 149.0, "method": "cash"})
     payment_id = r.json()["payment_id"]
 
@@ -201,7 +202,10 @@ async def test_receipt_upload_auto_approves(client):
     mh = {"Authorization": f"Bearer {body['access_token']}", "X-Organization-Id": body["organization_id"]}
 
     # Upload a receipt whose stub OCR will match the plan price (149) + payee.
-    files = {"file": ("receipt.jpg", b"clean-receipt-bytes-12345", "image/jpeg")}
+    image_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    files = {"file": ("receipt.png", image_bytes, "image/png")}
     r = await client.post("/api/v1/receipts/upload", headers=mh,
                           data={"plan_id": plan_id}, files=files)
     assert r.status_code == 201, r.text
@@ -226,10 +230,12 @@ async def test_receipt_duplicate_detected(client):
     body = r.json()
     mh = {"Authorization": f"Bearer {body['access_token']}", "X-Organization-Id": body["organization_id"]}
 
-    same_bytes = b"identical-receipt-bytes"
-    files = {"file": ("r1.jpg", same_bytes, "image/jpeg")}
+    same_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    files = {"file": ("r1.png", same_bytes, "image/png")}
     await client.post("/api/v1/receipts/upload", headers=mh, data={"plan_id": plan_id}, files=files)
-    files = {"file": ("r2.jpg", same_bytes, "image/jpeg")}
+    files = {"file": ("r2.png", same_bytes, "image/png")}
     r = await client.post("/api/v1/receipts/upload", headers=mh, data={"plan_id": plan_id}, files=files)
     assert r.status_code == 201, r.text
     assert r.json()["is_duplicate"] is True
@@ -377,7 +383,9 @@ async def test_saas_downgrade_blocked_by_member_cap(client):
     assert r.json()["saas_tier"] == "pro"
 
     # Downgrade pro -> starter should succeed (0 members < 25 cap).
-    r = await client.post("/api/v1/saas-billing/downgrade", headers=headers, json={"tier": "starter"})
+    r = await client.post("/api/v1/saas-billing/downgrade",
+                          headers={**headers, "Idempotency-Key": "saas-downgrade"},
+                          json={"tier": "starter"})
     assert r.status_code == 200, r.text
     assert r.json()["saas_tier"] == "starter"
     assert r.json()["member_cap"] == 25
@@ -386,7 +394,9 @@ async def test_saas_downgrade_blocked_by_member_cap(client):
 @pytest.mark.asyncio
 async def test_saas_upgrade(client):
     headers, org_id, org_code, plan_id = await _provision_gym(client, tier="starter")
-    r = await client.post("/api/v1/saas-billing/upgrade", headers=headers, json={"tier": "pro"})
+    r = await client.post("/api/v1/saas-billing/upgrade",
+                          headers={**headers, "Idempotency-Key": "saas-upgrade"},
+                          json={"tier": "pro"})
     assert r.status_code == 200, r.text
     assert r.json()["saas_tier"] == "pro"
     assert r.json()["member_cap"] == 100

@@ -34,11 +34,18 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
+_is_production = settings.app_env.strip().lower() in {"prod", "production"}
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     lifespan=lifespan,
-    debug=settings.debug,
+    debug=settings.debug and not _is_production,
+    # Do not publish the route/schema catalogue in production. API access is
+    # still protected at each endpoint; this only disables interactive docs.
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
 )
 
 app.add_middleware(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
@@ -110,8 +111,14 @@ async def _reject_duplicate_contact(
     if email:
         contact_matches.append(Lead.email == email)
     if phone:
-        bare_phone = phone.lstrip("+")
-        contact_matches.append(Lead.phone.in_({bare_phone, f"+{bare_phone}"}))
+        digits = re.sub(r"\D", "", phone)
+        phone_variants = {digits, f"+{digits}"}
+        # Match NANP numbers whether they were entered with +1 or as a local
+        # ten-digit number. Punctuation has already been stripped by schema.
+        national = digits[1:] if len(digits) == 11 and digits.startswith("1") else digits
+        if len(national) == 10:
+            phone_variants.update({national, f"+{national}", f"1{national}", f"+1{national}"})
+        contact_matches.append(Lead.phone.in_(phone_variants))
     if not contact_matches:
         return
 

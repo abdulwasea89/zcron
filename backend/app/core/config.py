@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_name: str = "Gym Operations Platform"
     api_v1_prefix: str = "/api/v1"
-    debug: bool = True
+    debug: bool = False
 
     # --------------------------------------------------------------- security
     secret_key: str = "dev-insecure-change-me"
