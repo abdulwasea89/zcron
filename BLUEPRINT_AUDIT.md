@@ -29,16 +29,16 @@ Every material feature identified in both source PDFs and the current codebase i
 
 | Status | Part A: Blueprint (152) | Part B: code-only (18) | Part C: Strategy (106) | Traceability rows (276) |
 |---|---:|---:|---:|---:|
-| ✅ Built | 28 | 15 | 1 | **44** |
+| ✅ Built | 31 | 15 | 1 | **47** |
 | 🔧 Improvement | 3 | 0 | 0 | **3** |
-| ⚠️ Partial | 64 | 3 | 53 | **120** |
-| 🧨 Broken / stubbed | 1 | 0 | 0 | **1** |
+| ⚠️ Partial | 62 | 3 | 53 | **118** |
+| 🧨 Broken / stubbed | 0 | 0 | 0 | **0** |
 | ❌ Not built | 56 | 0 | 46 | **102** |
 | ⏸️ Deferred | 0 | 0 | 6 | **6** |
 
 The surface columns are not mutually exclusive; a row can have API and web coverage, for example. Counts above classify each traceability row once by its overall status. Part C intentionally maps overlaps, so 276 traceability rows do not mean 276 unique product capabilities. Blueprint rows 80–152 expand cross-cutting architecture, UX, evidence, localisation, expansion, and Sales Pack details; those row numbers are audit indices, not numbering printed in the PDF.
 
-For the original prioritized rows in Parts A and B: P0 — 25 built, 1 improvement, 14 partial, 7 not built; P1 — 10 built, 1 improvement, 13 partial, 11 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
+For the original prioritized rows in Parts A and B: P0 — 27 built, 1 improvement, 12 partial, 7 not built; P1 — 11 built, 1 improvement, 13 partial, 11 not built; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
 
 ### Source-to-row coverage recheck
 
@@ -63,9 +63,7 @@ For the original prioritized rows in Parts A and B: P0 — 25 built, 1 improveme
 
 ### Confirmed broken or stubbed behavior
 
-| Feature row | Status | Evidence | Impact |
-|---|---|---|---|
-| 27 — Payment-proof verification | 🧨 Broken / stubbed | `backend/app/integrations/ocr.py`: `_real_extract()` always returns `None`; the fallback invents extracted fields from request inputs, and `_phash()` is SHA-256 rather than a perceptual image hash | The upload, review, routing, and audit flow exists, but the system does not read or authenticate the receipt image. Do not treat its automated confidence or duplicate result as real OCR/fraud verification. |
+No central behavior is currently classified as broken/stubbed in this audit snapshot. Receipt screenshots are OCR-extracted and visually deduplicated, then always held for an authorized staff member to verify against the receiving bank or wallet. An image alone is not treated as settlement proof.
 
 Other absent capabilities are classified as **Not built**; incomplete but functioning capabilities remain **Partial** or **Improvement**. Email, push, Stripe, and assistant fallback modes are intentional development behavior when credentials are absent, so they are not counted as broken. The booking `NO_SHOW` enum has no detection or assignment workflow and is therefore counted as **Not built**, not broken.
 
@@ -103,15 +101,15 @@ The supplied Notion page did not load in the available browser during this audit
 | 21 | Walk-ins, day passes, guest log, lockers | P1–P2 | ✓ | ✓ | ✓ | — | ✅ Built | `models/visitor.py`, `visitor_service.py:130` day pass → `Payment(kind=DAY_PASS)`, `routes/front_desk.py` |
 | 22 | Offline mode with sync | P1 | ✓ | ✓ | ✓ | — | ✅ Built | Previously loaded app pages, Next assets, and workspace-scoped API GETs are available offline when the response policy permits local caching. The IndexedDB outbox syncs check-ins, cash/manual payments, and lead bookings when connectivity returns, with cash idempotency and visible rejected-item reasons. Card payments and drawer reconciliation remain online-only. |
 | 23 | Local payment methods per country | P0 | ✓ | ✓ | — | — | ✅ Built | Web member signup and approved plan changes use Stripe Payment Element with dynamic methods on the gym’s connected account. Stripe filters methods by buyer location, currency, payment flow, and connected-account eligibility; redirect and delayed confirmations settle through Connect webhooks. Actual method type is recorded on the payment. Available methods still depend on Stripe support and activation for the gym’s country/account; bespoke non-Stripe rails such as JazzCash are not included. |
-| 24 | Recurring billing: cards, direct debit, mandates | P0 | ✓ | ✓ | — | — | ✅ Built | Web signup offers explicit auto-renew consent. Stripe Connect PaymentIntents save eligible methods for off-session use; Stripe SetupIntents let members enroll or replace a method and collect any required mandate. An hourly worker creates idempotent renewal charges; succeeded webhooks extend the term, while failures move membership into a three-day grace period and the member can replace the method in Account. Method support and mandate requirements depend on Stripe and the gym's connected-account country/settings. Existing subscriptions stay non-renewing until the member opts in; smart retries and card updater remain outside this row's delivered scope. |
-| 25 | Failed-payment and overdue recovery (dunning) | P0 | ✓ | ✓ | — | — | ⚠️ Partial | SaaS has the full escalation ladder (`saas_billing_service.py`). Members get grace reminders days 1/2/3 (`notifications.py:33`, email + push + in-app). Missing: escalating ladder to staff call, smart retry |
+| 24 | Recurring billing: cards, direct debit, mandates | P0 | ✓ | ✓ | — | — | ✅ Built | Web signup offers explicit auto-renew consent. Stripe Connect PaymentIntents save eligible methods for off-session use; Stripe SetupIntents let members enroll or replace a method and collect any required mandate. An hourly worker creates idempotent renewal charges; succeeded webhooks extend the term, while failures move membership into a three-day grace period and the member can replace the method in Account. Method support and mandate requirements depend on Stripe and the gym's connected-account country/settings. Existing subscriptions stay non-renewing until the member opts in. Stripe card updater remains outside this row's delivered scope. |
+| 25 | Failed-payment and overdue recovery (dunning) | P0 | ✓ | ✓ | — | — | ✅ Built | SaaS billing retains its Stripe retry/grace escalation. Member renewals use bounded retries only for Stripe-classified retryable declines (three attempts maximum, with shorter processor-error and 24-hour insufficient-funds backoff); hard declines and ambiguous errors stop automatic charges. Members receive day 1/2/3 recovery notices with an Account link; staff get idempotent day-one review, day-two call, and day-three manager escalation tasks. Failure/decline codes are stored for staff context. |
 | 26 | Cash and manual payments with digital receipts | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | `models/cash.py`, `cash_service.py`, `routes/cash.py:63` receipt PDF, `CashReconciliation` |
-| 27 | Payment-proof verification (bank-transfer or wallet screenshots) | P1 | ✓ | ✓ | — | — | 🧨 Broken / stubbed | The upload, review, routing, and audit workflow exists, but the core image-reading behavior does not: `_real_extract()` returns `None`, fallback fields are derived from request inputs, and `_phash()` is SHA-256 rather than a perceptual hash. The system cannot verify receipt content or detect image fraud |
+| 27 | Payment-proof verification (bank-transfer or wallet screenshots) | P1 | ✓ | ✓ | — | — | ✅ Built | Local Tesseract OCR extracts visible amount, date, payer/payee, transaction reference, and payment method without inventing missing values. A 64-bit dHash checks recent same-workspace receipts (latest 2,000) for near-duplicates. Validated images are stored with the receipt and served only to authorized workspace reviewers. Every screenshot remains pending until staff verify settlement in the bank/wallet; OCR scores are field/readability signals, never authenticity or settlement guarantees. API hosts require ImageMagick for validation/hash and Tesseract for OCR; if Tesseract is unavailable, receipts remain reviewable with an OCR-unavailable flag. Older uploads that stored only a filename cannot be backfilled and have no viewable image. |
 | 28 | Invoices with local tax (VAT, GST, sales tax) | P1 | ✓ | ✓ | ✓ | — | ⚠️ Partial | `plan.tax_rate` end-to-end incl. inclusive-tax: `invoices_service.py:83`, `memberships_service.py:345 _amount_with_tax()`. Missing: country/region rule packs |
 | 29 | Expenses, P&L, revenue by plan, branch or trainer | P1 | ✓ | ✓ | ✓ | — | ⚠️ Partial | Revenue by plan/trainer ✅ (swarm specialists `rev_by_plan`, `payroll_commissions`). 0 matches for `expense`. No P&L, no branch dimension |
 | 30 | Refunds, credits, chargeback evidence; accounting export | P1 | ✓ | ✓ | — | — | ⚠️ Partial | Verified Connect refunds, a tenant/member/currency-scoped immutable member credit vault, and Stripe customer invoice-credit balance/history preserve eligible unused value and prevent double credit/refund. Missing: chargeback evidence assembly and accounting export |
-| 31 | 90-day onboarding journey (day 1, days 2–7, weeks 2–4) | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | `models/onboarding.py`, `onboarding_service.py`, `routes/onboarding.py`, `workers/onboarding.py`; staff web page at `frontend/app/app/onboarding/page.tsx` supports member roster, risk/search filters, milestone completion, and pause/resume; member screen at `mobileapp/src/app/(member)/onboarding.tsx` shows progress and milestones |
-| 32 | Attendance-drop detection vs each member's own baseline | P0 | ✓ | ✓ | — | — | ⚠️ Partial | `retention_service.py:41-44` — 14-day window vs prior 56-day baseline, `DROP_RATIO=0.5`, `SEVERE_RATIO=0.25`, `MIN_TENURE_DAYS=21`. Missing: UI |
+| 31 | 90-day onboarding journey (day 1, days 2–7, weeks 2–4) | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | `models/onboarding.py`, `onboarding_service.py`, `routes/onboarding.py`, `workers/onboarding.py`; staff web page at `frontend/app/app/onboarding/page.tsx` supports roster/search/status, milestone completion, and pause/resume; member mobile screen at `mobileapp/src/app/(member)/onboarding.tsx` shows progress and milestones, linked from the member dashboard |
+| 32 | Attendance-drop detection vs each member's own baseline | P0 | ✓ | ✓ | ✓ | — | ✅ Built | `retention_service.py` computes each member’s 14-day weekly pace against the prior 56 days; eligible members need 21+ days of tenure and a baseline of at least 1 visit/week. Staff can search/filter silent, severe, and moderate drops, compare baseline and recent counts, and open the member sheet at `frontend/app/app/retention/page.tsx` |
 | 33 | Churn-risk score with reasons | P0 | ✓ | ✓ | — | — | ⚠️ Partial | `retention_service.py:166-245 compute_risk` — 0-100 score, `HIGH_BAND=70`/`MEDIUM_BAND=40`, weighted `RiskReason` objects with human text, 5 signal families, loyalty cushion (−10). Missing: UI |
 | 34 | Inactivity ladder: 5 days message, 10 days staff check-in, 14–21 days call | P0 | ✓ | ✓ | — | — | ⚠️ Partial | `inactivity_ladder_service.py:95` rungs incl. "Win-back"; `routes/ladder.py`, daily worker. Missing: UI |
 | 35 | Win-back campaigns; milestones; birthdays | P1 | ✓ | ✓ | — | — | ⚠️ Partial | `models/winback.py`, `models/celebration.py`, both services + workers. Missing: UI |
@@ -276,7 +274,7 @@ The supplied Notion page did not load in the available browser during this audit
 2. **Evidence Vault (rows 109–118)** — 9 of 10 not built: no hash chain, no soft delete, no evidence packs, no WORM.
 3. **Compliance & legal (rows 67–73)** — 6 of 7 not built: no waivers, consent, data-subject requests or cooling-off.
 4. **Localisation (§6, rows 99–108)** — 7 of 10 not built: no i18n/RTL, no local payment rails, no privacy-law packs.
-5. **Remaining retention UI (rows 32–37)** — row 31 now has staff web and member mobile screens; the other retention workflows still need feature-specific UI.
+5. **Remaining retention UI (rows 33–37)** — rows 31 and 32 now have member/staff screens; the other retention workflows still need feature-specific UI.
 
 ---
 
@@ -405,7 +403,7 @@ means the Strategy Report itself says not to build it before validation.
 | S088 | Approved external integrations for gym systems, messaging, payments, and calendars | P0 | Both: B2/B100/B101 | Partial | Stripe/email/push exist; gym-system, two-way messaging, and calendar connectors are missing |
 | S089 | LLMs mutate state only through validated application tools | P0 | Strategy-only | Built | Assistant write actions route through typed application tools and approval gates |
 | S090 | Every external/state-changing action is idempotent | P0 | Both: A17 | Partial | Framework is strong but is not uniformly required on every state-changing endpoint |
-| S091 | Financial settlement comes only from verified payment records | P0 | Both: B23/B84 | Partial | Stripe flows verify provider events; receipt interpretation remains stubbed and must not confirm settlement alone |
+| S091 | Financial settlement comes only from verified payment records | P0 | Both: B23/B84 | Partial | Stripe flows verify provider events; screenshot claims require staff confirmation against the receiving bank/wallet and are never auto-booked from OCR |
 | S092 | Every workflow is versioned and reconstructable | P0 | Strategy-only | Not built | No workflow version/execution provenance model exists |
 | S093 | Tenant isolation at database, service, and tool layers | P0 | Both | Partial | Service/JWT scoping is broad; complete RLS/tool-layer proof is not established |
 | S094 | Every agent has finite tool-call, time, money, and action budgets | P0 | Strategy-only | Not built | No agent budget object or enforcement exists |

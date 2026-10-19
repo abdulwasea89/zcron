@@ -15,25 +15,25 @@
 
 | | Section 1 (79) | Cross-cutting (49) | Total (128) |
 |---|---|---|---|
-| ✅ Built | 13 | 4 | **17** |
-| ⚠️ Partial | 34 | 21 | **55** |
+| ✅ Built | 15 | 4 | **19** |
+| ⚠️ Partial | 32 | 21 | **53** |
 | ❌ Not built | 32 | 24 | **56** |
 
 By priority (Section 1 only):
 
 | Priority | ✅ | ⚠️ | ❌ | Total |
 |---|---|---|---|---|
-| P0 | 7 | 17 | 13 | 37 |
-| P1 | 4 | 11 | 13 | 28 |
+| P0 | 9 | 15 | 13 | 37 |
+| P1 | 5 | 10 | 13 | 28 |
 | P1–P2 | 1 | 3 | 1 | 5 |
 | P2 | 0 | 4 | 5 | 9 |
-| **Total** | **12** | **35** | **32** | **79** |
+| **Total** | **15** | **32** | **32** | **79** |
 
 ### Three largest gap clusters
 
 1. **Sales & leads (rows 1–8) — 8 of 8 absent.** No `Lead`, `Deal`, `Pipeline` or trial-booking entity exists anywhere. The product begins at "member".
 2. **Evidence Vault (rows 109–118) — 9 of 10 absent.** Audit log exists but is editable; no hash chain, no soft delete, no packs, no WORM.
-3. **Retention stack (rows 31–37) — 1 built, 6 backend-only.** Row 31 now has staff web and member mobile UI; rows 32–37 still need feature-specific UI.
+3. **Retention stack (rows 31–37) — 2 built, 5 backend-only.** Rows 31–32 now have staff/member interfaces; rows 33–37 still need feature-specific UI.
 
 ---
 
@@ -76,34 +76,34 @@ By priority (Section 1 only):
 | 21 | Walk-ins, day passes, guest log, lockers | P1–P2 | ✅ | `models/visitor.py`, `visitor_service.py:130` day pass → `Payment(kind=DAY_PASS)`, `routes/front_desk.py` | backend + web |
 | 22 | Offline mode with sync | P1 | ✅ Built | Previously loaded web app pages, Next assets, and workspace-scoped API GET responses are cached when their response policy permits local caching. IndexedDB syncs check-ins, cash/manual payments, and lead trial/tour requests; cash retries are idempotent and rejected actions show their reason. Card payments and drawer reconciliation remain online-only. | backend + web |
 
-### 1.4 Finance and Billing — 1 ✅ / 6 ⚠️ / 1 ❌
+### 1.4 Finance and Billing — 5 ✅ / 3 ⚠️ / 0 ❌
 
 | # | Feature | Pri | Status | Evidence / gap | Surface |
 |---|---|---|---|---|---|
 | 23 | Local payment methods per country | P0 | ✅ | Web member signup and approved plan changes use Stripe Payment Element with dynamic methods on the gym’s connected account. Stripe filters methods by buyer location, currency, payment flow, and connected-account eligibility; redirect and delayed confirmations settle through Connect webhooks. Actual method type is recorded on the payment. Available methods depend on Stripe support and activation for the gym’s country/account; bespoke non-Stripe rails such as JazzCash are not included. | backend + web |
-| 24 | Recurring billing: cards, direct debit, mandates | P0 | ✅ | Web signup offers explicit auto-renew consent. Stripe Connect PaymentIntents save eligible methods for off-session use; Stripe SetupIntents let members enroll or replace a method and collect any required mandate. An hourly worker creates idempotent renewal charges; succeeded webhooks extend the term, while failures move membership into a three-day grace period and the member can replace the method in Account. Method support and mandate requirements depend on Stripe and the gym's connected-account country/settings. Existing subscriptions stay non-renewing until the member opts in; smart retries and card updater remain outside this row's delivered scope. | backend + web |
-| 25 | Failed-payment and overdue recovery (dunning) | P0 | ⚠️ | SaaS has the full escalation ladder (`saas_billing_service.py`). Members get grace reminders days 1/2/3 (`notifications.py:33`, email + push + in-app). Missing: escalating ladder to staff call, smart retry | backend |
+| 24 | Recurring billing: cards, direct debit, mandates | P0 | ✅ | Web signup offers explicit auto-renew consent. Stripe Connect PaymentIntents save eligible methods for off-session use; Stripe SetupIntents let members enroll or replace a method and collect any required mandate. An hourly worker creates idempotent renewal charges; succeeded webhooks extend the term, while failures move membership into a three-day grace period and the member can replace the method in Account. Method support and mandate requirements depend on Stripe and the gym's connected-account country/settings. Existing subscriptions stay non-renewing until the member opts in. Stripe card updater remains outside this row's delivered scope. | backend + web |
+| 25 | Failed-payment and overdue recovery (dunning) | P0 | ✅ Built | Member renewals use at most three scheduled attempts for Stripe-classified retryable declines; processor errors retry after 6/18 hours and insufficient-funds declines after 24 hours. Hard declines and ambiguous errors stop automatic collection. Member day 1/2/3 notices link to Account; owner/manager tasks escalate from review to a member call to final grace-period review. Decline codes are recorded, and Account shows retry timing and remaining attempts. SaaS recovery continues through Stripe Billing's retry and grace lifecycle. | backend + web |
 | 26 | Cash and manual payments with digital receipts | P0 | ✅ | `models/cash.py`, `cash_service.py`, `routes/cash.py:63` receipt PDF, `CashReconciliation` | backend + web + mobile |
-| 27 | Payment-proof verification (bank-transfer or wallet screenshots) | P1 | ⚠️ | Pipeline real: 5 steps, thresholds 95/70, spot audit, audit trail. **OCR is a hard stub** — `integrations/ocr.py:79 _real_extract` returns `None` unconditionally; no tesseract/vision path exists anywhere. `phash` is a `sha256`, not a perceptual hash. Fraud detection cannot detect fraud | backend |
+| 27 | Payment-proof verification (bank-transfer or wallet screenshots) | P1 | ✅ | Local Tesseract OCR extracts only visible receipt fields; ImageMagick validates/normalizes images for a 64-bit dHash near-duplicate signal (latest 2,000 same-workspace receipts). Images persist and are served to authorized same-workspace reviewers. Every screenshot stays pending until staff confirm the transfer in the receiving bank/wallet; OCR is not settlement confirmation. API hosts need Tesseract and ImageMagick. Old filename-only uploads cannot be backfilled. | backend + web |
 | 28 | Invoices with local tax (VAT, GST, sales tax) | P1 | ⚠️ | `plan.tax_rate` end-to-end incl. inclusive-tax: `invoices_service.py:83`, `memberships_service.py:345 _amount_with_tax()`. Missing: country/region rule packs | backend + web |
 | 29 | Expenses, P&L, revenue by plan, branch or trainer | P1 | ⚠️ | Revenue by plan/trainer ✅ (swarm specialists `rev_by_plan`, `payroll_commissions`). 0 matches for `expense`. No P&L, no branch dimension | backend + web |
 | 30 | Refunds, credits, chargeback evidence; accounting export | P1 | ⚠️ | Verified Connect refunds, tenant/member/currency-scoped immutable member vault credit, and Stripe customer invoice-credit balance/history exist; converted cash cannot also be refunded. Missing: chargeback evidence assembly and accounting export | backend + web |
 
-### 1.5 Retention and Member Success — 1 ✅ / 6 ⚠️ / 0 ❌
+### 1.5 Retention and Member Success — 2 ✅ / 5 ⚠️ / 0 ❌
 
-**All seven have backend workflows. Row 31 also has staff web and member mobile UI; rows 32–37 remain backend-only.**
+**All seven have backend workflows. Rows 31–32 now have staff web UI; row 31 also has a member mobile screen. Rows 33–37 remain backend-only.**
 
 | # | Feature | Pri | Status | Evidence / gap | Surface |
 |---|---|---|---|---|---|
 | 31 | 90-day onboarding journey (day 1, days 2–7, weeks 2–4) | P0 | ✅ | `models/onboarding.py`, `onboarding_service.py`, `routes/onboarding.py`, `workers/onboarding.py`; staff roster, risk/search filters, milestones, pause/resume in `frontend/app/app/onboarding/page.tsx`; member progress and milestone actions in `mobileapp/src/app/(member)/onboarding.tsx` | web + mobile |
-| 32 | Attendance-drop detection vs each member's own baseline | P0 | ⚠️ | `retention_service.py:41-44` — 14-day window vs prior 56-day baseline, `DROP_RATIO=0.5`, `SEVERE_RATIO=0.25`, `MIN_TENURE_DAYS=21`. Missing: UI | backend only |
+| 32 | Attendance-drop detection vs each member's own baseline | P0 | ✅ | `retention_service.py` compares each eligible member’s recent 14-day weekly pace with their prior 56-day baseline (minimum 21-day tenure and 1 visit/week baseline); web roster filters by severity, compares counts, and opens the member sheet in `frontend/app/app/retention/page.tsx` | backend + web |
 | 33 | Churn-risk score with reasons | P0 | ⚠️ | `retention_service.py:166-245 compute_risk` — 0-100 score, `HIGH_BAND=70`/`MEDIUM_BAND=40`, weighted `RiskReason` objects with human text, 5 signal families, loyalty cushion (−10). Missing: UI | backend only |
 | 34 | Inactivity ladder: 5 days message, 10 days staff check-in, 14–21 days call | P0 | ⚠️ | `inactivity_ladder_service.py:95` rungs incl. "Win-back"; `routes/ladder.py`, daily worker. Missing: UI | backend only |
 | 35 | Win-back campaigns; milestones; birthdays | P1 | ⚠️ | `models/winback.py`, `models/celebration.py`, both services + workers. Missing: UI | backend only |
 | 36 | NPS at day 7, 30, 90; complaint clustering | P1 | ⚠️ | `nps_service.py:435 _nps()`, theme taxonomy at `:75`; day-7/30/90 daily sweep, `routes/nps.py`. Missing: UI | backend only |
 | 37 | Challenges, streaks, leaderboards | P2 | ⚠️ | `models/gamification.py` — `GymChallenge`, `MemberChallengeProgress`, `MemberStreak`; `routes/challenges.py`, daily worker. Missing: UI | backend only |
 
-*Verified: row 31 is available to staff on web and members on mobile. Rows 32–37 still lack feature-specific interfaces in `frontend/` and `mobileapp/`.*
+*Verified: rows 31–32 are visible to staff on the web; row 31 also has a member mobile screen. Rows 33–37 still lack feature-specific interfaces in `frontend/` and `mobileapp/`.*
 
 ### 1.6 Marketing and Growth — 0 ✅ / 1 ⚠️ / 5 ❌
 
@@ -290,7 +290,7 @@ The prose audit at the repo root remains the methodology record. This file is th
 
 **Row 15 rechecked for the requested web scope:** member changes use `membership_changes_service.py`, `member_vault_service.py`, the web Account surface, owner/manager review, and scheduled lifecycle processing. The row is marked Built for backend + web; mobile is excluded from this scope.
 
-**Confirmed inventory gaps:** OCR remains a separate gap in this audit snapshot; waitlist 0 matches; promos 0 matches; consent 0 matches; staff KPIs 0 matches; branches/royalties 0 matches; no Wins feed; retention rows 32–37 still lack feature-specific UI. Row 31 now has staff web and member mobile screens.
+**Confirmed inventory gaps:** waitlist 0 matches; promos 0 matches; consent 0 matches; staff KPIs 0 matches; branches/royalties 0 matches; no Wins feed; retention rows 33–37 have no feature-specific UI in `frontend/` or `mobileapp/`. Row 31 has staff web and member mobile UI; row 32 now has a staff attendance-trends page. Receipt OCR and perceptual duplicate detection have since been implemented; see row 27.
 
 **Corrected after re-verification (three earlier claims were wrong):**
 1. **QR generation exists** — `MemberDetailSheet.tsx:602` issues `acron:member:{member_id}`, `QrScanner.tsx` decodes it back into check-in. Row 17's QR path is real, not an enum-only parameter.
@@ -303,13 +303,12 @@ The prose audit at the repo root remains the methodology record. This file is th
 
 Ordered by leverage:
 
-1. **Remaining retention UI** — 6 features (rows 32–37) have backend workflows but need staff/member interfaces.
+1. **Remaining retention UI** — 5 features (rows 33–37) have backend workflows but need staff/member interfaces.
 2. **Promotion engine** (row 12, P0) — discounts, promo codes, joining fees. Small surface (`Plan`/`Subscription`/`Payment`), direct revenue impact.
 3. **Lead pipeline + trial booking** (rows 1–8: P0 ×6, P1 ×2) — closes the largest hole; reuses `Conversation` and `Notification`.
-4. **Real OCR** (row 27) — implement `_real_extract`. Until then "AI receipt verification" is a claim the code does not support.
-5. **Member app completion** (rows 74–76) — renewal self-service, member card/QR, workout log. Membership-pause requests now work end-to-end; the app shell already exists.
-6. **Consent + audit hash chain + soft delete** (rows 68, 110, 112) — cheap; prerequisite for selling into any regulated market.
-7. **Member dunning ladder** (row 25) — extend `send_grace_reminders` with the escalating cadence that already exists for SaaS.
-8. **Member dunning and payment links** (row 93) — add payment links and escalation controls to the reminder cadence now implemented in row 14.
+4. **Member app completion** (rows 74–76) — renewal self-service, member card/QR, workout log. Membership-pause requests now work end-to-end; the app shell already exists.
+5. **Consent + audit hash chain + soft delete** (rows 68, 110, 112) — cheap; prerequisite for selling into any regulated market.
+6. **Member dunning ladder** (row 25) — extend `send_grace_reminders` with the escalating cadence that already exists for SaaS.
+7. **Member dunning and payment links** (row 93) — add payment links and escalation controls to the reminder cadence now implemented in row 14.
 9. **Waitlist + no-shows** (rows 49–50) — booking exists; these are additive.
 10. **Multi-location** (row 66) — `location_id` on membership/payment/attendance. Cheap now, expensive later.

@@ -225,6 +225,7 @@ export const NAV_MODULE_BY_HREF: Record<string, string> = {
   "/app/space": "space",
   "/app/members": "members",
   "/app/onboarding": "members",
+  "/app/retention": "members",
   "/app/leads": "leads",
   "/app/referrals": "referrals",
   "/app/payments": "payments",
