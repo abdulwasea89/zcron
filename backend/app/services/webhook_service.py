@@ -358,10 +358,13 @@ async def _connect_payment_failed(session: AsyncSession, obj: dict, account_id: 
     if not org or not account_id or org.stripe_connect_account_id != account_id:
         return {"ignored": "payment_intent.payment_failed", "reason": "connected account mismatch"}
     payment.status = PaymentStatus.FAILED
+    error = obj.get("last_payment_error") or {}
+    payment.stripe_failure_code = error.get("code")
+    payment.stripe_failure_decline_code = error.get("decline_code")
     session.add(payment)
     if (payment.note or "").startswith("member_renewal:"):
         from app.services.recurring_billing_service import fail_recurring_renewal
-        await fail_recurring_renewal(session, payment)
+        await fail_recurring_renewal(session, payment, failure=obj)
         return {"handled": "payment_intent.payment_failed", "renewal_payment_id": payment.id}
     if payment.member_id:
         from app.models.membership import OrganizationMember

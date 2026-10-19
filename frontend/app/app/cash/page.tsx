@@ -169,22 +169,21 @@ function MemberCombobox({
 
   if (selected) {
     return (
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+      <div className="min-w-0 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
         <p className="mb-2 text-[10px] font-semibold text-muted-foreground">Member</p>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <Avatar name={selected.full_name || selected.email} size="md" />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-[var(--foreground)]">{selected.full_name || selected.email}</p>
-              <p className="truncate text-xs text-[var(--foreground-muted)]">{selected.email}</p>
-            </div>
-            <Badge tone={selected.member_status === "active" ? "success" : "warning"}>{selected.member_status}</Badge>
-            {selected.role !== "member" && <Badge tone="info">{roleLabel(selected.role)}</Badge>}
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-[var(--foreground)]">{selected.full_name || selected.email}</p>
+            <p className="truncate text-xs text-[var(--foreground-muted)]">{selected.email}</p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            <Badge size="sm" tone={selected.member_status === "active" ? "success" : "warning"}>{selected.member_status}</Badge>
+            {selected.role !== "member" && <Badge size="sm" tone="info">{roleLabel(selected.role)}</Badge>}
           </div>
           <button
             type="button"
             onClick={onClear}
-            className="shrink-0 rounded-full p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+            className="shrink-0 rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)]"
             title="Change member"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

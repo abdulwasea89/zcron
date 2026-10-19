@@ -10,14 +10,17 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.constants import MemberStatus, NotificationKind, SubscriptionStatus
+from app.core.constants import MemberStatus, NotificationKind, PaymentStatus, Role, SubscriptionStatus
+from app.core.config import settings
 from app.core.security import now_utc
 from app.integrations.email import send_email_safe as send_email
 from app.integrations.push import send_push
 from app.models.membership import OrganizationMember
 from app.models.membership_reminder import MembershipReminder
+from app.models.payment import Payment
 from app.models.plan import MembershipPlan
 from app.models.subscription import Subscription
+from app.models.staff import Task
 from app.models.user import User
 
 
@@ -34,7 +37,7 @@ async def notify_member(
 
 
 async def send_grace_reminders(session: AsyncSession, *, org_id: str) -> int:
-    """Send one reminder on each of the first three days after expiry."""
+    """Send member recovery nudges and an escalating staff dunning ladder."""
 
     subs = (
         await session.execute(
@@ -42,7 +45,7 @@ async def send_grace_reminders(session: AsyncSession, *, org_id: str) -> int:
                 Subscription.organization_id == org_id,
                 Subscription.status == SubscriptionStatus.GRACE,
                 Subscription.current_period_end.is_not(None),
-            )
+            ).with_for_update(skip_locked=True)
         )
     ).scalars().all()
     sent = 0
@@ -55,10 +58,32 @@ async def send_grace_reminders(session: AsyncSession, *, org_id: str) -> int:
         if await _reminder_exists(session, sub, stage):
             continue
         await _record_reminder(session, sub, stage)
-        title = "Membership payment due"
-        body = f"Your membership expired {days_overdue} day(s) ago. Please contact your gym to renew."
-        await notify_member(session, member_id=sub.member_id, title=title, body=body)
         member = await session.get(OrganizationMember, sub.member_id)
+        user = await session.get(User, member.user_id) if member else None
+        name = (member.display_name if member else None) or (user.full_name if user else None) or "Member"
+        plan = await session.get(MembershipPlan, sub.plan_id)
+        if plan is not None:
+            from app.services.recurring_billing_service import _renewal_amount_cents
+            amount = _renewal_amount_cents(sub, plan)[0] / 100
+        else:
+            amount = sub.price_snapshot
+        amount_label = f"{amount:,.2f} {sub.currency}"
+        latest_failed = (await session.execute(select(Payment).where(
+            Payment.subscription_id == sub.id,
+            Payment.status == PaymentStatus.FAILED,
+        ).order_by(Payment.created_at.desc()))).scalars().first()
+        failure_hint = (
+            latest_failed.stripe_failure_decline_code or latest_failed.stripe_failure_code
+            if latest_failed else None
+        )
+        reason = f"Stripe reported {failure_hint.replace('_', ' ')}. " if failure_hint else ""
+        title = "Membership payment needs attention"
+        account_url = f"{settings.frontend_url.rstrip('/')}/app/account"
+        body = (
+            f"Your renewal payment is overdue by {days_overdue} day(s). "
+            f"Update your payment method or retry securely in your account: {account_url}"
+        )
+        await notify_member(session, member_id=sub.member_id, title=title, body=body)
         if member is not None:
             from app.services.notifications_service import create_notification
 
@@ -66,6 +91,59 @@ async def send_grace_reminders(session: AsyncSession, *, org_id: str) -> int:
                 session, org_id=org_id, recipient_user_id=member.user_id,
                 category=NotificationKind.MEMBERSHIP, title=title, body=body,
                 data={"subscription_id": sub.id, "reminder_stage": stage},
+            )
+        if days_overdue == 1:
+            task_title = f"Payment recovery: follow up with {name}"
+            task_description = (
+                f"Membership renewal is overdue. {reason}Check the latest payment attempt, then contact the member "
+                f"and direct them to {account_url} to update their method. Plan: {plan.name if plan else 'membership'}; "
+                f"renewal amount: {amount_label}. [member:{sub.member_id}] [subscription:{sub.id}]"
+            )
+        elif days_overdue == 2:
+            task_title = f"Call {name} about overdue membership payment"
+            task_description = (
+                f"Call the member today. {reason}Explain the renewal amount ({amount_label}), help them update or "
+                f"reauthorize their method in Account, and record the outcome. [member:{sub.member_id}] "
+                f"[subscription:{sub.id}]"
+            )
+        else:
+            task_title = f"Escalate {name}'s overdue membership before grace ends"
+            task_description = (
+                f"Final recovery follow-up: contact the member. {reason}Confirm payment status and review access "
+                f"before the grace period ends. Renewal amount: {amount_label}. [member:{sub.member_id}] "
+                f"[subscription:{sub.id}]"
+            )
+        staff = (await session.execute(select(OrganizationMember).where(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.role.in_([Role.OWNER, Role.MANAGER]),
+            OrganizationMember.member_status == MemberStatus.ACTIVE,
+        ))).scalars().all()
+        assignee = next((person for person in staff if person.role == Role.OWNER), None)
+        assignee = assignee or (staff[0] if staff else None)
+        task = Task(
+            organization_id=org_id, title=task_title, description=task_description,
+            assignee_member_id=assignee.id if assignee else None,
+            deadline=now_utc(),
+        )
+        session.add(task)
+        await session.flush()
+        from app.services.audit_service import record_audit
+        await record_audit(
+            session, action="billing.dunning_task_created", organization_id=org_id,
+            actor_user_id=None, entity_type="subscription", entity_id=sub.id,
+            metadata={"task_id": task.id, "reminder_stage": stage,
+                      "assignee_member_id": assignee.id if assignee else None},
+        )
+        from app.realtime import events
+        await events.task_changed(org_id, task_id=task.id, action="created")
+        if assignee is not None:
+            from app.services.notifications_service import create_notification
+            await create_notification(
+                session, org_id=org_id, recipient_user_id=assignee.user_id,
+                category=NotificationKind.TASK, title=task_title,
+                body=task_description,
+                data={"task_id": task.id, "subscription_id": sub.id,
+                      "member_id": sub.member_id, "reminder_stage": stage},
             )
         sent += 1
     return sent

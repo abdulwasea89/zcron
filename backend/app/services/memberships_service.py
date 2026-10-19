@@ -610,6 +610,11 @@ async def recurring_billing_status(session: AsyncSession, *, org_id: str, user_i
         Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE]),
     ).order_by(Subscription.started_at.desc()))).scalars().first()
     plan = await session.get(MembershipPlan, sub.plan_id) if sub else None
+    if sub and plan:
+        from app.services.recurring_billing_service import _renewal_amount_cents
+        renewal_amount = _renewal_amount_cents(sub, plan)[0] / 100
+    else:
+        renewal_amount = None
     return {
         "eligible": bool(sub and plan and plan.billing_type.value == "recurring" and plan.auto_renew),
         "active": bool(sub and sub.auto_renew and not sub.cancel_at_period_end),
@@ -618,7 +623,9 @@ async def recurring_billing_status(session: AsyncSession, *, org_id: str, user_i
         "payment_method_type": member.stripe_default_payment_method_type,
         "status": sub.status.value if sub else None,
         "next_renewal_at": sub.current_period_end if sub and sub.auto_renew else None,
-        "renewal_amount": (sub.price_snapshot * (1 + plan.tax_rate if plan.tax_mode.value == "added" else 1)) if sub and plan else None,
+        "next_retry_at": sub.next_renewal_attempt_at if sub and sub.status == SubscriptionStatus.GRACE else None,
+        "retry_attempts_remaining": max(0, 3 - sub.renewal_attempt_count) if sub else 0,
+        "renewal_amount": renewal_amount,
         "currency": sub.currency if sub else None,
         "cycle_length": plan.cycle_length if plan else None,
         "cycle_unit": plan.cycle_unit if plan else None,
