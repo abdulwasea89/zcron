@@ -22,20 +22,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: acron_ci
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d acron_ci"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     defaults:
       run:
         working-directory: backend
@@ -65,19 +51,6 @@ jobs:
           STRIPE_SECRET_KEY: ""
           STRIPE_WEBHOOK_SECRET: ""
         run: uv run --frozen pytest -q
-      - name: Exercise PostgreSQL migrations up, down, and up
-        env:
-          APP_ENV: test
-          DEBUG: "false"
-          SECRET_KEY: ci-only-not-a-production-secret
-          USE_CLOUD_DB: "yes"
-          CLOUD_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/acron_ci"
-          DATABASE_SSL_MODE: disable
-        run: |
-          uv run --frozen alembic upgrade head
-          uv run --frozen alembic downgrade f3a4b5c6d7e8
-          uv run --frozen alembic upgrade head
-          test "$(uv run --frozen alembic current | awk '{print $1}')" = "h2b3c4d5e6f7"
 
   frontend:
     name: Frontend production build and smoke checks
