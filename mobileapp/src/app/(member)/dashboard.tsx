@@ -171,6 +171,18 @@ export default function Screen_dashboard() {
               <MembershipBanner status={status} banner={banner} />
             </View>
 
+            <SectionCard title="Your first 90 days">
+              <Pressable onPress={() => router.navigate("/onboarding" as never)} className="rounded-2xl bg-surface p-4 active:opacity-80">
+                <View className="flex-row items-center justify-between gap-3">
+                  <View className="flex-1">
+                    <Text type="body" weight="semibold" className="text-foreground">Build your routine</Text>
+                    <Text type="body-sm" color="muted" className="mt-1">See your milestones and next steps.</Text>
+                  </View>
+                  <Text type="body-sm" className="text-accent">View →</Text>
+                </View>
+              </Pressable>
+            </SectionCard>
+
             <SectionCard title="Today’s schedule" action={<Pressable onPress={goTo("/classes")} hitSlop={8}><Text type="body-sm" className="text-accent">See all</Text></Pressable>}>
               {sessions.length === 0 ? (
                 <EmptyState

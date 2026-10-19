@@ -29,16 +29,16 @@ Every material feature identified in both source PDFs and the current codebase i
 
 | Status | Part A: Blueprint (152) | Part B: code-only (18) | Part C: Strategy (106) | Traceability rows (276) |
 |---|---:|---:|---:|---:|
-| ✅ Built | 27 | 15 | 1 | **43** |
+| ✅ Built | 28 | 15 | 1 | **44** |
 | 🔧 Improvement | 3 | 0 | 0 | **3** |
-| ⚠️ Partial | 65 | 3 | 53 | **121** |
+| ⚠️ Partial | 64 | 3 | 53 | **120** |
 | 🧨 Broken / stubbed | 1 | 0 | 0 | **1** |
 | ❌ Not built | 56 | 0 | 46 | **102** |
 | ⏸️ Deferred | 0 | 0 | 6 | **6** |
 
 The surface columns are not mutually exclusive; a row can have API and web coverage, for example. Counts above classify each traceability row once by its overall status. Part C intentionally maps overlaps, so 276 traceability rows do not mean 276 unique product capabilities. Blueprint rows 80–152 expand cross-cutting architecture, UX, evidence, localisation, expansion, and Sales Pack details; those row numbers are audit indices, not numbering printed in the PDF.
 
-For the original prioritized rows in Parts A and B: P0 — 24 built, 1 improvement, 15 partial, 7 not built; P1 — 10 built, 1 improvement, 13 partial, 11 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
+For the original prioritized rows in Parts A and B: P0 — 25 built, 1 improvement, 14 partial, 7 not built; P1 — 10 built, 1 improvement, 13 partial, 11 not built, 1 broken/stubbed; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
 
 ### Source-to-row coverage recheck
 
@@ -110,7 +110,7 @@ The supplied Notion page did not load in the available browser during this audit
 | 28 | Invoices with local tax (VAT, GST, sales tax) | P1 | ✓ | ✓ | ✓ | — | ⚠️ Partial | `plan.tax_rate` end-to-end incl. inclusive-tax: `invoices_service.py:83`, `memberships_service.py:345 _amount_with_tax()`. Missing: country/region rule packs |
 | 29 | Expenses, P&L, revenue by plan, branch or trainer | P1 | ✓ | ✓ | ✓ | — | ⚠️ Partial | Revenue by plan/trainer ✅ (swarm specialists `rev_by_plan`, `payroll_commissions`). 0 matches for `expense`. No P&L, no branch dimension |
 | 30 | Refunds, credits, chargeback evidence; accounting export | P1 | ✓ | ✓ | — | — | ⚠️ Partial | Verified Connect refunds, a tenant/member/currency-scoped immutable member credit vault, and Stripe customer invoice-credit balance/history preserve eligible unused value and prevent double credit/refund. Missing: chargeback evidence assembly and accounting export |
-| 31 | 90-day onboarding journey (day 1, days 2–7, weeks 2–4) | P0 | ✓ | ✓ | — | — | ⚠️ Partial | `models/onboarding.py`, `onboarding_service.py:203` ("not visited in 7 days"), `routes/onboarding.py`, `workers/onboarding.py`. Missing: UI |
+| 31 | 90-day onboarding journey (day 1, days 2–7, weeks 2–4) | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | `models/onboarding.py`, `onboarding_service.py`, `routes/onboarding.py`, `workers/onboarding.py`; staff web page at `frontend/app/app/onboarding/page.tsx` supports member roster, risk/search filters, milestone completion, and pause/resume; member screen at `mobileapp/src/app/(member)/onboarding.tsx` shows progress and milestones |
 | 32 | Attendance-drop detection vs each member's own baseline | P0 | ✓ | ✓ | — | — | ⚠️ Partial | `retention_service.py:41-44` — 14-day window vs prior 56-day baseline, `DROP_RATIO=0.5`, `SEVERE_RATIO=0.25`, `MIN_TENURE_DAYS=21`. Missing: UI |
 | 33 | Churn-risk score with reasons | P0 | ✓ | ✓ | — | — | ⚠️ Partial | `retention_service.py:166-245 compute_risk` — 0-100 score, `HIGH_BAND=70`/`MEDIUM_BAND=40`, weighted `RiskReason` objects with human text, 5 signal families, loyalty cushion (−10). Missing: UI |
 | 34 | Inactivity ladder: 5 days message, 10 days staff check-in, 14–21 days call | P0 | ✓ | ✓ | — | — | ⚠️ Partial | `inactivity_ladder_service.py:95` rungs incl. "Win-back"; `routes/ladder.py`, daily worker. Missing: UI |
@@ -276,7 +276,7 @@ The supplied Notion page did not load in the available browser during this audit
 2. **Evidence Vault (rows 109–118)** — 9 of 10 not built: no hash chain, no soft delete, no evidence packs, no WORM.
 3. **Compliance & legal (rows 67–73)** — 6 of 7 not built: no waivers, consent, data-subject requests or cooling-off.
 4. **Localisation (§6, rows 99–108)** — 7 of 10 not built: no i18n/RTL, no local payment rails, no privacy-law packs.
-5. **Retention UI (rows 31–37)** — backend workflows and workers exist, but the feature-specific owner/member screens are missing.
+5. **Remaining retention UI (rows 32–37)** — row 31 now has staff web and member mobile screens; the other retention workflows still need feature-specific UI.
 
 ---
 

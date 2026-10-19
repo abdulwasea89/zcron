@@ -15,25 +15,25 @@
 
 | | Section 1 (79) | Cross-cutting (49) | Total (128) |
 |---|---|---|---|
-| ✅ Built | 12 | 4 | **16** |
-| ⚠️ Partial | 35 | 21 | **56** |
+| ✅ Built | 13 | 4 | **17** |
+| ⚠️ Partial | 34 | 21 | **55** |
 | ❌ Not built | 32 | 24 | **56** |
 
 By priority (Section 1 only):
 
 | Priority | ✅ | ⚠️ | ❌ | Total |
 |---|---|---|---|---|
-| P0 | 6 | 18 | 13 | 37 |
+| P0 | 7 | 17 | 13 | 37 |
 | P1 | 4 | 11 | 13 | 28 |
 | P1–P2 | 1 | 3 | 1 | 5 |
 | P2 | 0 | 4 | 5 | 9 |
-| **Total** | **11** | **36** | **32** | **79** |
+| **Total** | **12** | **35** | **32** | **79** |
 
 ### Three largest gap clusters
 
 1. **Sales & leads (rows 1–8) — 8 of 8 absent.** No `Lead`, `Deal`, `Pipeline` or trial-booking entity exists anywhere. The product begins at "member".
 2. **Evidence Vault (rows 109–118) — 9 of 10 absent.** Audit log exists but is editable; no hash chain, no soft delete, no packs, no WORM.
-3. **Retention stack (rows 31–37) — 7 of 7 backend-complete, 0 UI.** Verified absent from *both* `frontend/app/` and `mobileapp/src/app/`.
+3. **Retention stack (rows 31–37) — 1 built, 6 backend-only.** Row 31 now has staff web and member mobile UI; rows 32–37 still need feature-specific UI.
 
 ---
 
@@ -89,13 +89,13 @@ By priority (Section 1 only):
 | 29 | Expenses, P&L, revenue by plan, branch or trainer | P1 | ⚠️ | Revenue by plan/trainer ✅ (swarm specialists `rev_by_plan`, `payroll_commissions`). 0 matches for `expense`. No P&L, no branch dimension | backend + web |
 | 30 | Refunds, credits, chargeback evidence; accounting export | P1 | ⚠️ | Verified Connect refunds, tenant/member/currency-scoped immutable member vault credit, and Stripe customer invoice-credit balance/history exist; converted cash cannot also be refunded. Missing: chargeback evidence assembly and accounting export | backend + web |
 
-### 1.5 Retention and Member Success — 0 ✅ / 7 ⚠️ / 0 ❌
+### 1.5 Retention and Member Success — 1 ✅ / 6 ⚠️ / 0 ❌
 
-**All seven are backend-complete with routes and workers — and none has a UI in either `frontend/` or `mobileapp/`.**
+**All seven have backend workflows. Row 31 also has staff web and member mobile UI; rows 32–37 remain backend-only.**
 
 | # | Feature | Pri | Status | Evidence / gap | Surface |
 |---|---|---|---|---|---|
-| 31 | 90-day onboarding journey (day 1, days 2–7, weeks 2–4) | P0 | ⚠️ | `models/onboarding.py`, `onboarding_service.py:203` ("not visited in 7 days"), `routes/onboarding.py`, `workers/onboarding.py`. Missing: UI | backend only |
+| 31 | 90-day onboarding journey (day 1, days 2–7, weeks 2–4) | P0 | ✅ | `models/onboarding.py`, `onboarding_service.py`, `routes/onboarding.py`, `workers/onboarding.py`; staff roster, risk/search filters, milestones, pause/resume in `frontend/app/app/onboarding/page.tsx`; member progress and milestone actions in `mobileapp/src/app/(member)/onboarding.tsx` | web + mobile |
 | 32 | Attendance-drop detection vs each member's own baseline | P0 | ⚠️ | `retention_service.py:41-44` — 14-day window vs prior 56-day baseline, `DROP_RATIO=0.5`, `SEVERE_RATIO=0.25`, `MIN_TENURE_DAYS=21`. Missing: UI | backend only |
 | 33 | Churn-risk score with reasons | P0 | ⚠️ | `retention_service.py:166-245 compute_risk` — 0-100 score, `HIGH_BAND=70`/`MEDIUM_BAND=40`, weighted `RiskReason` objects with human text, 5 signal families, loyalty cushion (−10). Missing: UI | backend only |
 | 34 | Inactivity ladder: 5 days message, 10 days staff check-in, 14–21 days call | P0 | ⚠️ | `inactivity_ladder_service.py:95` rungs incl. "Win-back"; `routes/ladder.py`, daily worker. Missing: UI | backend only |
@@ -103,7 +103,7 @@ By priority (Section 1 only):
 | 36 | NPS at day 7, 30, 90; complaint clustering | P1 | ⚠️ | `nps_service.py:435 _nps()`, theme taxonomy at `:75`; day-7/30/90 daily sweep, `routes/nps.py`. Missing: UI | backend only |
 | 37 | Challenges, streaks, leaderboards | P2 | ⚠️ | `models/gamification.py` — `GymChallenge`, `MemberChallengeProgress`, `MemberStreak`; `routes/challenges.py`, daily worker. Missing: UI | backend only |
 
-*Verified: grep for `challenge|campaign|nps|streak|winback|onboarding|ladder` across `frontend/app`, `frontend/components`, `mobileapp/src/app` returns only auth-route files ("MFA challenge") and industry config. The retention stack is invisible to every user.*
+*Verified: row 31 is available to staff on web and members on mobile. Rows 32–37 still lack feature-specific interfaces in `frontend/` and `mobileapp/`.*
 
 ### 1.6 Marketing and Growth — 0 ✅ / 1 ⚠️ / 5 ❌
 
@@ -290,7 +290,7 @@ The prose audit at the repo root remains the methodology record. This file is th
 
 **Row 15 rechecked for the requested web scope:** member changes use `membership_changes_service.py`, `member_vault_service.py`, the web Account surface, owner/manager review, and scheduled lifecycle processing. The row is marked Built for backend + web; mobile is excluded from this scope.
 
-**Confirmed unchanged after adversarial re-check:** OCR is a hard stub (`ocr.py:79` returns `None`, no tesseract/vision path exists); waitlist 0 matches; promos 0 matches; consent 0 matches; staff KPIs 0 matches; branches/royalties 0 matches; no Wins feed; retention rows 31–37 have no UI in `frontend/` **or** `mobileapp/`.
+**Confirmed inventory gaps:** OCR remains a separate gap in this audit snapshot; waitlist 0 matches; promos 0 matches; consent 0 matches; staff KPIs 0 matches; branches/royalties 0 matches; no Wins feed; retention rows 32–37 still lack feature-specific UI. Row 31 now has staff web and member mobile screens.
 
 **Corrected after re-verification (three earlier claims were wrong):**
 1. **QR generation exists** — `MemberDetailSheet.tsx:602` issues `acron:member:{member_id}`, `QrScanner.tsx` decodes it back into check-in. Row 17's QR path is real, not an enum-only parameter.
@@ -303,7 +303,7 @@ The prose audit at the repo root remains the methodology record. This file is th
 
 Ordered by leverage:
 
-1. **Retention UI** — 7 features (rows 31–37), backend complete, zero frontend. Highest return per unit of work.
+1. **Remaining retention UI** — 6 features (rows 32–37) have backend workflows but need staff/member interfaces.
 2. **Promotion engine** (row 12, P0) — discounts, promo codes, joining fees. Small surface (`Plan`/`Subscription`/`Payment`), direct revenue impact.
 3. **Lead pipeline + trial booking** (rows 1–8: P0 ×6, P1 ×2) — closes the largest hole; reuses `Conversation` and `Notification`.
 4. **Real OCR** (row 27) — implement `_real_extract`. Until then "AI receipt verification" is a claim the code does not support.
