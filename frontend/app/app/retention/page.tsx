@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
+import { InactivityLadderPanel } from "@/components/InactivityLadderPanel";
 import { Alert, Badge, Button, Input, Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
@@ -99,7 +100,7 @@ export default function AttendanceRetentionPage() {
   const [summary, setSummary] = useState<RetentionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [view, setView] = useState<"drops" | "risk">("drops");
+  const [view, setView] = useState<"drops" | "risk" | "ladder">("drops");
   const [filter, setFilter] = useState<SeverityFilter>("all");
   const [riskFilter, setRiskFilter] = useState<RiskBandFilter>("all");
   const [query, setQuery] = useState("");
@@ -169,8 +170,10 @@ export default function AttendanceRetentionPage() {
       <div className="mb-5 flex gap-2 border-b border-[var(--border)]" role="tablist" aria-label="Retention views">
         <button type="button" role="tab" aria-selected={view === "drops"} onClick={() => setView("drops")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "drops" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Attendance trends <span className="ml-1 text-xs tabular-nums">{rows.length}</span></button>
         <button type="button" role="tab" aria-selected={view === "risk"} onClick={() => setView("risk")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "risk" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Churn risk <span className="ml-1 text-xs tabular-nums">{summary ? summary.high + summary.medium : "—"}</span></button>
+        <button type="button" role="tab" aria-selected={view === "ladder"} onClick={() => setView("ladder")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "ladder" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Inactivity ladder</button>
       </div>
 
+      {view === "ladder" ? <InactivityLadderPanel /> : <>
       {view === "drops" ? <>
         <section aria-label="Attendance drop overview" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Metric label="Members with a drop" count={rows.length} />
@@ -258,6 +261,7 @@ export default function AttendanceRetentionPage() {
           </>}
       </section>
       <p className="mt-3 text-xs leading-5 text-muted-foreground">Retention signals are decision support for staff. They do not contact members or change membership status automatically.</p>
+      </>}
     </>
   );
 }

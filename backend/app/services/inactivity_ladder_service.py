@@ -389,20 +389,99 @@ async def member_ladder(session: AsyncSession, *, org_id: str, member_id: str) -
         "days_inactive": days_since,
         "rungs": [
             {
-                "day": r.day,
-                "code": r.code,
-                "name": r.name,
-                "member_action": r.member_action,
-                "staff_action": r.staff_action,
-                "is_active": r.is_active,
-                "due": r.is_active and days_since is not None and r.day <= days_since,
-                "fired_at": current[r.day].fired_at if r.day in current else None,
-                "status": (current[r.day].status.value if r.day in current else None),
-                "channel": current[r.day].channel if r.day in current else None,
+                "day": rung.day,
+                "code": rung.code,
+                "name": rung.name,
+                "member_action": rung.member_action,
+                "staff_action": rung.staff_action,
+                "is_active": rung.is_active,
+                "due": rung.is_active and days_since is not None and rung.day <= days_since,
+                "fired_at": current[rung.day].fired_at if rung.day in current else None,
+                "status": current[rung.day].status.value if rung.day in current else None,
+                "channel": current[rung.day].channel if rung.day in current else None,
             }
-            for r in rungs
+            for rung in rungs
         ],
     }
+
+
+async def ladder_roster(session: AsyncSession, *, org_id: str) -> list[dict]:
+    """Current inactivity episode and rung state for every live member."""
+    rungs = await get_config(session, org_id=org_id)
+    rows = (
+        await session.execute(
+            select(OrganizationMember, User)
+            .join(User, User.id == OrganizationMember.user_id)
+            .where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.role == "member",
+                OrganizationMember.member_status.in_(list(_LADDER_STATUSES)),
+            )
+        )
+    ).all()
+    if not rows:
+        return []
+
+    member_ids = [member.id for member, _user in rows]
+    last_visits = dict(
+        (
+            await session.execute(
+                select(Attendance.member_id, func.max(Attendance.checked_in_at))
+                .where(
+                    Attendance.organization_id == org_id,
+                    Attendance.member_id.in_(member_ids),
+                )
+                .group_by(Attendance.member_id)
+            )
+        ).all()
+    )
+    progress_rows = (
+        await session.execute(
+            select(InactivityLadderProgress)
+            .where(
+                InactivityLadderProgress.organization_id == org_id,
+                InactivityLadderProgress.member_id.in_(member_ids),
+            )
+            .order_by(InactivityLadderProgress.fired_at.desc())
+        )
+    ).scalars().all()
+    progress_by_member: dict[str, list[InactivityLadderProgress]] = {}
+    for progress in progress_rows:
+        progress_by_member.setdefault(progress.member_id, []).append(progress)
+
+    now = now_utc()
+    result: list[dict] = []
+    for member, user in rows:
+        last = last_visits.get(member.id)
+        inactive_since = last or member.joined_at
+        days = max(0, (now - inactive_since).days) if inactive_since else None
+        current: dict[int, InactivityLadderProgress] = {}
+        for progress in progress_by_member.get(member.id, []):
+            if inactive_since is not None and progress.fired_at >= inactive_since:
+                current.setdefault(progress.rung_day, progress)
+        result.append({
+            "member_id": member.id,
+            "name": member.display_name or user.full_name or user.email,
+            "status": member.member_status.value if hasattr(member.member_status, "value") else str(member.member_status),
+            "days_inactive": days,
+            "rungs": [
+                {
+                    "day": rung.day,
+                    "code": rung.code,
+                    "name": rung.name,
+                    "member_action": rung.member_action,
+                    "staff_action": rung.staff_action,
+                    "is_active": rung.is_active,
+                    "due": rung.is_active and days is not None and rung.day <= days,
+                    "fired_at": current[rung.day].fired_at if rung.day in current else None,
+                    "status": current[rung.day].status.value if rung.day in current else None,
+                    "channel": current[rung.day].channel if rung.day in current else None,
+                }
+                for rung in rungs
+            ],
+        })
+    result.sort(key=lambda item: (-(item["days_inactive"] or 0), item["name"].casefold()))
+    return result
 
 
 async def complete_rung(
@@ -443,6 +522,16 @@ async def complete_rung(
 
     progress.status = LadderStatus.SKIPPED if skip else LadderStatus.COMPLETED
     progress.completed_at = now_utc()
+    if actor_user_id:
+        actor_membership = (
+            await session.execute(
+                select(OrganizationMember.id).where(
+                    OrganizationMember.organization_id == org_id,
+                    OrganizationMember.user_id == actor_user_id,
+                )
+            )
+        ).scalar_one_or_none()
+        progress.completed_by = actor_membership
     session.add(progress)
     await record_audit(
         session,

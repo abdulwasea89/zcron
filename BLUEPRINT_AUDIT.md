@@ -29,16 +29,16 @@ Every material feature identified in both source PDFs and the current codebase i
 
 | Status | Part A: Blueprint (152) | Part B: code-only (18) | Part C: Strategy (106) | Traceability rows (276) |
 |---|---:|---:|---:|---:|
-| ✅ Built | 32 | 15 | 1 | **48** |
+| ✅ Built | 33 | 15 | 1 | **49** |
 | 🔧 Improvement | 3 | 0 | 0 | **3** |
-| ⚠️ Partial | 61 | 3 | 53 | **117** |
+| ⚠️ Partial | 60 | 3 | 53 | **116** |
 | 🧨 Broken / stubbed | 0 | 0 | 0 | **0** |
 | ❌ Not built | 56 | 0 | 46 | **102** |
 | ⏸️ Deferred | 0 | 0 | 6 | **6** |
 
 The surface columns are not mutually exclusive; a row can have API and web coverage, for example. Counts above classify each traceability row once by its overall status. Part C intentionally maps overlaps, so 276 traceability rows do not mean 276 unique product capabilities. Blueprint rows 80–152 expand cross-cutting architecture, UX, evidence, localisation, expansion, and Sales Pack details; those row numbers are audit indices, not numbering printed in the PDF.
 
-For the original prioritized rows in Parts A and B: P0 — 28 built, 1 improvement, 11 partial, 7 not built; P1 — 11 built, 1 improvement, 13 partial, 11 not built; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
+For the original prioritized rows in Parts A and B: P0 — 29 built, 1 improvement, 10 partial, 7 not built; P1 — 11 built, 1 improvement, 13 partial, 11 not built; P1–P2 — 2 built, 2 partial, 1 not built; P2 — 4 partial, 5 not built. Part B priorities are assigned by this audit. Cross-cutting Blueprint detail rows carry no printed PDF priority, while Part C retains the Strategy Report's P0/P1/P2 sequencing.
 
 ### Source-to-row coverage recheck
 
@@ -111,7 +111,7 @@ The supplied Notion page did not load in the available browser during this audit
 | 31 | 90-day onboarding journey (day 1, days 2–7, weeks 2–4) | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | `models/onboarding.py`, `onboarding_service.py`, `routes/onboarding.py`, `workers/onboarding.py`; staff web page at `frontend/app/app/onboarding/page.tsx` supports roster/search/status, milestone completion, and pause/resume; member mobile screen at `mobileapp/src/app/(member)/onboarding.tsx` shows progress and milestones, linked from the member dashboard |
 | 32 | Attendance-drop detection vs each member's own baseline | P0 | ✓ | ✓ | ✓ | — | ✅ Built | `retention_service.py` computes each member’s 14-day weekly pace against the prior 56 days; eligible members need 21+ days of tenure and a baseline of at least 1 visit/week. Staff can search/filter silent, severe, and moderate drops, compare baseline and recent counts, and open the member sheet at `frontend/app/app/retention/page.tsx` |
 | 33 | Churn-risk score with reasons | P0 | ✓ | ✓ | ✓ | — | ✅ Built | Deterministic 0–100 risk roster with high/medium/low filters, signal reasons and weights, last visit, and member-sheet links at `frontend/app/app/retention/page.tsx`; API scoring remains in `retention_service.py` |
-| 34 | Inactivity ladder: 5 days message, 10 days staff check-in, 14–21 days call | P0 | ✓ | ✓ | — | — | ⚠️ Partial | `inactivity_ladder_service.py:95` rungs incl. "Win-back"; `routes/ladder.py`, daily worker. Missing: UI |
+| 34 | Inactivity ladder: 5 days message, 10 days staff check-in, 14–21 days call | P0 | ✓ | ✓ | — | — | ✅ Built | Staff retention view shows each active member's current inactivity episode and rung delivery/completion state, with complete/skip actions; owners can edit outreach steps. `/inactivity-ladder/roster` returns tenant-scoped episode data for the UI; the daily worker retains dispatch and dedupe behavior. |
 | 35 | Win-back campaigns; milestones; birthdays | P1 | ✓ | ✓ | — | — | ⚠️ Partial | `models/winback.py`, `models/celebration.py`, both services + workers. Missing: UI |
 | 36 | NPS at day 7, 30, 90; complaint clustering | P1 | ✓ | ✓ | — | — | ⚠️ Partial | `nps_service.py:435 _nps()`, theme taxonomy at `:75`; day-7/30/90 daily sweep, `routes/nps.py`. Missing: UI |
 | 37 | Challenges, streaks, leaderboards | P2 | ✓ | ✓ | — | — | ⚠️ Partial | `models/gamification.py` — `GymChallenge`, `MemberChallengeProgress`, `MemberStreak`; `routes/challenges.py`, daily worker. Missing: UI |
@@ -274,7 +274,7 @@ The supplied Notion page did not load in the available browser during this audit
 2. **Evidence Vault (rows 109–118)** — 9 of 10 not built: no hash chain, no soft delete, no evidence packs, no WORM.
 3. **Compliance & legal (rows 67–73)** — 6 of 7 not built: no waivers, consent, data-subject requests or cooling-off.
 4. **Localisation (§6, rows 99–108)** — 7 of 10 not built: no i18n/RTL, no local payment rails, no privacy-law packs.
-5. **Remaining retention UI (rows 34–37)** — rows 31–33 now have staff UI; row 31 also has a member screen. Four retention workflows still need feature-specific UI.
+5. **Remaining retention UI (rows 35–37)** — rows 31–34 now have staff UI; row 31 also has a member screen. Three retention workflows still need feature-specific UI.
 
 ---
 

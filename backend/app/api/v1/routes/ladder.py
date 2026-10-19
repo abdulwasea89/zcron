@@ -43,6 +43,15 @@ async def get_config(
     return [_rung_out(r) for r in await ladder.get_config(session, org_id=ctx.org_id)]
 
 
+@router.get("/roster", response_model=list[MemberLadderOut])
+async def roster(
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_RETENTION)),
+    session: AsyncSession = Depends(get_session),
+):
+    """Current inactivity episodes for active members, with their rung state."""
+    return [MemberLadderOut(**row) for row in await ladder.ladder_roster(session, org_id=ctx.org_id)]
+
+
 @router.patch("/config/{day}", response_model=LadderRungOut)
 async def update_rung(
     day: int,
