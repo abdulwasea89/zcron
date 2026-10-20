@@ -263,6 +263,26 @@ export function MemberDetailSheet({
     (payment) => payment.status === "pending" || payment.status === "failed",
   ).length;
   const currency = sub?.currency ?? data?.payments?.[0]?.currency ?? "USD";
+  const recentActivity = [
+    ...(m ? [{
+      id: "joined",
+      at: new Date(m.created_at),
+      title: "Joined",
+      detail: "Member account created",
+    }] : []),
+    ...(visits ?? []).map((visit) => ({
+      id: `visit-${visit.id}`,
+      at: new Date(visit.checked_in_at + "Z"),
+      title: "Checked in",
+      detail: titleCase(visit.method),
+    })),
+    ...(data?.payments ?? []).map((payment) => ({
+      id: `payment-${payment.id}`,
+      at: new Date(payment.paid_at ?? payment.created_at),
+      title: "Payment",
+      detail: `${titleCase(payment.status)} · ${money(payment.amount, payment.currency)}`,
+    })),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 6);
 
   return (
     <>
@@ -342,6 +362,28 @@ export function MemberDetailSheet({
                   <MemberDetailLink title="Payment history" detail={`${data.payments.length} recorded · ${money(collected, currency)} collected`} onClick={() => setDetailSheet("payments")} />
                   <MemberDetailLink title="Member profile" detail="Goals, contact and private notes" onClick={() => setDetailSheet("profile")} />
                 </div>
+
+                <section aria-labelledby="member-recent-activity" className="border-t border-foreground/[0.08] pt-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h2 id="member-recent-activity" className="text-[12px] font-medium text-muted-foreground">Recent activity</h2>
+                    <button type="button" onClick={() => setDetailSheet("payments")} className="text-[11px] font-medium text-brand hover:underline">View payments</button>
+                  </div>
+                  {visits === null ? <p className="text-[12px] text-muted-foreground">Loading activity…</p> : recentActivity.length === 0 ? (
+                    <p className="text-[12px] text-muted-foreground">No check-ins or payments recorded yet.</p>
+                  ) : (
+                    <ul className="m-0 list-none divide-y divide-foreground/[0.07] p-0">
+                      {recentActivity.map((item) => (
+                        <li key={item.id} className="flex items-center justify-between gap-3 py-2.5 text-[12px]">
+                          <span className="min-w-0">
+                            <span className="block font-medium">{item.title}</span>
+                            <span className="block text-muted-foreground">{item.detail}</span>
+                          </span>
+                          <time className="shrink-0 text-muted-foreground" dateTime={item.at.toISOString()}>{item.at.toLocaleDateString([], { month: "short", day: "numeric" })}</time>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
               </>
             )}
           </SheetBody>
