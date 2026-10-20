@@ -133,7 +133,7 @@ function paymentTrend(payments: PaymentOut[], timeZone: string): PaymentTrendPoi
 }
 
 export default async function DashboardPage() {
-  const [metrics, checklist, saas, org, payments, profile, tasks] = await Promise.all([
+  const [metrics, checklist, saas, org, payments, profile, tasks, currentUser] = await Promise.all([
     safe(backend<HeadlineMetrics>("/analytics/headline")),
     safe(backend<SetupChecklist>("/organizations/me/checklist")),
     safe(backend<SaasStatusOut>("/saas-billing/status")),
@@ -141,7 +141,13 @@ export default async function DashboardPage() {
     safe(backend<PaymentOut[]>("/payments")),
     safe(backend<ProfileOut>("/auth/me/profile")),
     safe(backend<TaskOut[]>("/staff/tasks")),
+    safe(backend<{ role: string }>("/auth/me")),
   ]);
+
+  const canManageWorkspace = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const canViewBusinessMetrics = canManageWorkspace;
+  const isTrainer = currentUser?.role === "trainer";
+  const isFrontDesk = currentUser?.role === "front_desk";
 
   const currency = org?.default_currency ?? "USD";
   const industry = org?.industry ?? "gym";
@@ -177,7 +183,7 @@ export default async function DashboardPage() {
 
   // ── KPI strip ───────────────────────────────────────────────────────────
   const stats: { label: string; value: string; icon: string; href: string; accent?: boolean }[] =
-    isOffice
+    !canViewBusinessMetrics ? [] : isOffice
       ? [
           { label: "Seats occupied", value: metrics ? String(metrics.occupied_seats ?? 0) : "—", icon: ICONS.seats, href: "/app/members" },
           { label: "Occupancy", value: metrics ? `${Math.round(metrics.occupancy_pct ?? 0)}%` : "—", icon: ICONS.percent, href: "/app/space", accent: true },
@@ -227,23 +233,36 @@ export default async function DashboardPage() {
   }
 
   // ── Quick actions ───────────────────────────────────────────────────────
-  const quickActions: { label: string; href: string; icon: string }[] = isOffice
+  const quickActions: { label: string; href: string; icon: string }[] = isFrontDesk
     ? [
-        { label: "Add a company", href: "/app/companies", icon: ICONS.members },
-        { label: "Create a space plan", href: "/app/plans", icon: ICONS.invoice },
-        { label: "Issue an invoice", href: "/app/invoices", icon: ICONS.invoice },
+        { label: "Check in a member", href: "/app/attendance", icon: ICONS.checkin },
+        { label: "Log a cash payment", href: "/app/cash", icon: ICONS.invoice },
+        { label: "Review receipts", href: "/app/receipts", icon: ICONS.approvals },
       ]
-    : isAcademy
+    : isTrainer
       ? [
-          { label: "Create a course", href: "/app/courses", icon: ICONS.invoice },
-          { label: "Publish a fee plan", href: "/app/plans", icon: ICONS.revenue },
-          { label: "Add a student", href: "/app/members", icon: ICONS.members },
+          { label: "My tasks", href: "/app/tasks", icon: ICONS.approvals },
+          { label: "My members", href: "/app/members", icon: ICONS.members },
         ]
-      : [
-        { label: "Invite a member", href: "/app/members?invite=1", icon: ICONS.members },
-          { label: "Create a plan", href: "/app/plans", icon: ICONS.revenue },
-          { label: "Log a cash payment", href: "/app/cash", icon: ICONS.invoice },
-        ];
+      : canManageWorkspace && isOffice
+        ? [
+            { label: "Add a company", href: "/app/companies", icon: ICONS.members },
+            { label: "Create a space plan", href: "/app/plans", icon: ICONS.invoice },
+            { label: "Issue an invoice", href: "/app/invoices", icon: ICONS.invoice },
+          ]
+        : canManageWorkspace && isAcademy
+          ? [
+              { label: "Create a course", href: "/app/courses", icon: ICONS.invoice },
+              { label: "Publish a fee plan", href: "/app/plans", icon: ICONS.revenue },
+              { label: "Add a student", href: "/app/members", icon: ICONS.members },
+            ]
+          : canManageWorkspace
+            ? [
+              { label: "Invite a member", href: "/app/members?invite=1", icon: ICONS.members },
+              { label: "Create a plan", href: "/app/plans", icon: ICONS.revenue },
+              { label: "Log a cash payment", href: "/app/cash", icon: ICONS.invoice },
+            ]
+            : [{ label: "My account", href: "/app/account", icon: ICONS.members }];
 
   const trend = payments ? paymentTrend(payments, org?.timezone || "UTC") : null;
 
@@ -271,25 +290,25 @@ export default async function DashboardPage() {
         ) : undefined}
       />
 
-      {saas?.saas_status === "past_due" && !saas.read_only && (
+      {canManageWorkspace && saas?.saas_status === "past_due" && !saas.read_only && (
         <div className="mb-5 border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-[13px] text-[var(--danger)]">
           <strong>Payment failed.</strong>{" "}
           {saas.retry_count > 0 ? "Stripe retry #" + saas.retry_count + " failed. " : ""}
           Update your card in <Link className="font-semibold underline" href="/app/billing">Billing</Link> to avoid interruption.
         </div>
       )}
-      {saas?.read_only && (
+      {canManageWorkspace && saas?.read_only && (
         <div className="mb-5 border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-[13px] text-[var(--danger)]">
           <strong>Account is read-only.</strong> Update billing to restore full access.
         </div>
       )}
-      {saas?.saas_status === "suspended" && (
+      {canManageWorkspace && saas?.saas_status === "suspended" && (
         <div className="mb-5 border border-[var(--warning-border)] bg-[var(--warning-bg)] px-4 py-3 text-[13px] text-[var(--warning)]">
           <strong>Account suspended.</strong> Contact support to reactivate your workspace.
         </div>
       )}
 
-      <section aria-labelledby="snapshot-title" className="mb-8">
+      {canViewBusinessMetrics && <section aria-labelledby="snapshot-title" className="mb-8">
         <div className="mb-3 flex items-center justify-between gap-4">
           <h2 id="snapshot-title" className="text-[13px] font-semibold">At a glance</h2>
           <Link href="/app/analytics" className="text-[12px] font-medium text-brand no-underline hover:underline">Explore analytics ↗</Link>
@@ -302,10 +321,10 @@ export default async function DashboardPage() {
             </Link>
           ))}
         </div>
-      </section>
+      </section>}
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.8fr)]">
-        <section className="min-w-0 border border-border bg-background" aria-labelledby="payments-title">
+        {canViewBusinessMetrics && <section className="min-w-0 border border-border bg-background" aria-labelledby="payments-title">
           <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
             <div>
               <h2 id="payments-title" className="text-[16px] font-semibold tracking-tight">Payment activity</h2>
@@ -320,10 +339,10 @@ export default async function DashboardPage() {
               <PaymentTrendChart data={trend} />
             )}
           </div>
-        </section>
+        </section>}
 
         <aside className="min-w-0 space-y-6" aria-label="Actions and setup">
-          <section aria-label="Today’s priorities and workspace setup">
+          {(tasks !== null || attention.length > 0 || canManageWorkspace) && <section aria-label="Today’s priorities and workspace setup">
             <div className="overflow-hidden border border-border bg-background">
               {tasks !== null && (
                 <DashboardTaskList tasks={priorityTasks} />
@@ -339,7 +358,7 @@ export default async function DashboardPage() {
                   ))}
                 </ul>
               )}
-              <div className="px-4 py-4">
+              {canManageWorkspace && <div className="px-4 py-4">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <h3 className="text-[13px] font-semibold">Workspace setup</h3>
                   {checklist !== null && <span className="text-[11px] tabular-nums text-muted-foreground">{doneSteps} of {totalSteps}</span>}
@@ -369,11 +388,11 @@ export default async function DashboardPage() {
                     </ul>
                   </details>
                 )}
-              </div>
+              </div>}
             </div>
-          </section>
+          </section>}
 
-          <nav aria-label="Common tasks">
+          {quickActions.length > 1 && <nav aria-label="Common tasks">
             <h2 className="mb-3 text-[16px] font-semibold tracking-tight">Common tasks</h2>
             <div className="overflow-hidden border border-border bg-background">
               {quickActions.slice(1).map((action) => (
@@ -383,11 +402,11 @@ export default async function DashboardPage() {
                 </WorkspaceAction>
               ))}
             </div>
-          </nav>
+          </nav>}
         </aside>
       </div>
 
-      <section className="mt-8 border border-border" aria-labelledby="subscription-title">
+      {canManageWorkspace && <section className="mt-8 border border-border" aria-labelledby="subscription-title">
         <div className="flex items-center gap-3 border-b border-border px-5 py-4">
           <h2 id="subscription-title" className="text-[13px] font-semibold">Workspace plan</h2>
           {org && <Badge tone={gymStatusTone(org.gym_status)}>{gymStatusLabel(org.gym_status)}</Badge>}
@@ -412,7 +431,7 @@ export default async function DashboardPage() {
             <dd className="mt-1 font-semibold">{saas?.current_period_end ? fmtDate(saas.current_period_end) : "—"}</dd>
           </div>
         </dl>
-      </section>
+      </section>}
     </>
   );
 }
