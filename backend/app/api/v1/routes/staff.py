@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.api.deps import get_session, require_capability
+from app.core.constants import Role
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
 from app.models.membership import OrganizationMember
@@ -170,10 +171,15 @@ async def list_tasks(
     ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TASKS)),
     session: AsyncSession = Depends(get_session),
 ):
+    assignee_member_id = (
+        await _actor_member_id(session, ctx) if ctx.role == Role.TRAINER else None
+    )
     return [
         TaskOut(id=t.id, title=t.title, description=t.description, assignee_member_id=t.assignee_member_id,
                 deadline=t.deadline, done=t.done)
-        for t in await staff.list_tasks(session, org_id=ctx.org_id)
+        for t in await staff.list_tasks(
+            session, org_id=ctx.org_id, assignee_member_id=assignee_member_id
+        )
     ]
 
 

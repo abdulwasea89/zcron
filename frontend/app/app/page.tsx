@@ -19,6 +19,7 @@ import type {
   ProfileOut,
   SaasStatusOut,
   SetupChecklist,
+  TaskOut,
 } from "@/lib/types";
 
 async function safe<T>(p: Promise<T>): Promise<T | null> {
@@ -131,13 +132,14 @@ function paymentTrend(payments: PaymentOut[], timeZone: string): PaymentTrendPoi
 }
 
 export default async function DashboardPage() {
-  const [metrics, checklist, saas, org, payments, profile] = await Promise.all([
+  const [metrics, checklist, saas, org, payments, profile, tasks] = await Promise.all([
     safe(backend<HeadlineMetrics>("/analytics/headline")),
     safe(backend<SetupChecklist>("/organizations/me/checklist")),
     safe(backend<SaasStatusOut>("/saas-billing/status")),
     safe(backend<OrganizationOut>("/organizations/me")),
     safe(backend<PaymentOut[]>("/payments")),
     safe(backend<ProfileOut>("/auth/me/profile")),
+    safe(backend<TaskOut[]>("/staff/tasks")),
   ]);
 
   const currency = org?.default_currency ?? "USD";
@@ -153,6 +155,10 @@ export default async function DashboardPage() {
   });
 
   const firstName = profile?.full_name?.trim().split(/\s+/)[0] ?? null;
+  const openTasks = (tasks ?? []).filter((task) => !task.done).sort((a, b) =>
+    (a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY) -
+    (b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY),
+  );
   const greeting = firstName ? `Welcome back, ${firstName}` : "Dashboard";
 
   // ── KPI strip ───────────────────────────────────────────────────────────
@@ -303,8 +309,28 @@ export default async function DashboardPage() {
         </section>
 
         <aside className="min-w-0 space-y-6" aria-label="Actions and setup">
-          <section aria-label="Pending reviews and workspace setup">
+          <section aria-label="Today’s priorities and workspace setup">
             <div className="overflow-hidden border border-border bg-background">
+              {tasks !== null && (
+                <div className="border-b border-border px-4 py-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="text-[13px] font-semibold">Today’s priorities</h3>
+                    <Link href="/app/tasks" className="text-[11px] font-medium text-brand no-underline hover:underline">View tasks ↗</Link>
+                  </div>
+                  {openTasks.length ? (
+                    <ul className="m-0 list-none divide-y divide-border p-0">
+                      {openTasks.slice(0, 4).map((task) => (
+                        <li key={task.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
+                          <span className="min-w-0 truncate font-medium">{task.title}</span>
+                          <span className="shrink-0 text-muted-foreground">{task.deadline ? fmtDate(task.deadline) : "No due date"}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[12px] text-muted-foreground">You’re clear. No open tasks.</p>
+                  )}
+                </div>
+              )}
               {attention.length > 0 && (
                 <ul className="m-0 list-none p-0">
                   {attention.map((item) => (

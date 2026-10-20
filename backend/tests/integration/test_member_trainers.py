@@ -97,6 +97,27 @@ async def test_assign_trainer_shows_in_directory(client):
 
 
 @pytest.mark.asyncio
+async def test_trainer_task_list_only_includes_tasks_assigned_to_them(client):
+    headers, _org_id, _org_code, _plan_id = await _provision_gym(client)
+    trainer_id, trainer_headers = await _provision_trainer(client, headers, "task-trainer@t.com")
+
+    own = await client.post("/api/v1/staff/tasks", headers=headers, json={
+        "title": "Prepare member program", "assignee_member_id": trainer_id,
+    })
+    other = await client.post("/api/v1/staff/tasks", headers=headers, json={
+        "title": "Review attendance",
+    })
+    assert own.status_code == other.status_code == 201
+
+    trainer_tasks = await client.get("/api/v1/staff/tasks", headers=trainer_headers)
+    assert trainer_tasks.status_code == 200, trainer_tasks.text
+    assert {task["id"] for task in trainer_tasks.json()} == {own.json()["id"]}
+
+    owner_tasks = await client.get("/api/v1/staff/tasks", headers=headers)
+    assert {task["id"] for task in owner_tasks.json()} == {own.json()["id"], other.json()["id"]}
+
+
+@pytest.mark.asyncio
 async def test_duplicate_assign_rejected(client):
     headers, _org_id, org_code, plan_id = await _provision_gym(client)
     member = await _signup_member(client, org_code, plan_id, "member@dup.com")

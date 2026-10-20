@@ -308,12 +308,13 @@ async def create_task(
     return task
 
 
-async def list_tasks(session: AsyncSession, *, org_id: str) -> list[Task]:
-    return list(
-        (
-            await session.execute(select(Task).where(Task.organization_id == org_id))
-        ).scalars()
-    )
+async def list_tasks(
+    session: AsyncSession, *, org_id: str, assignee_member_id: str | None = None
+) -> list[Task]:
+    query = select(Task).where(Task.organization_id == org_id)
+    if assignee_member_id is not None:
+        query = query.where(Task.assignee_member_id == assignee_member_id)
+    return list((await session.execute(query)).scalars())
 
 
 async def complete_task(session: AsyncSession, *, org_id: str, task_id: str) -> Task:
