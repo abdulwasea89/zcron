@@ -8,6 +8,9 @@ and the staff compensation config for trainers (Section 15.1).
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
+
+from sqlalchemy import Column, Numeric
 
 from sqlmodel import Field, UniqueConstraint
 
@@ -64,10 +67,10 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
     status_before_freeze: MemberStatus | None = None
 
     # ---- Staff compensation (trainer/front desk), Section 15.1 ----
-    fixed_monthly_salary: float = 0.0
-    hourly_rate: float = 0.0
-    per_class_rate: float = 0.0
-    commission_rate: float = 0.0  # fraction, e.g. 0.05
+    fixed_monthly_salary: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    hourly_rate: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    per_class_rate: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    commission_rate: Decimal = Field(default=Decimal("0.000000"), sa_column=Column(Numeric(8, 6), nullable=False))  # fraction, e.g. 0.05
     commission_window_months: int = 12  # strict 12-month window (Section 18.1)
 
     # Trainer who referred/acquired this member (for commission attribution)

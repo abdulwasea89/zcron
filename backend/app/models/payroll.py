@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy import Column, Numeric
 
 from sqlmodel import Field
 
@@ -17,9 +20,9 @@ class PayrollRun(UUIDModel, TimestampModel, table=True):
     period_start: date
     period_end: date
     status: PayrollStatus = Field(default=PayrollStatus.DRAFT, index=True)
-    total_gross: float = 0.0
-    total_deductions: float = 0.0
-    total_net: float = 0.0
+    total_gross: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    total_deductions: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    total_net: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
     locked_at: datetime | None = None
     finalized_at: datetime | None = None
     paid_at: datetime | None = None
@@ -34,16 +37,16 @@ class PayrollEntry(UUIDModel, TimestampModel, table=True):
     staff_member_id: str = Field(index=True, foreign_key="organization_members.id")
 
     # Components (Section 15.1 / 15.3)
-    fixed: float = 0.0
-    hourly_amount: float = 0.0
+    fixed: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    hourly_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
     hours_worked: float = 0.0
-    class_amount: float = 0.0
+    class_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
     classes_taught: int = 0
-    commission_amount: float = 0.0
-    bonus: float = 0.0
-    deductions: float = 0.0
-    advance_repayment: float = 0.0
-    net: float = 0.0
+    commission_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    bonus: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    deductions: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    advance_repayment: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    net: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
 
     payout_method: PayoutMethod = Field(default=PayoutMethod.BANK_TRANSFER)
     pay_stub_url: str | None = None
@@ -56,9 +59,9 @@ class PayAdvance(UUIDModel, TimestampModel, table=True):
 
     organization_id: str = Field(index=True, foreign_key="organizations.id")
     staff_member_id: str = Field(index=True, foreign_key="organization_members.id")
-    amount: float = 0.0
+    amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
     status: AdvanceStatus = Field(default=AdvanceStatus.REQUESTED, index=True)
-    repayment_per_period: float = 0.0
-    repaid_amount: float = 0.0
+    repayment_per_period: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
+    repaid_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
     approved_by: str | None = Field(default=None, foreign_key="users.id")
     note: str | None = None

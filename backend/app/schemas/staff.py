@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -55,10 +56,10 @@ class ShiftOut(BaseModel):
 
 
 class CompensationUpdate(BaseModel):
-    fixed_monthly_salary: float | None = None
-    hourly_rate: float | None = None
-    per_class_rate: float | None = None
-    commission_rate: float | None = None
+    fixed_monthly_salary: Decimal | None = Field(default=None, max_digits=14, decimal_places=2, ge=0)
+    hourly_rate: Decimal | None = Field(default=None, max_digits=14, decimal_places=2, ge=0)
+    per_class_rate: Decimal | None = Field(default=None, max_digits=14, decimal_places=2, ge=0)
+    commission_rate: Decimal | None = Field(default=None, max_digits=8, decimal_places=6, ge=0, le=1)
 
 
 class TaskCreateIn(BaseModel):

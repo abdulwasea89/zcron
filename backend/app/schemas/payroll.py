@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.constants import PayoutMethod
 
@@ -17,16 +18,16 @@ class PayrollRunCreate(BaseModel):
 class PayrollEntryOut(BaseModel):
     id: str
     staff_member_id: str
-    fixed: float
-    hourly_amount: float
+    fixed: Decimal
+    hourly_amount: Decimal
     hours_worked: float
-    class_amount: float
+    class_amount: Decimal
     classes_taught: int
-    commission_amount: float
-    bonus: float
-    deductions: float
-    advance_repayment: float
-    net: float
+    commission_amount: Decimal
+    bonus: Decimal
+    deductions: Decimal
+    advance_repayment: Decimal
+    net: Decimal
     payout_method: str
     pay_stub_url: str | None
     notes: str | None
@@ -37,35 +38,35 @@ class PayrollRunOut(BaseModel):
     period_start: date
     period_end: date
     status: str
-    total_gross: float
-    total_deductions: float
-    total_net: float
+    total_gross: Decimal
+    total_deductions: Decimal
+    total_net: Decimal
     entries: list[PayrollEntryOut] = []
 
 
 class EntryAdjust(BaseModel):
     """Each manual change requires a note (audit trail, Section 15.2)."""
 
-    bonus: float | None = None
-    deductions: float | None = None
+    bonus: Decimal | None = Field(default=None, max_digits=14, decimal_places=2, ge=0)
+    deductions: Decimal | None = Field(default=None, max_digits=14, decimal_places=2, ge=0)
     payout_method: PayoutMethod | None = None
     note: str
 
 
 class AdvanceRequest(BaseModel):
-    amount: float
-    repayment_per_period: float
+    amount: Decimal = Field(max_digits=14, decimal_places=2, gt=0)
+    repayment_per_period: Decimal = Field(max_digits=14, decimal_places=2, gt=0)
 
 
 class AdvanceDecision(BaseModel):
     approve: bool
-    repayment_per_period: float | None = None
+    repayment_per_period: Decimal | None = Field(default=None, max_digits=14, decimal_places=2, gt=0)
 
 
 class AdvanceOut(BaseModel):
     id: str
     staff_member_id: str
-    amount: float
+    amount: Decimal
     status: str
-    repayment_per_period: float
-    repaid_amount: float
+    repayment_per_period: Decimal
+    repaid_amount: Decimal

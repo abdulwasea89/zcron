@@ -10,6 +10,7 @@ Payroll is owner-only and web-only (Security Rule #7, Section 16).
 
 from __future__ import annotations
 
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,8 @@ from app.services.audit_service import record_audit
 from app.utils.pdf import render_simple_pdf
 from app.workers import payroll_runner
 
+_money = payroll_runner._money
+
 
 async def _get_run(session: AsyncSession, org_id: str, run_id: str) -> PayrollRun:
     run = await session.get(PayrollRun, run_id)
@@ -36,11 +39,10 @@ async def _get_run(session: AsyncSession, org_id: str, run_id: str) -> PayrollRu
 
 async def _recompute_totals(session: AsyncSession, run: PayrollRun) -> None:
     entries = await list_entries(session, org_id=run.organization_id, run_id=run.id)
-    run.total_gross = round(sum(
-        e.fixed + e.hourly_amount + e.class_amount + e.commission_amount + e.bonus for e in entries
-    ), 2)
-    run.total_deductions = round(sum(e.deductions + e.advance_repayment for e in entries), 2)
-    run.total_net = round(sum(e.net for e in entries), 2)
+    run.total_gross = _money(sum((e.fixed + e.hourly_amount + e.class_amount + e.commission_amount + e.bonus
+                                  for e in entries), Decimal("0.00")))
+    run.total_deductions = _money(sum((e.deductions + e.advance_repayment for e in entries), Decimal("0.00")))
+    run.total_net = _money(sum((e.net for e in entries), Decimal("0.00")))
     session.add(run)
 
 
@@ -60,8 +62,8 @@ async def create_draft(
         period_start=data.period_start, period_end=data.period_end,
     )
     for e in entries:
-        e.net = round(e.fixed + e.hourly_amount + e.class_amount + e.commission_amount
-                      + e.bonus - e.deductions - e.advance_repayment, 2)
+        e.net = _money(e.fixed + e.hourly_amount + e.class_amount + e.commission_amount
+                       + e.bonus - e.deductions - e.advance_repayment)
         session.add(e)
     await _recompute_totals(session, run)
     await record_audit(session, action="payroll.draft_created", organization_id=org_id,
@@ -114,8 +116,8 @@ async def adjust_entry(
     if data.payout_method is not None:
         entry.payout_method = data.payout_method
     entry.notes = data.note
-    entry.net = round(entry.fixed + entry.hourly_amount + entry.class_amount + entry.commission_amount
-                      + entry.bonus - entry.deductions - entry.advance_repayment, 2)
+    entry.net = _money(entry.fixed + entry.hourly_amount + entry.class_amount + entry.commission_amount
+                       + entry.bonus - entry.deductions - entry.advance_repayment)
     session.add(entry)
     await _recompute_totals(session, run)
     await record_audit(session, action="payroll.entry_adjusted", organization_id=org_id,
@@ -175,8 +177,8 @@ async def finalize(session: AsyncSession, *, org_id: str, run_id: str, actor_id:
                 session, org_id=org_id, staff_member_id=entry.staff_member_id
             )
             if advance is not None:
-                advance.repaid_amount = round(advance.repaid_amount + entry.advance_repayment, 2)
-                if advance.repaid_amount >= advance.amount - 0.01:
+                advance.repaid_amount = _money(advance.repaid_amount + entry.advance_repayment)
+                if advance.repaid_amount >= advance.amount - Decimal("0.01"):
                     advance.status = AdvanceStatus.REPAID
                 session.add(advance)
         if user is not None:
@@ -234,7 +236,7 @@ async def request_advance(
 
 async def decide_advance(
     session: AsyncSession, *, org_id: str, advance_id: str, approve: bool,
-    repayment_per_period: float | None, actor_id: str,
+    repayment_per_period: Decimal | None, actor_id: str,
 ) -> PayAdvance:
     advance = await session.get(PayAdvance, advance_id)
     if advance is None or advance.organization_id != org_id:

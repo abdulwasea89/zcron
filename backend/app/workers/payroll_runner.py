@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,20 +36,27 @@ from app.models.payment import Payment
 from app.models.payroll import PayAdvance, PayrollEntry
 from app.models.staff import Shift
 
+_CENT = Decimal("0.01")
+
+
+def _money(value: Decimal | float | int) -> Decimal:
+    """Round a payroll amount to currency cents using half-up rounding."""
+    return Decimal(str(value)).quantize(_CENT, rounding=ROUND_HALF_UP)
+
 
 @dataclass
 class ComputedComponents:
-    fixed: float
-    hourly_amount: float
+    fixed: Decimal
+    hourly_amount: Decimal
     hours_worked: float
-    class_amount: float
+    class_amount: Decimal
     classes_taught: int
-    commission_amount: float
-    advance_repayment: float
+    commission_amount: Decimal
+    advance_repayment: Decimal
 
     @property
-    def gross(self) -> float:
-        return round(self.fixed + self.hourly_amount + self.class_amount + self.commission_amount, 2)
+    def gross(self) -> Decimal:
+        return _money(self.fixed + self.hourly_amount + self.class_amount + self.commission_amount)
 
 
 async def _hours_in_period(
@@ -88,7 +96,7 @@ async def _classes_taught(
 
 async def _commission_revenue(
     session: AsyncSession, *, org_id: str, trainer_member_id: str, start: datetime, end: datetime
-) -> float:
+) -> Decimal:
     """Revenue in the period from members this trainer referred, within the
     12-month attribution window measured from each member's join date
     (Section 18.1: strict 12-month window, no clawbacks)."""
@@ -101,7 +109,7 @@ async def _commission_revenue(
             )
         )
     ).scalars()
-    total = 0.0
+    total = Decimal("0.00")
     for m in referred:
         if m.joined_at is None:
             continue
@@ -121,8 +129,8 @@ async def _commission_revenue(
         ).scalars()
         for p in payments:
             if p.paid_at and p.paid_at <= window_end:
-                total += p.amount
-    return round(total, 2)
+                total += Decimal(str(p.amount))
+    return _money(total)
 
 
 async def _outstanding_advance(
@@ -147,24 +155,24 @@ async def compute_for_staff(
     end = datetime.combine(period_end, time.max)
 
     hours = await _hours_in_period(session, staff_member_id=staff.id, start=start, end=end)
-    hourly_amount = round(hours * staff.hourly_rate, 2)
+    hourly_amount = _money(Decimal(str(hours)) * staff.hourly_rate)
     classes = await _classes_taught(session, staff_member_id=staff.id, start=start, end=end)
-    class_amount = round(classes * staff.per_class_rate, 2)
+    class_amount = _money(Decimal(classes) * staff.per_class_rate)
 
-    commission_amount = 0.0
+    commission_amount = Decimal("0.00")
     if staff.commission_rate:
         revenue = await _commission_revenue(session, org_id=org_id, trainer_member_id=staff.id,
                                             start=start, end=end)
-        commission_amount = round(revenue * staff.commission_rate, 2)
+        commission_amount = _money(revenue * staff.commission_rate)
 
     advance = await _outstanding_advance(session, org_id=org_id, staff_member_id=staff.id)
-    advance_repayment = 0.0
+    advance_repayment = Decimal("0.00")
     if advance is not None:
         remaining = advance.amount - advance.repaid_amount
-        advance_repayment = round(min(advance.repayment_per_period, remaining), 2)
+        advance_repayment = _money(min(advance.repayment_per_period, remaining))
 
     return ComputedComponents(
-        fixed=round(staff.fixed_monthly_salary, 2),
+        fixed=_money(staff.fixed_monthly_salary),
         hourly_amount=hourly_amount,
         hours_worked=round(hours, 2),
         class_amount=class_amount,
@@ -192,7 +200,7 @@ async def generate_entries(
     for staff in staff_members:
         comp = await compute_for_staff(session, org_id=org_id, staff=staff,
                                        period_start=period_start, period_end=period_end)
-        net = round(comp.gross - comp.advance_repayment, 2)
+        net = _money(comp.gross - comp.advance_repayment)
         # Skip people with zero comp config and zero activity.
         if comp.gross == 0 and comp.advance_repayment == 0:
             continue

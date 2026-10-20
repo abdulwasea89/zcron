@@ -308,22 +308,22 @@ async def test_payroll_draft_and_finalize(client):
     r = await client.get("/api/v1/members", headers=headers, params={"role": "trainer"})
     trainer_member_id = r.json()[0]["member_id"]
     await client.patch(f"/api/v1/staff/{trainer_member_id}/compensation", headers=headers,
-                       json={"fixed_monthly_salary": 1500.0})
+                       json={"fixed_monthly_salary": "1500.10"})
 
     # Draft payroll.
     r = await client.post("/api/v1/payroll/runs", headers=headers, json={
         "period_start": "2026-06-01", "period_end": "2026-06-30"})
     assert r.status_code == 201, r.text
     run = r.json()
-    assert run["total_net"] == 1500.0
+    assert run["total_net"] == 1500.1
     run_id = run["id"]
     entry_id = run["entries"][0]["id"]
 
     # Adjust with a bonus (requires note).
     r = await client.patch(f"/api/v1/payroll/runs/{run_id}/entries/{entry_id}", headers=headers,
-                           json={"bonus": 100.0, "note": "100% attendance"})
+                           json={"bonus": "0.20", "note": "100% attendance"})
     assert r.status_code == 200, r.text
-    assert r.json()["net"] == 1600.0
+    assert r.json()["net"] == 1500.3
 
     # Finalize -> pay stub generated.
     r = await client.post(f"/api/v1/payroll/runs/{run_id}/finalize", headers=headers)

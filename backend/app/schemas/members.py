@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -21,10 +22,10 @@ class MemberDirectoryItem(BaseModel):
     phone: str | None
     profile_complete: bool
     created_at: datetime
-    fixed_monthly_salary: float = 0.0
-    hourly_rate: float = 0.0
-    per_class_rate: float = 0.0
-    commission_rate: float = 0.0
+    fixed_monthly_salary: Decimal = Decimal("0.00")
+    hourly_rate: Decimal = Decimal("0.00")
+    per_class_rate: Decimal = Decimal("0.00")
+    commission_rate: Decimal = Decimal("0.000000")
     # Display names of the trainers currently assigned to this member.
     assigned_trainers: list[str] = []
 
