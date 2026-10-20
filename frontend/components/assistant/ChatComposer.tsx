@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Liquid } from "liquid-gooey";
 
 /* ── ChatComposer ─────────────────────────────────────────────────────────
    The prompt field itself — auto-growing textarea plus send button. Shared by
@@ -56,7 +55,6 @@ const CHAT_COMPOSER_BOX =
    together. */
 const SHELL = "rounded-[28px] p-2";
 const FIELD = "px-3 py-2 leading-6";
-const BUTTON = "h-10 w-10";
 
 interface ChatComposerProps {
   value: string;
@@ -74,6 +72,8 @@ interface ChatComposerProps {
   focusSignal?: number;
   /** When given, a leading "+" button opens a record-reference picker. */
   onReference?: () => void;
+  /** Adds the welcome-screen review prompt shortcut. */
+  onReview?: () => void;
 }
 
 export function ChatComposer({
@@ -88,6 +88,7 @@ export function ChatComposer({
   ariaLabel = "Ask the assistant",
   focusSignal = 0,
   onReference,
+  onReview,
 }: ChatComposerProps) {
   const [capped, setCapped] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -142,23 +143,6 @@ export function ChatComposer({
           drift up the screen as you type. Pinned to the bottom edge it holds
           a fixed position while the text grows above it. */}
       <div className="flex items-end gap-1">
-        {onReference && (
-          <Liquid className="inline-flex" fill="var(--popover)">
-            <Liquid.Item observe>
-              <button
-                type="button"
-                onClick={onReference}
-                aria-label="Reference a record"
-                title="Reference a record"
-                className={`flex ${BUTTON} shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand/60`}
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-              </button>
-            </Liquid.Item>
-          </Liquid>
-        )}
         <textarea
           ref={areaRef}
           rows={1}
@@ -173,25 +157,47 @@ export function ChatComposer({
           }`}
         />
 
-        {/* Send: the brand pill, square-marked like the other CTAs (§10.8). */}
-        <button
-          type="submit"
-          disabled={!canSend}
-          aria-label="Send"
-          className={`flex ${BUTTON} shrink-0 cursor-pointer items-center justify-center rounded-full bg-brand text-brand-foreground transition duration-150 hover:bg-brand/90 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-30 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand/60`}
-        >
-          {sending ? (
-            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          ) : (
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 19V5M5 12l7-7 7 7" />
-            </svg>
-          )}
-        </button>
       </div>
+      {(onReference || onReview) && (
+        <div className="mt-1 flex items-center gap-1 px-1">
+          {onReference && (
+            <button
+              type="button"
+              onClick={onReference}
+              aria-label="Reference a record"
+              title="Reference a record"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand/60"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          )}
+          {onReview && (
+            <button type="button" onClick={onReview} className="rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand/60">
+              Review for me
+            </button>
+          )}
+          <span className="ml-auto px-2 text-xs text-muted-foreground">Auto</span>
+          <button
+            type="submit"
+            disabled={!canSend}
+            aria-label="Send"
+            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-brand text-brand-foreground transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand/60"
+          >
+            {sending ? (
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 19V5M5 12l7-7 7 7" />
+              </svg>
+            )}
+          </button>
+        </div>
+      )}
     </form>
   );
 }

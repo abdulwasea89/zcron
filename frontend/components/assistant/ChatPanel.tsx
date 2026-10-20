@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { ChatThread } from "./ChatThread";
-import { AssistantBot } from "./AssistantBot";
 import { ReferencePicker, type Reference } from "./ReferencePicker";
 import { Alert, Spinner } from "@/components/ui";
 import { api, ApiError, streamPost } from "@/lib/api";
@@ -418,11 +417,11 @@ export function ChatPanel({
   const activeDraft = conversationId || sending ? draft : null;
   const showSpinner = Boolean(conversationId) && loading && !active;
   const showCenteredComposer = !conversationId && !sending && !initialPrompt && messages.length === 0;
-
-  const promptStarters = [
-    "Which memberships expire this week?",
-    "Summarize this month’s revenue",
-    "Which members need a follow-up?",
+  const quickPrompts = [
+    ["Members", "Summarize member activity and follow-ups."],
+    ["Revenue", "Summarize revenue and payment trends."],
+    ["Retention", "Which members are at risk of leaving?"],
+    ["Plans", "Review membership plan performance."],
   ];
 
   const composer = (
@@ -437,8 +436,12 @@ export function ChatPanel({
           autoFocus
           focusSignal={focusSignal}
           className={showCenteredComposer ? "assistant-composer-centered" : !conversationId ? "assistant-composer-docking" : ""}
-          placeholder={conversationId ? "Reply…" : "Ask about members, revenue, or payroll…"}
+          placeholder={conversationId ? "Reply…" : "Ask your gym assistant…"}
           onReference={() => setRefsOpen((v) => !v)}
+          onReview={showCenteredComposer ? () => {
+            setValue("Review my gym’s recent performance and highlight what needs attention.");
+            setFocusSignal((current) => current + 1);
+          } : undefined}
         />
       </div>
     </>
@@ -446,43 +449,30 @@ export function ChatPanel({
 
   if (showCenteredComposer) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-7 px-4 pb-8 sm:px-6">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8 px-4 pb-8 sm:px-6">
         {error && <div className="w-full max-w-3xl"><Alert>{error}</Alert></div>}
         <div className="assistant-welcome flex flex-col items-center text-center">
-          <div className="assistant-welcome-bot relative mb-3 flex h-14 w-14 items-center justify-center" aria-hidden="true">
-            <span className="assistant-welcome-glow absolute inset-1 rounded-full bg-brand/15 blur-xl" />
-            <AssistantBot size={42} />
-          </div>
-          <p className="mono-label mb-2 text-[10px] text-brand/80">YOUR GYM ASSISTANT</p>
           <h1 className="font-heading text-[26px] font-medium tracking-tight text-foreground sm:text-[30px]">
-            Where should we begin?
+            How can I help you today?
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            A clear answer about members, plans, payments, and daily operations is one question away.
-          </p>
         </div>
-        <div className="assistant-welcome-composer w-full max-w-3xl">
+        <div className="assistant-welcome-composer w-full max-w-2xl">
           {composer}
         </div>
-        <div className="assistant-prompt-starters w-full max-w-3xl">
-          <p className="mb-2.5 text-center text-[11px] font-medium text-muted-foreground">Try asking</p>
-          <div className="flex flex-wrap justify-center gap-2">
-            {promptStarters.map((prompt, index) => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => {
-                  setValue(prompt);
-                  setFocusSignal((current) => current + 1);
-                }}
-                className="assistant-prompt-chip animate-assistant-chip rounded-full border border-foreground/10 bg-surface/55 px-3.5 py-2 text-xs text-foreground/85 transition duration-200 hover:-translate-y-0.5 hover:border-brand/35 hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand/60"
-                style={{ animationDelay: `${240 + index * 70}ms` }}
-              >
-                {prompt}
-                <span className="ml-2 text-brand/80" aria-hidden="true">↗</span>
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-wrap items-center justify-center gap-x-7 gap-y-3 text-sm">
+          {quickPrompts.map(([label, prompt]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => {
+                setValue(prompt);
+                setFocusSignal((current) => current + 1);
+              }}
+              className="text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand/60"
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
     );
