@@ -29,9 +29,12 @@ import { ListToolbar } from "@/components/ListToolbar";
 import { ListFilterSheet } from "@/components/ListFilterSheet";
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { api, ApiError } from "@/lib/api";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { TaskOut, MemberDirectoryItem } from "@/lib/types";
 
 export default function TasksPage() {
+  const currentUser = useCurrentUser();
+  const isTrainer = currentUser?.role === "trainer";
   const [tasks, setTasks] = useState<TaskOut[] | null>(null);
   const [members, setMembers] = useState<MemberDirectoryItem[]>([]);
   const [error, setError] = useState("");
@@ -232,7 +235,7 @@ export default function TasksPage() {
             <div>
               <SheetTitle>{editing ? "Edit task" : "New task"}</SheetTitle>
               <SheetDescription>
-                {editing ? "Update task details" : "Assign a task to a team member"}
+                {editing ? "Update task details" : isTrainer ? "Create a task assigned to you" : "Assign a task to a team member"}
               </SheetDescription>
             </div>
           </SheetHeader>
@@ -248,18 +251,22 @@ export default function TasksPage() {
                 onChange={(e) => setFormTitle(e.target.value)}
                 placeholder="What needs to be done?"
               />
-              <FieldSelect
-                label="Assignee"
-                value={formAssignee || NONE}
-                onChange={(v) => setFormAssignee(v === NONE ? "" : v)}
-              >
-                <SelectItem value={NONE}>Unassigned</SelectItem>
-                {members.map((m) => (
-                  <SelectItem key={m.member_id} value={m.member_id}>
-                    {m.full_name || m.email}
-                  </SelectItem>
-                ))}
-              </FieldSelect>
+              {isTrainer ? (
+                <p className="text-sm text-muted-foreground">Assigned to you</p>
+              ) : (
+                <FieldSelect
+                  label="Assignee"
+                  value={formAssignee || NONE}
+                  onChange={(v) => setFormAssignee(v === NONE ? "" : v)}
+                >
+                  <SelectItem value={NONE}>Unassigned</SelectItem>
+                  {members.map((m) => (
+                    <SelectItem key={m.member_id} value={m.member_id}>
+                      {m.full_name || m.email}
+                    </SelectItem>
+                  ))}
+                </FieldSelect>
+              )}
               <Input label="Deadline" type="date" value={formDeadline} onChange={(e) => setFormDeadline(e.target.value)} />
               <Textarea label="Description" value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional details, notes, or instructions" rows={3} />
             </SheetBody>
