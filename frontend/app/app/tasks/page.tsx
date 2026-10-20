@@ -29,13 +29,15 @@ import { ListToolbar } from "@/components/ListToolbar";
 import { ListFilterSheet } from "@/components/ListFilterSheet";
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { api, ApiError } from "@/lib/api";
+import { dateKeyInTimeZone } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import type { TaskOut, MemberDirectoryItem } from "@/lib/types";
+import type { OrganizationOut, TaskOut, MemberDirectoryItem } from "@/lib/types";
 
 export default function TasksPage() {
   const currentUser = useCurrentUser();
   const isTrainer = currentUser?.role === "trainer";
   const [tasks, setTasks] = useState<TaskOut[] | null>(null);
+  const [timeZone, setTimeZone] = useState("UTC");
   const [members, setMembers] = useState<MemberDirectoryItem[]>([]);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
@@ -67,6 +69,12 @@ export default function TasksPage() {
       setTasks([]);
     }
     try {
+      const org = await api.get<OrganizationOut>("/organizations/me");
+      setTimeZone(org.timezone || "UTC");
+    } catch {
+      // Keep UTC as the fallback if workspace settings are unavailable.
+    }
+    try {
       const m = await api.get<MemberDirectoryItem[]>("/members");
       setMembers(m);
     } catch {
@@ -81,6 +89,7 @@ export default function TasksPage() {
   const memberById = Object.fromEntries(
     members.map((m) => [m.member_id, m.full_name || m.email]),
   );
+  const todayKey = dateKeyInTimeZone(new Date(), timeZone);
 
   const q = search.trim().toLowerCase();
   const filtered = (tasks ?? []).filter((t) => {
@@ -89,12 +98,14 @@ export default function TasksPage() {
     const assignee = t.assignee_member_id ? memberById[t.assignee_member_id] ?? "" : "";
     const matchesSearch = !q || t.title.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q) || assignee.toLowerCase().includes(q);
     const matchesAssignee = assigneeFilter === NONE || (assigneeFilter === "__unassigned__" ? !t.assignee_member_id : t.assignee_member_id === assigneeFilter);
-    const deadline = t.deadline ? new Date(t.deadline) : null;
-    const daysUntilDue = deadline ? (deadline.getTime() - Date.now()) / 86_400_000 : null;
+    const dueKey = t.deadline?.slice(0, 10) ?? null;
+    const daysUntilDue = dueKey
+      ? (Date.parse(`${dueKey}T00:00:00Z`) - Date.parse(`${todayKey}T00:00:00Z`)) / 86_400_000
+      : null;
     const matchesDeadline = deadlineFilter === NONE ||
       (deadlineFilter === "overdue" ? Boolean(!t.done && daysUntilDue !== null && daysUntilDue < 0) :
         deadlineFilter === "week" ? Boolean(!t.done && daysUntilDue !== null && daysUntilDue >= 0 && daysUntilDue <= 7) :
-          deadlineFilter === "no_deadline" ? !deadline : Boolean(!t.done && daysUntilDue !== null && daysUntilDue > 7));
+          deadlineFilter === "no_deadline" ? !dueKey : Boolean(!t.done && daysUntilDue !== null && daysUntilDue > 7));
     return matchesSearch && matchesAssignee && matchesDeadline;
   });
   const activeTaskFilterCount = [assigneeFilter, deadlineFilter].filter((v) => v !== NONE).length;
@@ -329,7 +340,7 @@ export default function TasksPage() {
                   <div>
                     <span className="mb-1 block text-[12px] font-medium text-[var(--foreground)]">Deadline</span>
                     <span className="text-sm text-[var(--foreground-muted)]">
-                      {viewing.deadline ? formatDate(viewing.deadline) : "No deadline"}
+                      {viewing.deadline ? formatDate(viewing.deadline, timeZone) : "No deadline"}
                     </span>
                   </div>
                 </div>
@@ -395,7 +406,7 @@ export default function TasksPage() {
               </thead>
               <tbody>
                 {filtered.map((task) => {
-                  const overdue = task.deadline && !task.done && new Date(task.deadline) < new Date();
+                  const overdue = task.deadline && !task.done && task.deadline.slice(0, 10) < todayKey;
                   return (
                     <tr
                       key={task.id}
@@ -440,7 +451,7 @@ export default function TasksPage() {
                       <td className={`${TD} ${CELL} py-2.5`}>
                         {task.deadline ? (
                           <span className={`tabular-nums ${overdue ? "font-medium text-[var(--danger)]" : "text-[var(--foreground-muted)]"}`}>
-                            {formatDate(task.deadline)}
+                            {formatDate(task.deadline, timeZone)}
                           </span>
                         ) : (
                           <span className="text-[var(--muted)]">—</span>
@@ -519,15 +530,12 @@ export default function TasksPage() {
   );
 }
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  if (date.toDateString() === today.toDateString()) return "Today";
-  if (date.toDateString() === tomorrow.toDateString()) return "Tomorrow";
-
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+function formatDate(dateStr: string, timeZone: string): string {
+  const dayKey = dateStr.slice(0, 10);
+  const todayKey = dateKeyInTimeZone(new Date(), timeZone);
+  const daysUntilDue = (Date.parse(`${dayKey}T00:00:00Z`) - Date.parse(`${todayKey}T00:00:00Z`)) / 86_400_000;
+  if (daysUntilDue === 0) return "Today";
+  if (daysUntilDue === 1) return "Tomorrow";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+    .format(new Date(`${dayKey}T00:00:00Z`));
 }

@@ -7,6 +7,7 @@ import { DashboardTaskList } from "@/components/DashboardTaskList";
 import { backend } from "@/lib/backend";
 import {
   fmtDate,
+  dateKeyInTimeZone,
   gymStatusLabel,
   gymStatusTone,
   money,
@@ -104,19 +105,8 @@ function ProgressBar({ value, tone = "brand" }: { value: number; tone?: "brand" 
   );
 }
 
-function calendarDay(value: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(value);
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
-  return `${part("year")}-${part("month")}-${part("day")}`;
-}
-
 function paymentTrend(payments: PaymentOut[], timeZone: string): PaymentTrendPoint[] {
-  const today = calendarDay(new Date(), timeZone);
+  const today = dateKeyInTimeZone(new Date(), timeZone);
   const days = Array.from({ length: 14 }, (_, index) => {
     const date = new Date(`${today}T00:00:00Z`);
     date.setUTCDate(date.getUTCDate() - (13 - index));
@@ -126,7 +116,7 @@ function paymentTrend(payments: PaymentOut[], timeZone: string): PaymentTrendPoi
   const byDate = new Map(days.map((day) => [day.date, day]));
   for (const payment of payments) {
     if (payment.status !== "succeeded" && payment.status !== "partially_refunded") continue;
-    const day = byDate.get(calendarDay(new Date(payment.paid_at ?? payment.created_at), timeZone));
+    const day = byDate.get(dateKeyInTimeZone(new Date(payment.paid_at ?? payment.created_at), timeZone));
     if (day) day.count += 1;
   }
   return days;
@@ -163,13 +153,13 @@ export default async function DashboardPage() {
 
   const firstName = profile?.full_name?.trim().split(/\s+/)[0] ?? null;
   const timeZone = org?.timezone || "UTC";
-  const todayKey = calendarDay(new Date(), timeZone);
+  const todayKey = dateKeyInTimeZone(new Date(), timeZone);
   const openTasks = (tasks ?? []).filter((task) => !task.done).sort((a, b) =>
     (a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY) -
     (b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY),
   );
   const priorityTasks = openTasks.map((task) => {
-    const dueDay = task.deadline ? calendarDay(new Date(task.deadline), timeZone) : null;
+    const dueDay = task.deadline?.slice(0, 10) ?? null;
     const overdue = dueDay !== null && dueDay < todayKey;
     const dueToday = dueDay === todayKey;
     return {
