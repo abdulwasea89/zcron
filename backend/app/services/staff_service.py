@@ -269,6 +269,11 @@ async def check_out(session: AsyncSession, *, org_id: str, user_id: str) -> Shif
 
 
 # ------------------------------------------------------------------ tasks
+def _ensure_task_access(task: Task, *, actor_role: Role, actor_member_id: str) -> None:
+    if actor_role == Role.TRAINER and task.assignee_member_id != actor_member_id:
+        raise HTTPException(status_code=404, detail="Task not found.")
+
+
 async def create_task(
     session: AsyncSession, *, org_id: str, data: TaskCreateIn, actor_user_id: str, actor_role: Role,
     actor_member_id: str,
@@ -317,25 +322,34 @@ async def list_tasks(
     return list((await session.execute(query)).scalars())
 
 
-async def complete_task(session: AsyncSession, *, org_id: str, task_id: str) -> Task:
+async def complete_task(
+    session: AsyncSession, *, org_id: str, task_id: str, actor_role: Role, actor_member_id: str
+) -> Task:
     task = await session.get(Task, task_id)
     if task is None or task.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Task not found.")
+    _ensure_task_access(task, actor_role=actor_role, actor_member_id=actor_member_id)
     task.done = True
     session.add(task)
     await events.task_changed(org_id, task_id=task.id, action="completed")
     return task
 
 
-async def update_task(session: AsyncSession, *, org_id: str, task_id: str, data: TaskUpdateIn) -> Task:
+async def update_task(
+    session: AsyncSession, *, org_id: str, task_id: str, data: TaskUpdateIn,
+    actor_role: Role, actor_member_id: str,
+) -> Task:
     task = await session.get(Task, task_id)
     if task is None or task.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Task not found.")
+    _ensure_task_access(task, actor_role=actor_role, actor_member_id=actor_member_id)
+    if actor_role == Role.TRAINER and data.assignee_member_id not in (None, actor_member_id):
+        raise HTTPException(status_code=403, detail="Trainers cannot reassign tasks.")
     if data.title is not None:
         task.title = data.title
     if data.description is not None:
         task.description = data.description
-    if data.assignee_member_id is not None:
+    if data.assignee_member_id is not None and actor_role != Role.TRAINER:
         task.assignee_member_id = data.assignee_member_id
     if data.deadline is not None:
         task.deadline = data.deadline
@@ -346,10 +360,13 @@ async def update_task(session: AsyncSession, *, org_id: str, task_id: str, data:
     return task
 
 
-async def delete_task(session: AsyncSession, *, org_id: str, task_id: str) -> None:
+async def delete_task(
+    session: AsyncSession, *, org_id: str, task_id: str, actor_role: Role, actor_member_id: str
+) -> None:
     task = await session.get(Task, task_id)
     if task is None or task.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Task not found.")
+    _ensure_task_access(task, actor_role=actor_role, actor_member_id=actor_member_id)
     await session.delete(task)
     await record_audit(session, action="task.deleted", organization_id=org_id,
                        entity_type="task", entity_id=task_id)

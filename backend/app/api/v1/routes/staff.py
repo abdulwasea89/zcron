@@ -189,7 +189,11 @@ async def complete_task(
     ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TASKS)),
     session: AsyncSession = Depends(get_session),
 ):
-    task = await staff.complete_task(session, org_id=ctx.org_id, task_id=task_id)
+    actor_member_id = await _actor_member_id(session, ctx)
+    task = await staff.complete_task(
+        session, org_id=ctx.org_id, task_id=task_id, actor_role=ctx.role,
+        actor_member_id=actor_member_id,
+    )
     return TaskOut(id=task.id, title=task.title, description=task.description, assignee_member_id=task.assignee_member_id,
                    deadline=task.deadline, done=task.done)
 
@@ -201,7 +205,11 @@ async def update_task(
     ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TASKS)),
     session: AsyncSession = Depends(get_session),
 ):
-    task = await staff.update_task(session, org_id=ctx.org_id, task_id=task_id, data=data)
+    actor_member_id = await _actor_member_id(session, ctx)
+    task = await staff.update_task(
+        session, org_id=ctx.org_id, task_id=task_id, data=data, actor_role=ctx.role,
+        actor_member_id=actor_member_id,
+    )
     return TaskOut(id=task.id, title=task.title, description=task.description, assignee_member_id=task.assignee_member_id,
                    deadline=task.deadline, done=task.done)
 
@@ -212,5 +220,9 @@ async def delete_task(
     ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TASKS)),
     session: AsyncSession = Depends(get_session),
 ):
-    await staff.delete_task(session, org_id=ctx.org_id, task_id=task_id)
+    actor_member_id = await _actor_member_id(session, ctx)
+    await staff.delete_task(
+        session, org_id=ctx.org_id, task_id=task_id, actor_role=ctx.role,
+        actor_member_id=actor_member_id,
+    )
     return Message(message="Task deleted.")

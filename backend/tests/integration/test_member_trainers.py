@@ -113,6 +113,12 @@ async def test_trainer_task_list_only_includes_tasks_assigned_to_them(client):
     assert trainer_tasks.status_code == 200, trainer_tasks.text
     assert {task["id"] for task in trainer_tasks.json()} == {own.json()["id"]}
 
+    assert (await client.post(f"/api/v1/staff/tasks/{other.json()['id']}/complete", headers=trainer_headers)).status_code == 404
+    assert (await client.patch(f"/api/v1/staff/tasks/{other.json()['id']}", headers=trainer_headers, json={"title": "Changed"})).status_code == 404
+    assert (await client.delete(f"/api/v1/staff/tasks/{other.json()['id']}", headers=trainer_headers)).status_code == 404
+    assert (await client.patch(f"/api/v1/staff/tasks/{own.json()['id']}", headers=trainer_headers, json={"assignee_member_id": "someone-else"})).status_code == 403
+    assert (await client.post(f"/api/v1/staff/tasks/{own.json()['id']}/complete", headers=trainer_headers)).status_code == 200
+
     owner_tasks = await client.get("/api/v1/staff/tasks", headers=headers)
     assert {task["id"] for task in owner_tasks.json()} == {own.json()["id"], other.json()["id"]}
 
