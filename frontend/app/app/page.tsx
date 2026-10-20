@@ -155,6 +155,8 @@ export default async function DashboardPage() {
   });
 
   const firstName = profile?.full_name?.trim().split(/\s+/)[0] ?? null;
+  const timeZone = org?.timezone || "UTC";
+  const todayKey = calendarDay(new Date(), timeZone);
   const openTasks = (tasks ?? []).filter((task) => !task.done).sort((a, b) =>
     (a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY) -
     (b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY),
@@ -319,12 +321,19 @@ export default async function DashboardPage() {
                   </div>
                   {openTasks.length ? (
                     <ul className="m-0 list-none divide-y divide-border p-0">
-                      {openTasks.slice(0, 4).map((task) => (
-                        <li key={task.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
-                          <span className="min-w-0 truncate font-medium">{task.title}</span>
-                          <span className="shrink-0 text-muted-foreground">{task.deadline ? fmtDate(task.deadline) : "No due date"}</span>
-                        </li>
-                      ))}
+                      {openTasks.slice(0, 4).map((task) => {
+                        const dueDay = task.deadline ? calendarDay(new Date(task.deadline), timeZone) : null;
+                        const overdue = dueDay !== null && dueDay < todayKey;
+                        const dueToday = dueDay === todayKey;
+                        return (
+                          <li key={task.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
+                            <span className="min-w-0 truncate font-medium">{task.title}</span>
+                            <span className={`shrink-0 ${overdue ? "text-danger" : dueToday ? "text-warning" : "text-muted-foreground"}`}>
+                              {!task.deadline ? "No due date" : overdue ? `Overdue · ${fmtDate(task.deadline)}` : dueToday ? "Due today" : fmtDate(task.deadline)}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   ) : (
                     <p className="text-[12px] text-muted-foreground">You’re clear. No open tasks.</p>
