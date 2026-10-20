@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer, field_validator
 
 from app.schemas.payments import PaymentOut
 
@@ -28,6 +28,12 @@ class MemberDirectoryItem(BaseModel):
     commission_rate: Decimal = Decimal("0.000000")
     # Display names of the trainers currently assigned to this member.
     assigned_trainers: list[str] = []
+
+    @field_serializer(
+        "fixed_monthly_salary", "hourly_rate", "per_class_rate", "commission_rate", when_used="json"
+    )
+    def _serialize_compensation(self, value: Decimal) -> float:
+        return float(value)
 
 
 class MemberProfileUpdate(BaseModel):

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from app.core.constants import PayoutMethod
 
@@ -32,6 +32,13 @@ class PayrollEntryOut(BaseModel):
     pay_stub_url: str | None
     notes: str | None
 
+    @field_serializer(
+        "fixed", "hourly_amount", "class_amount", "commission_amount", "bonus",
+        "deductions", "advance_repayment", "net", when_used="json"
+    )
+    def _serialize_money(self, value: Decimal) -> float:
+        return float(value)
+
 
 class PayrollRunOut(BaseModel):
     id: str
@@ -42,6 +49,10 @@ class PayrollRunOut(BaseModel):
     total_deductions: Decimal
     total_net: Decimal
     entries: list[PayrollEntryOut] = []
+
+    @field_serializer("total_gross", "total_deductions", "total_net", when_used="json")
+    def _serialize_money(self, value: Decimal) -> float:
+        return float(value)
 
 
 class EntryAdjust(BaseModel):
@@ -70,3 +81,7 @@ class AdvanceOut(BaseModel):
     status: str
     repayment_per_period: Decimal
     repaid_amount: Decimal
+
+    @field_serializer("amount", "repayment_per_period", "repaid_amount", when_used="json")
+    def _serialize_money(self, value: Decimal) -> float:
+        return float(value)
