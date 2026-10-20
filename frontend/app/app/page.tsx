@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PaymentTrendChart, type PaymentTrendPoint } from "@/components/PaymentTrendChart";
 import { Badge } from "@/components/ui";
 import { WorkspaceAction } from "@/components/WorkspaceAction";
+import { DashboardTaskList } from "@/components/DashboardTaskList";
 import { backend } from "@/lib/backend";
 import {
   fmtDate,
@@ -161,6 +162,17 @@ export default async function DashboardPage() {
     (a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY) -
     (b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY),
   );
+  const priorityTasks = openTasks.map((task) => {
+    const dueDay = task.deadline ? calendarDay(new Date(task.deadline), timeZone) : null;
+    const overdue = dueDay !== null && dueDay < todayKey;
+    const dueToday = dueDay === todayKey;
+    return {
+      ...task,
+      overdue,
+      dueToday,
+      dueLabel: !task.deadline ? "No due date" : overdue ? `Overdue · ${fmtDate(task.deadline)}` : dueToday ? "Due today" : fmtDate(task.deadline),
+    };
+  });
   const greeting = firstName ? `Welcome back, ${firstName}` : "Dashboard";
 
   // ── KPI strip ───────────────────────────────────────────────────────────
@@ -314,31 +326,7 @@ export default async function DashboardPage() {
           <section aria-label="Today’s priorities and workspace setup">
             <div className="overflow-hidden border border-border bg-background">
               {tasks !== null && (
-                <div className="border-b border-border px-4 py-4">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <h3 className="text-[13px] font-semibold">Today’s priorities</h3>
-                    <Link href="/app/tasks" className="text-[11px] font-medium text-brand no-underline hover:underline">View tasks ↗</Link>
-                  </div>
-                  {openTasks.length ? (
-                    <ul className="m-0 list-none divide-y divide-border p-0">
-                      {openTasks.slice(0, 4).map((task) => {
-                        const dueDay = task.deadline ? calendarDay(new Date(task.deadline), timeZone) : null;
-                        const overdue = dueDay !== null && dueDay < todayKey;
-                        const dueToday = dueDay === todayKey;
-                        return (
-                          <li key={task.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
-                            <span className="min-w-0 truncate font-medium">{task.title}</span>
-                            <span className={`shrink-0 ${overdue ? "text-danger" : dueToday ? "text-warning" : "text-muted-foreground"}`}>
-                              {!task.deadline ? "No due date" : overdue ? `Overdue · ${fmtDate(task.deadline)}` : dueToday ? "Due today" : fmtDate(task.deadline)}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="text-[12px] text-muted-foreground">You’re clear. No open tasks.</p>
-                  )}
-                </div>
+                <DashboardTaskList tasks={priorityTasks} />
               )}
               {attention.length > 0 && (
                 <ul className="m-0 list-none p-0">
