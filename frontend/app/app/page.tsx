@@ -22,6 +22,8 @@ import type {
   SaasStatusOut,
   SetupChecklist,
   TaskOut,
+  ClientAssignment,
+  ClassSessionOut,
 } from "@/lib/types";
 
 async function safe<T>(p: Promise<T>): Promise<T | null> {
@@ -131,13 +133,23 @@ export default async function DashboardPage() {
     safe(backend<PaymentOut[]>("/payments")),
     safe(backend<ProfileOut>("/auth/me/profile")),
     safe(backend<TaskOut[]>("/staff/tasks")),
-    safe(backend<{ role: string }>("/auth/me")),
+    safe(backend<{ role: string; member_id: string | null }>("/auth/me")),
   ]);
 
   const canManageWorkspace = currentUser?.role === "owner" || currentUser?.role === "manager";
   const canViewBusinessMetrics = canManageWorkspace;
   const isTrainer = currentUser?.role === "trainer";
   const isFrontDesk = currentUser?.role === "front_desk";
+
+  const [trainerClients, trainerClasses] = isTrainer
+    ? await Promise.all([
+        safe(backend<ClientAssignment[]>("/members/assigned-to-me")),
+        safe(backend<ClassSessionOut[]>("/classes")),
+      ])
+    : [null, null];
+  const upcomingTrainerClasses = (trainerClasses ?? [])
+    .filter((session) => !session.cancelled && session.trainer_member_id === currentUser?.member_id && new Date(session.starts_at) >= new Date())
+    .slice(0, 4);
 
   const currency = org?.default_currency ?? "USD";
   const industry = org?.industry ?? "gym";
@@ -232,7 +244,8 @@ export default async function DashboardPage() {
     : isTrainer
       ? [
           { label: "My tasks", href: "/app/tasks", icon: ICONS.approvals },
-          { label: "My members", href: "/app/members", icon: ICONS.members },
+          { label: "My clients", href: "/app/staff#my-clients", icon: ICONS.members },
+          { label: "My classes", href: "/app/classes", icon: ICONS.approvals },
         ]
       : canManageWorkspace && isOffice
         ? [
@@ -279,6 +292,45 @@ export default async function DashboardPage() {
           </WorkspaceAction>
         ) : undefined}
       />
+
+      {isTrainer && <section className="mb-7 grid gap-5 lg:grid-cols-2" aria-label="Trainer workspace">
+        <div className="border border-border bg-background">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold">My clients</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">Members assigned to you</p>
+            </div>
+            <span className="text-xs tabular-nums text-muted-foreground">{trainerClients?.length ?? 0}</span>
+          </div>
+          {(trainerClients ?? []).length > 0 ? <ul className="divide-y divide-border">
+            {(trainerClients ?? []).slice(0, 5).map((client) => <li key={client.member_id}>
+              <Link href={`/app/members?member=${encodeURIComponent(client.member_id)}`} className="flex items-center justify-between gap-3 px-4 py-3 text-sm no-underline hover:bg-foreground/[0.025]">
+                <span className="min-w-0 truncate font-medium">{client.member_name || client.member_email}</span>
+                <Badge tone={client.member_status === "active" ? "success" : "neutral"}>{titleCase(client.member_status)}</Badge>
+              </Link>
+            </li>)}
+          </ul> : <p className="px-4 py-5 text-sm text-muted-foreground">No members are assigned to you yet.</p>}
+          {(trainerClients?.length ?? 0) > 5 && <Link href="/app/staff#my-clients" className="block border-t border-border px-4 py-2.5 text-xs text-brand no-underline hover:underline">View all {trainerClients?.length} clients</Link>}
+        </div>
+        <div className="border border-border bg-background">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold">My upcoming classes</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">Your next scheduled sessions</p>
+            </div>
+            <Link href="/app/classes" className="text-xs text-brand no-underline hover:underline">Schedule</Link>
+          </div>
+          {upcomingTrainerClasses.length ? <ul className="divide-y divide-border">
+            {upcomingTrainerClasses.map((session) => <li key={session.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{session.title}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{fmtDate(session.starts_at)} · {new Date(session.starts_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
+              </div>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{session.booked_count}/{session.capacity}</span>
+            </li>)}
+          </ul> : <p className="px-4 py-5 text-sm text-muted-foreground">No upcoming classes assigned to you.</p>}
+        </div>
+      </section>}
 
       {canManageWorkspace && saas?.saas_status === "past_due" && !saas.read_only && (
         <div className="mb-5 border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-[13px] text-[var(--danger)]">

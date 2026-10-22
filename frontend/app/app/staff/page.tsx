@@ -945,6 +945,7 @@ export default function StaffPage() {
       {/* Trainer: my clients */}
       {currentUser?.role === "trainer" && (
         <>
+          <div id="my-clients">
           <TableToolbar
             title="My clients"
             subtitle={myClients ? `${myClients.length} member${myClients.length === 1 ? "" : "s"} assigned to you` : undefined}
@@ -981,6 +982,7 @@ export default function StaffPage() {
               </table>
             </div>
           )}
+          </div>
           </div>
         </>
       )}
