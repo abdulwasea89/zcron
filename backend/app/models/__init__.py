@@ -38,7 +38,7 @@ from app.models.receipt import ReceiptUpload
 from app.models.referral import Referral, ReferralCode, ReferralProgram, ReferralReward
 from app.models.session import AuthSession
 from app.models.signup_attempt import SignupAttempt
-from app.models.staff import Shift, StaffInvite, Task
+from app.models.staff import ScheduledShift, Shift, StaffInvite, Task
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.models.verification import VerificationToken
@@ -94,6 +94,7 @@ __all__ = [
     "ReferralProgram",
     "ReferralReward",
     "Shift",
+    "ScheduledShift",
     "SignupAttempt",
     "StaffInvite",
     "Subscription",

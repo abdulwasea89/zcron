@@ -30,7 +30,7 @@ import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/com
 import { api, ApiError } from "@/lib/api";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useRealtimeEvent } from "@/components/Realtime";
-import type { StaffInviteOut, MemberDirectoryItem, ShiftOut, ClientAssignment } from "@/lib/types";
+import type { StaffInviteOut, MemberDirectoryItem, ShiftOut, ClientAssignment, StaffScheduleOut } from "@/lib/types";
 
 const STAFF_ROLES = ["manager", "trainer", "front_desk"];
 
@@ -115,8 +115,16 @@ export default function StaffPage() {
 
   // Trainer "my clients" view
   const [myClients, setMyClients] = useState<ClientAssignment[] | null>(null);
+  const [schedule, setSchedule] = useState<StaffScheduleOut[]>([]);
+  const [scheduleStaffId, setScheduleStaffId] = useState("");
+  const [scheduleStarts, setScheduleStarts] = useState("");
+  const [scheduleEnds, setScheduleEnds] = useState("");
+  const [scheduleNote, setScheduleNote] = useState("");
+  const [scheduleError, setScheduleError] = useState("");
+  const [scheduleSaving, setScheduleSaving] = useState(false);
 
   const isOwner = currentUser?.role === "owner";
+  const canManageSchedule = isOwner || currentUser?.role === "manager";
   const isStaff = isOwner || currentUser?.role === "manager" || currentUser?.role === "trainer" || currentUser?.role === "front_desk";
 
   const load = useCallback(async () => {
@@ -134,7 +142,10 @@ export default function StaffPage() {
     } catch {
       // best-effort
     }
-  }, []);
+    if (canManageSchedule) {
+      try { setSchedule(await api.get<StaffScheduleOut[]>("/staff/schedule")); } catch { /* best-effort */ }
+    }
+  }, [canManageSchedule]);
 
   useEffect(() => {
     queueMicrotask(() => void load());
@@ -215,7 +226,40 @@ export default function StaffPage() {
   }
 
   const staff = (members ?? []).filter((m) => STAFF_ROLES.includes(m.role));
+  const scheduleStaff = staff.filter((m) => m.member_status === "active");
   const pendingInvites = invites.filter((i) => !i.used);
+
+  async function createScheduledShift(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setScheduleError("");
+    setScheduleSaving(true);
+    try {
+      await api.post<StaffScheduleOut>("/staff/schedule", {
+        staff_member_id: scheduleStaffId,
+        starts_at: new Date(scheduleStarts).toISOString(),
+        ends_at: new Date(scheduleEnds).toISOString(),
+        note: scheduleNote.trim() || undefined,
+      });
+      setScheduleStarts("");
+      setScheduleEnds("");
+      setScheduleNote("");
+      await load();
+    } catch (e) {
+      setScheduleError((e as ApiError).message);
+    } finally {
+      setScheduleSaving(false);
+    }
+  }
+
+  async function removeScheduledShift(shift: StaffScheduleOut) {
+    setScheduleError("");
+    try {
+      await api.del(`/staff/schedule/${shift.id}`);
+      await load();
+    } catch (e) {
+      setScheduleError((e as ApiError).message);
+    }
+  }
 
   const staffTabs = [
     { value: "all" as const, label: "All", count: staff.length },
@@ -941,6 +985,43 @@ export default function StaffPage() {
           {shiftError && <div className="border-t border-[var(--border)] px-5 pb-4 pt-3"><Alert>{shiftError}</Alert></div>}
         </Card>
       )}
+
+      {/* Planned shifts stay separate from recorded attendance hours. */}
+      {canManageSchedule && <section className="mt-8 border border-border bg-background" aria-labelledby="schedule-title">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div>
+            <h2 id="schedule-title" className="text-sm font-semibold">Staff schedule</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Plan shifts separately from clocked work hours.</p>
+          </div>
+          <span className="text-xs tabular-nums text-muted-foreground">{schedule.length} upcoming</span>
+        </div>
+        <form onSubmit={createScheduledShift} className="grid gap-3 border-b border-border p-4 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="block text-xs text-muted-foreground sm:col-span-2 lg:col-span-1">
+            Staff member
+            <select required value={scheduleStaffId} onChange={(event) => setScheduleStaffId(event.target.value)} className="mt-1 block h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground">
+              <option value="">Choose staff…</option>
+              {scheduleStaff.map((person) => <option key={person.member_id} value={person.member_id}>{person.display_name || person.full_name || person.email}</option>)}
+            </select>
+          </label>
+          <Input label="Starts" type="datetime-local" required value={scheduleStarts} onChange={(event) => setScheduleStarts(event.target.value)} />
+          <Input label="Ends" type="datetime-local" required value={scheduleEnds} onChange={(event) => setScheduleEnds(event.target.value)} />
+          <Input label="Note (optional)" value={scheduleNote} maxLength={300} onChange={(event) => setScheduleNote(event.target.value)} placeholder="Front desk, opening…" />
+          <div className="flex items-end"><Button type="submit" loading={scheduleSaving} disabled={!scheduleStaffId || !scheduleStarts || !scheduleEnds}>Add shift</Button></div>
+          {scheduleError && <div className="sm:col-span-2 lg:col-span-5"><Alert>{scheduleError}</Alert></div>}
+        </form>
+        {schedule.length ? <div className="divide-y divide-border">
+          {schedule.map((shift) => {
+            const person = scheduleStaff.find((item) => item.member_id === shift.staff_member_id);
+            return <div key={shift.id} className="flex items-center gap-3 px-4 py-3 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{person?.display_name || person?.full_name || person?.email || "Staff member"}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{new Date(shift.starts_at + (shift.starts_at.endsWith("Z") ? "" : "Z")).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} – {new Date(shift.ends_at + (shift.ends_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{shift.note ? ` · ${shift.note}` : ""}</p>
+              </div>
+              <Button variant="secondary" onClick={() => void removeScheduledShift(shift)} aria-label="Remove scheduled shift">Remove</Button>
+            </div>;
+          })}
+        </div> : <p className="px-4 py-5 text-sm text-muted-foreground">No upcoming shifts have been planned.</p>}
+      </section>}
 
       {/* Trainer: my clients */}
       {currentUser?.role === "trainer" && (

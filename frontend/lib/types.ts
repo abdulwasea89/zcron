@@ -264,6 +264,14 @@ export interface ShiftOut {
   hours: number;
 }
 
+export interface StaffScheduleOut {
+  id: string;
+  staff_member_id: string;
+  starts_at: string;
+  ends_at: string;
+  note: string | null;
+}
+
 export interface StaffInviteOut {
   id: string;
   code: string;

@@ -24,6 +24,7 @@ import type {
   TaskOut,
   ClientAssignment,
   ClassSessionOut,
+  StaffScheduleOut,
 } from "@/lib/types";
 
 async function safe<T>(p: Promise<T>): Promise<T | null> {
@@ -141,12 +142,13 @@ export default async function DashboardPage() {
   const isTrainer = currentUser?.role === "trainer";
   const isFrontDesk = currentUser?.role === "front_desk";
 
-  const [trainerClients, trainerClasses] = isTrainer
-    ? await Promise.all([
-        safe(backend<ClientAssignment[]>("/members/assigned-to-me")),
-        safe(backend<ClassSessionOut[]>("/classes")),
-      ])
-    : [null, null];
+  const [trainerClients, trainerClasses, mySchedule] = await Promise.all([
+    isTrainer ? safe(backend<ClientAssignment[]>("/members/assigned-to-me")) : Promise.resolve(null),
+    isTrainer ? safe(backend<ClassSessionOut[]>("/classes")) : Promise.resolve(null),
+    ["trainer", "front_desk", "manager"].includes(currentUser?.role ?? "")
+      ? safe(backend<StaffScheduleOut[]>("/staff/schedule/mine"))
+      : Promise.resolve(null),
+  ]);
   const upcomingTrainerClasses = (trainerClasses ?? [])
     .filter((session) => !session.cancelled && session.trainer_member_id === currentUser?.member_id && new Date(session.starts_at) >= new Date())
     .slice(0, 4);
@@ -330,6 +332,22 @@ export default async function DashboardPage() {
             </li>)}
           </ul> : <p className="px-4 py-5 text-sm text-muted-foreground">No upcoming classes assigned to you.</p>}
         </div>
+      </section>}
+
+      {mySchedule && <section className="mb-7 border border-border bg-background" aria-labelledby="my-shifts-title">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div>
+            <h2 id="my-shifts-title" className="text-sm font-semibold">My upcoming shifts</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Your planned work times</p>
+          </div>
+          <span className="text-xs tabular-nums text-muted-foreground">{mySchedule.length}</span>
+        </div>
+        {mySchedule.length ? <ul className="divide-y divide-border">
+          {mySchedule.slice(0, 5).map((shift) => <li key={shift.id} className="flex items-center justify-between gap-3 px-4 py-3">
+            <span className="text-sm">{fmtDate(shift.starts_at)} · {new Date(shift.starts_at + (shift.starts_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–{new Date(shift.ends_at + (shift.ends_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+            {shift.note && <span className="truncate text-xs text-muted-foreground">{shift.note}</span>}
+          </li>)}
+        </ul> : <p className="px-4 py-4 text-sm text-muted-foreground">No upcoming shifts assigned.</p>}
       </section>}
 
       {canManageWorkspace && saas?.saas_status === "past_due" && !saas.read_only && (

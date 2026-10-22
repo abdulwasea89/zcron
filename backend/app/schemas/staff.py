@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.constants import Role
 
@@ -53,6 +53,29 @@ class ShiftOut(BaseModel):
     checked_out_at: datetime | None
     status: str
     hours: float
+
+
+class ShiftScheduleCreate(BaseModel):
+    staff_member_id: str
+    starts_at: datetime
+    ends_at: datetime
+    note: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def validate_times(self):
+        starts = self.starts_at.astimezone(timezone.utc) if self.starts_at.tzinfo else self.starts_at.replace(tzinfo=timezone.utc)
+        ends = self.ends_at.astimezone(timezone.utc) if self.ends_at.tzinfo else self.ends_at.replace(tzinfo=timezone.utc)
+        if ends <= starts:
+            raise ValueError("Shift end must be after its start.")
+        return self
+
+
+class ShiftScheduleOut(BaseModel):
+    id: str
+    staff_member_id: str
+    starts_at: datetime
+    ends_at: datetime
+    note: str | None
 
 
 class CompensationUpdate(BaseModel):

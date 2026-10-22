@@ -25,6 +25,19 @@ class Shift(UUIDModel, TimestampModel, table=True):
     is_overtime: bool = False
 
 
+class ScheduledShift(UUIDModel, TimestampModel, table=True):
+    """A planned staff shift; actual hours remain recorded in Shift."""
+
+    __tablename__ = "scheduled_shifts"
+
+    organization_id: str = Field(index=True, foreign_key="organizations.id")
+    staff_member_id: str = Field(index=True, foreign_key="organization_members.id")
+    starts_at: datetime = Field(index=True)
+    ends_at: datetime
+    note: str | None = None
+    assigned_by: str | None = Field(default=None, foreign_key="users.id")
+
+
 class Task(UUIDModel, TimestampModel, table=True):
     """Simple task: title + assignee + deadline (Section 16.2)."""
 
