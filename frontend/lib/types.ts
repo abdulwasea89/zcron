@@ -340,6 +340,25 @@ export interface PayrollRun {
   entries: PayrollEntry[];
 }
 
+export interface MyPayStatement {
+  payroll_run_id: string;
+  period_start: string;
+  period_end: string;
+  run_status: string;
+  paid_at: string | null;
+  fixed: number;
+  hourly_amount: number;
+  hours_worked: number;
+  class_amount: number;
+  classes_taught: number;
+  commission_amount: number;
+  bonus: number;
+  deductions: number;
+  advance_repayment: number;
+  net: number;
+  payout_method: string;
+}
+
 // --------------------------------------------------------------- receipts
 export interface ReceiptReviewItem {
   id: string;

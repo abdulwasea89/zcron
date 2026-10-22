@@ -242,12 +242,14 @@ export default async function DashboardPage() {
         { label: "Check in a member", href: "/app/attendance", icon: ICONS.checkin },
         { label: "Log a cash payment", href: "/app/cash", icon: ICONS.invoice },
         { label: "Review receipts", href: "/app/receipts", icon: ICONS.approvals },
+        { label: "My pay", href: "/app/my-pay", icon: ICONS.revenue },
       ]
     : isTrainer
       ? [
           { label: "My tasks", href: "/app/tasks", icon: ICONS.approvals },
           { label: "My clients", href: "/app/staff#my-clients", icon: ICONS.members },
           { label: "My classes", href: "/app/classes", icon: ICONS.approvals },
+          { label: "My pay", href: "/app/my-pay", icon: ICONS.revenue },
         ]
       : canManageWorkspace && isOffice
         ? [
@@ -268,6 +270,10 @@ export default async function DashboardPage() {
               { label: "Log a cash payment", href: "/app/cash", icon: ICONS.invoice },
             ]
             : [{ label: "My account", href: "/app/account", icon: ICONS.members }];
+
+  if (currentUser?.role === "manager") {
+    quickActions.push({ label: "My pay", href: "/app/my-pay", icon: ICONS.revenue });
+  }
 
   const trend = payments ? paymentTrend(payments, org?.timezone || "UTC") : null;
 
@@ -340,7 +346,10 @@ export default async function DashboardPage() {
             <h2 id="my-shifts-title" className="text-sm font-semibold">My upcoming shifts</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">Your planned work times</p>
           </div>
-          <span className="text-xs tabular-nums text-muted-foreground">{mySchedule.length}</span>
+          <div className="flex items-center gap-3">
+            <Link href="/app/my-pay" className="text-xs text-brand no-underline hover:underline">My pay</Link>
+            <span className="text-xs tabular-nums text-muted-foreground">{mySchedule.length}</span>
+          </div>
         </div>
         {mySchedule.length ? <ul className="divide-y divide-border">
           {mySchedule.slice(0, 5).map((shift) => <li key={shift.id} className="flex items-center justify-between gap-3 px-4 py-3">

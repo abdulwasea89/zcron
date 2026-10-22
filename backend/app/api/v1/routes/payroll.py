@@ -1,4 +1,4 @@
-"""Payroll API routes (Section 15). Owner-only, web-only (Security Rule #7)."""
+"""Owner payroll management and staff self-service pay statements (Section 15)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, require_capability, require_writable_org
+from app.core.constants import PayrollStatus
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
 from app.schemas.payroll import (
@@ -16,10 +17,48 @@ from app.schemas.payroll import (
     PayrollEntryOut,
     PayrollRunCreate,
     PayrollRunOut,
+    MyPayStatementOut,
 )
+from app.models.membership import OrganizationMember
+from app.models.payroll import PayrollEntry, PayrollRun
+from sqlmodel import select
 from app.services import payroll_service as payroll
 
 router = APIRouter()
+
+
+@router.get("/me", response_model=list[MyPayStatementOut])
+async def my_pay_statements(
+    ctx: TenantContext = Depends(require_capability(Capability.CHECK_IN_SHIFT)),
+    session: AsyncSession = Depends(get_session),
+):
+    member = (await session.execute(select(OrganizationMember.id).where(
+        OrganizationMember.organization_id == ctx.org_id,
+        OrganizationMember.user_id == ctx.user_id,
+    ))).scalar_one_or_none()
+    if member is None:
+        return []
+    rows = (await session.execute(
+        select(PayrollRun, PayrollEntry)
+        .join(PayrollEntry, PayrollEntry.payroll_run_id == PayrollRun.id)
+        .where(
+            PayrollRun.organization_id == ctx.org_id,
+            PayrollEntry.organization_id == ctx.org_id,
+            PayrollEntry.staff_member_id == member,
+            PayrollRun.status.in_([PayrollStatus.FINALIZED, PayrollStatus.PAID]),
+        )
+        .order_by(PayrollRun.period_start.desc())
+        .limit(100)
+    )).all()
+    return [MyPayStatementOut(
+        payroll_run_id=run.id, period_start=run.period_start, period_end=run.period_end,
+        run_status=run.status.value, paid_at=run.paid_at,
+        fixed=entry.fixed, hourly_amount=entry.hourly_amount, hours_worked=entry.hours_worked,
+        class_amount=entry.class_amount, classes_taught=entry.classes_taught,
+        commission_amount=entry.commission_amount, bonus=entry.bonus,
+        deductions=entry.deductions, advance_repayment=entry.advance_repayment,
+        net=entry.net, payout_method=entry.payout_method.value,
+    ) for run, entry in rows]
 
 
 def _entry_out(e) -> PayrollEntryOut:

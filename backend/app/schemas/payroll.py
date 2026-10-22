@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_serializer
@@ -51,6 +51,32 @@ class PayrollRunOut(BaseModel):
     entries: list[PayrollEntryOut] = []
 
     @field_serializer("total_gross", "total_deductions", "total_net", when_used="json")
+    def _serialize_money(self, value: Decimal) -> float:
+        return float(value)
+
+
+class MyPayStatementOut(BaseModel):
+    payroll_run_id: str
+    period_start: date
+    period_end: date
+    run_status: str
+    paid_at: datetime | None
+    fixed: Decimal
+    hourly_amount: Decimal
+    hours_worked: float
+    class_amount: Decimal
+    classes_taught: int
+    commission_amount: Decimal
+    bonus: Decimal
+    deductions: Decimal
+    advance_repayment: Decimal
+    net: Decimal
+    payout_method: str
+
+    @field_serializer(
+        "fixed", "hourly_amount", "class_amount", "commission_amount", "bonus",
+        "deductions", "advance_repayment", "net", when_used="json"
+    )
     def _serialize_money(self, value: Decimal) -> float:
         return float(value)
 
