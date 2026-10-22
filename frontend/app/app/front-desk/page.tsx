@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { ListToolbar } from "@/components/ListToolbar";
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
@@ -232,14 +233,24 @@ export default function FrontDeskPage() {
 
   return (
     <>
-      <PageHeader title="Walk-ins" subtitle="Log visitors, day passes and locker use."
-        action={<Button onClick={() => setShowVisitorForm(true)}>+ Log visitor</Button>} />
+      <PageHeader title="Front desk" subtitle="Member check-ins, walk-ins, day passes and locker use."
+        action={<div className="flex flex-wrap gap-2">
+          <Link href="/app/attendance" className="inline-flex h-8 items-center justify-center rounded-md border border-foreground/15 bg-card px-3 text-sm font-medium text-foreground no-underline transition-colors hover:bg-foreground/[0.04]">Check in a member</Link>
+          <Button onClick={() => setShowVisitorForm(true)}>+ Log visitor</Button>
+        </div>} />
 
       {error && (
         <div className="mb-4">
           <Alert onDismiss={() => setError("")}>{error}</Alert>
         </div>
       )}
+
+      <section className="mb-6 grid grid-cols-2 gap-px border border-border bg-border sm:grid-cols-4" aria-label="Front desk today">
+        <DeskStat label="Visitors today" value={summary ? String(summary.visitors_today) : "—"} />
+        <DeskStat label="Inside now" value={summary ? String(summary.inside_now) : "—"} />
+        <DeskStat label="Lockers free" value={summary ? String(Math.max(0, summary.lockers_total - summary.lockers_occupied)) : "—"} />
+        <DeskStat label="Lockers occupied" value={summary ? `${summary.lockers_occupied}/${summary.lockers_total}` : "—"} />
+      </section>
 
       <Sheet open={showVisitorForm} onOpenChange={setShowVisitorForm}>
         <SheetContent><SheetHeader><SheetTitle>Log a visitor</SheetTitle><SheetDescription>Record a walk-in, guest or day pass.</SheetDescription></SheetHeader><SheetBody>
@@ -351,4 +362,11 @@ export default function FrontDeskPage() {
       </div>
     </>
   );
+}
+
+function DeskStat({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0 bg-background px-4 py-3">
+    <span className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+    <span className="mt-1 block truncate text-lg font-semibold tabular-nums">{value}</span>
+  </div>;
 }
