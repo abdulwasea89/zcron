@@ -201,11 +201,19 @@ async def test_recovered_renewal_appears_in_tenant_scoped_wins_feed(client, db, 
 
     response = await client.get("/api/v1/retention/wins", headers=headers)
     assert response.status_code == 200, response.text
-    assert len(response.json()) == 1
-    assert response.json()[0]["payment_id"] == payment.id
-    assert response.json()[0]["member_id"] == member_id
-    assert response.json()[0]["amount"] == 149.0
-    assert response.json()[0]["lead_source"] == "whatsapp"
+    wins = response.json()
+    assert len(wins) == 2
+    recovery = next(win for win in wins if win["kind"] == "renewal_recovered")
+    conversion = next(win for win in wins if win["kind"] == "lead_converted")
+    assert recovery["payment_id"] == payment.id
+    assert recovery["member_id"] == member_id
+    assert recovery["amount"] == 149.0
+    assert recovery["lead_source"] == "whatsapp"
+    assert conversion["lead_id"] == lead_id
+    assert conversion["member_id"] == member_id
+    assert conversion["member_name"]
+    assert conversion["amount"] is None
+    assert conversion["lead_source"] == "whatsapp"
 
     other_headers, *_ = await _provision_gym(client, owner_email="other-wins@ret.com")
     response = await client.get("/api/v1/retention/wins", headers=other_headers)

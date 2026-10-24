@@ -41,12 +41,15 @@ type RetentionSummary = {
   silent: number;
   revenue_at_risk: number;
 };
-type RenewalRecovery = {
-  payment_id: string;
+type RetentionWin = {
+  id: string;
+  kind: "lead_converted" | "renewal_recovered";
+  payment_id: string | null;
+  lead_id: string | null;
   member_id: string | null;
   member_name: string;
-  amount: number;
-  currency: string;
+  amount: number | null;
+  currency: string | null;
   recovered_at: string;
   lead_source: string | null;
 };
@@ -109,7 +112,7 @@ export default function AttendanceRetentionPage() {
   const [rows, setRows] = useState<MemberRisk[]>([]);
   const [riskRows, setRiskRows] = useState<MemberRisk[]>([]);
   const [summary, setSummary] = useState<RetentionSummary | null>(null);
-  const [wins, setWins] = useState<RenewalRecovery[]>([]);
+  const [wins, setWins] = useState<RetentionWin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [view, setView] = useState<"drops" | "risk" | "ladder">("drops");
@@ -124,7 +127,7 @@ export default function AttendanceRetentionPage() {
       api.get<MemberRisk[]>("/retention/drops?limit=500"),
       api.get<MemberRisk[]>("/retention/at-risk?min_score=0&limit=500"),
       api.get<RetentionSummary>("/retention/summary"),
-      api.get<RenewalRecovery[]>("/retention/wins?limit=5"),
+      api.get<RetentionWin[]>("/retention/wins?limit=5"),
     ]);
     return { drops, risks, totals, wins: recoveries };
   }, []);
@@ -201,15 +204,15 @@ export default function AttendanceRetentionPage() {
     <>
       <PageHeader title="Member retention" subtitle="Understand who may need support and what signals are driving the risk." />
 
-      <section aria-label="Recent membership recoveries" className="mb-6 border border-[var(--border)] bg-card">
+      <section aria-label="Recent membership wins" className="mb-6 border border-[var(--border)] bg-card">
         <div className="flex items-baseline justify-between gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
-          <div><h2 className="text-sm font-semibold text-foreground">Recent recoveries</h2><p className="mt-0.5 text-xs text-muted-foreground">Successful renewal payments that restored a past-due membership.</p></div>
+          <div><h2 className="text-sm font-semibold text-foreground">Recent wins</h2><p className="mt-0.5 text-xs text-muted-foreground">New members joined and past-due memberships recovered.</p></div>
           <span className="text-xs text-muted-foreground">Last 5</span>
         </div>
-        {wins.length ? <ul className="divide-y divide-[var(--border)]">{wins.map((win) => <li key={win.payment_id} className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5">
-          <div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{win.member_name}</p><p className="text-xs text-muted-foreground">{new Date(win.recovered_at).toLocaleDateString()}{win.lead_source ? ` · Source: ${win.lead_source.replaceAll("_", " ")}` : ""}</p></div>
-          <p className="shrink-0 text-sm font-semibold tabular-nums text-success">{new Intl.NumberFormat(undefined, { style: "currency", currency: win.currency }).format(win.amount)}</p>
-        </li>)}</ul> : <p className="px-4 py-4 text-sm text-muted-foreground sm:px-5">No recovered renewal payments yet.</p>}
+        {wins.length ? <ul className="divide-y divide-[var(--border)]">{wins.map((win) => <li key={win.id} className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5">
+          <div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{win.member_name}</p><p className="text-xs text-muted-foreground">{win.kind === "lead_converted" ? "New member joined" : "Renewal recovered"} · {new Date(win.recovered_at).toLocaleDateString()}{win.lead_source ? ` · Source: ${win.lead_source.replaceAll("_", " ")}` : ""}</p></div>
+          {win.amount !== null && win.currency ? <p className="shrink-0 text-sm font-semibold tabular-nums text-success">{new Intl.NumberFormat(undefined, { style: "currency", currency: win.currency }).format(win.amount)}</p> : <Badge tone="success">Joined</Badge>}
+        </li>)}</ul> : <p className="px-4 py-4 text-sm text-muted-foreground sm:px-5">No recent joins or recovered renewals yet.</p>}
       </section>
 
       <div className="mb-5 flex gap-2 border-b border-[var(--border)]" role="tablist" aria-label="Retention views">

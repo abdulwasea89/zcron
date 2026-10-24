@@ -19,6 +19,7 @@ scores without an N+1.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -416,7 +417,8 @@ async def retention_summary(session: AsyncSession, *, org_id: str) -> dict:
     }
 
 
-async def recovered_renewals(session: AsyncSession, *, org_id: str, limit: int = 10) -> list[dict]:
+async def retention_wins(session: AsyncSession, *, org_id: str, limit: int = 10) -> list[dict]:
+    wins: list[dict] = []
     lead_source = (
         select(Lead.source)
         .where(
@@ -441,10 +443,53 @@ async def recovered_renewals(session: AsyncSession, *, org_id: str, limit: int =
         .order_by(AuditLog.created_at.desc())
         .limit(100)
     )).all()
-    return [
-        {"payment_id": payment.id, "member_id": payment.member_id,
+    wins.extend(
+        [{"id": f"renewal:{payment.id}", "kind": "renewal_recovered",
+         "payment_id": payment.id, "lead_id": None, "member_id": payment.member_id,
          "member_name": member_name or "Member", "amount": round(payment.amount - payment.refunded_amount, 2),
          "currency": payment.currency, "recovered_at": recovered_at, "lead_source": lead_source}
         for recovered_at, payment, member_name, lead_source in rows
-        if payment.amount > payment.refunded_amount
-    ][:limit]
+        if payment.amount > payment.refunded_amount]
+    )
+
+    # Stage history is the source of truth for conversion time; Lead.updated_at
+    # also changes on profile edits and would make old wins appear recent.
+    # shortcut: use the newest 500 join events for this summary; paginate if a full history is needed.
+    stage_rows = (await session.execute(
+        select(AuditLog).where(
+            AuditLog.organization_id == org_id,
+            AuditLog.action == "lead.stage_changed",
+            AuditLog.entity_type == "lead",
+            AuditLog.new_values_json.contains('"stage": "joined"'),
+        ).order_by(AuditLog.created_at.desc()).limit(500)
+    )).scalars().all()
+    converted_at: dict[str, datetime] = {}
+    for entry in stage_rows:
+        if not entry.entity_id:
+            continue
+        try:
+            if json.loads(entry.new_values_json or "{}").get("stage") == "joined":
+                converted_at.setdefault(entry.entity_id, entry.created_at)
+        except (TypeError, ValueError):
+            continue
+    if converted_at:
+        leads = (await session.execute(
+            select(Lead, OrganizationMember.display_name)
+            .join(OrganizationMember, OrganizationMember.id == Lead.converted_member_id)
+            .where(
+                Lead.organization_id == org_id,
+                Lead.id.in_(converted_at),
+                Lead.stage == "joined",
+                Lead.converted_member_id.is_not(None),
+                OrganizationMember.organization_id == org_id,
+            )
+        )).all()
+        for lead, member_name in leads:
+            wins.append({
+                "id": f"lead:{lead.id}", "kind": "lead_converted", "payment_id": None,
+                "lead_id": lead.id, "member_id": lead.converted_member_id,
+                "member_name": member_name or lead.name, "amount": None, "currency": None,
+                "recovered_at": converted_at[lead.id], "lead_source": lead.source,
+            })
+
+    return sorted(wins, key=lambda win: win["recovered_at"], reverse=True)[:limit]

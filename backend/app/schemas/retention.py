@@ -49,11 +49,14 @@ class RetentionSummaryOut(BaseModel):
     revenue_at_risk: float
 
 
-class RenewalRecoveryOut(BaseModel):
-    payment_id: str
+class RetentionWinOut(BaseModel):
+    id: str
+    kind: str  # lead_converted | renewal_recovered
+    payment_id: str | None = None
+    lead_id: str | None = None
     member_id: str | None
     member_name: str
-    amount: float
-    currency: str
+    amount: float | None = None
+    currency: str | None = None
     recovered_at: datetime
     lead_source: str | None = None
