@@ -8,13 +8,15 @@ is in the same ledger as member fees and cash.
 from __future__ import annotations
 
 from datetime import date, datetime, time
+import re
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.constants import (
+    LeadSource,
     LockerStatus,
     PaymentKind,
     PaymentMethod,
@@ -28,6 +30,7 @@ from app.models.visitor import Locker, Visitor
 from app.models.payment import Payment
 from app.realtime import events
 from app.schemas.visitor import LockerAssignIn, LockerIn, VisitorLogIn
+from app.schemas.leads import LeadCreate
 from app.services.audit_service import record_audit
 
 
@@ -125,6 +128,39 @@ async def log_visitor(
     )
     session.add(visitor)
     await session.flush()
+
+    email = (data.email or "").strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        email = ""
+    phone = (data.phone or "").strip()
+    if len(re.sub(r"\D", "", phone)) < 7:
+        phone = ""
+    if email or phone:
+        contact_match = []
+        if email:
+            contact_match.append(func.lower(User.email) == email)
+        if phone:
+            contact_match.append(OrganizationMember.phone == phone)
+        known_member = (await session.execute(
+            select(OrganizationMember.id)
+            .join(User, User.id == OrganizationMember.user_id)
+            .where(OrganizationMember.organization_id == org_id, or_(*contact_match))
+            .limit(1)
+        )).scalar_one_or_none()
+        if not known_member:
+            from app.services import leads_service
+
+            try:
+                await leads_service.create_lead(
+                    session, org_id=org_id, actor_id=actor_user_id,
+                    data=LeadCreate(
+                        name=data.name.strip(), email=email or None, phone=phone or None,
+                        source=LeadSource.WALK_IN,
+                    ),
+                )
+            except HTTPException as exc:
+                if exc.status_code != 409:
+                    raise
 
     # Day-pass money lands in the payment ledger (member_id is null — no member).
     if amount > 0 and kind == VisitorKind.DAY_PASS:

@@ -83,6 +83,29 @@ async def test_log_day_pass_creates_visitor_and_payment(client, db):
 
 
 @pytest.mark.asyncio
+async def test_walk_in_creates_consent_free_lead_but_known_member_does_not(client):
+    headers, _org_id, org_code = await _provision_gym(client)
+    r = await client.post("/api/v1/front-desk/visitors", headers=headers, json={
+        "name": "Prospect Pat", "email": "pat@walkin.com", "phone": "+923001234567",
+        "kind": "walk_in",
+    })
+    assert r.status_code == 201, r.text
+    leads = await client.get("/api/v1/leads", headers=headers)
+    assert leads.status_code == 200 and len(leads.json()) == 1
+    assert leads.json()[0]["source"] == "walk_in"
+    assert leads.json()[0]["email_followup_consent"] is False
+    assert leads.json()[0]["sms_followup_consent"] is False
+
+    await _signup_member(client, org_code, "existing@walkin.com")
+    r = await client.post("/api/v1/front-desk/visitors", headers=headers, json={
+        "name": "Existing Member", "email": "existing@walkin.com", "kind": "walk_in",
+    })
+    assert r.status_code == 201, r.text
+    leads = await client.get("/api/v1/leads", headers=headers)
+    assert len(leads.json()) == 1
+
+
+@pytest.mark.asyncio
 async def test_log_visitor_is_idempotent(client):
     headers, _org_id, _code = await _provision_gym(client)
     key = str(uuid.uuid4())
