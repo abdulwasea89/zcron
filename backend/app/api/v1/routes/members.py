@@ -96,7 +96,7 @@ async def _trainer_names(session: AsyncSession, org_id: str) -> dict[str, list[s
     return {mid: sorted(ns) for mid, ns in names.items()}
 
 
-def _item(m, u, trainers: list[str] | None = None) -> MemberDirectoryItem:
+def _item(m, u, trainers: list[str] | None = None, *, include_compensation: bool = False) -> MemberDirectoryItem:
     return MemberDirectoryItem(
         member_id=m.id, user_id=u.id, email=u.email, full_name=u.full_name,
         display_name=m.display_name,
@@ -104,20 +104,20 @@ def _item(m, u, trainers: list[str] | None = None) -> MemberDirectoryItem:
         role=m.role.value, member_status=m.member_status.value, phone=m.phone,
         profile_complete=m.profile_complete,
         created_at=m.created_at,
-        fixed_monthly_salary=m.fixed_monthly_salary,
-        hourly_rate=m.hourly_rate,
-        per_class_rate=m.per_class_rate,
-        commission_rate=m.commission_rate,
+        fixed_monthly_salary=m.fixed_monthly_salary if include_compensation else None,
+        hourly_rate=m.hourly_rate if include_compensation else None,
+        per_class_rate=m.per_class_rate if include_compensation else None,
+        commission_rate=m.commission_rate if include_compensation else None,
         assigned_trainers=trainers or [],
     )
 
 
 async def _item_with_trainers(
-    session: AsyncSession, org_id: str, member, user,
+    session: AsyncSession, org_id: str, member, user, *, include_compensation: bool = False,
 ) -> MemberDirectoryItem:
     rows = await trainer_assign.list_for_member(session, org_id=org_id, member_id=member.id)
     names = sorted((t.display_name or u.full_name or u.email) for _mt, t, u in rows)
-    return _item(member, user, trainers=names)
+    return _item(member, user, trainers=names, include_compensation=include_compensation)
 
 
 @router.get("", response_model=list[MemberDirectoryItem])
@@ -129,7 +129,7 @@ async def list_directory(
 ):
     rows = await members.directory(session, org_id=ctx.org_id, status=status, role=role)
     names = await _trainer_names(session, ctx.org_id)
-    return [_item(m, u, trainers=names.get(m.id)) for m, u in rows]
+    return [_item(m, u, trainers=names.get(m.id), include_compensation=ctx.role == Role.OWNER) for m, u in rows]
 
 
 @router.get("/assigned-to-me", response_model=list[ClientAssignment])
@@ -174,7 +174,7 @@ async def approval_queue(
 ):
     rows = await members.approval_queue(session, org_id=ctx.org_id)
     names = await _trainer_names(session, ctx.org_id)
-    return [_item(m, u, trainers=names.get(m.id)) for m, u in rows]
+    return [_item(m, u, trainers=names.get(m.id), include_compensation=ctx.role == Role.OWNER) for m, u in rows]
 
 
 @router.get("/freeze-requests", response_model=list[FreezeRequestQueueOut])
@@ -273,7 +273,7 @@ async def member_detail(
     ]
 
     return MemberDetailOut(
-        member=_item(member, user, trainers=names),
+        member=_item(member, user, trainers=names, include_compensation=ctx.role == Role.OWNER),
         profile=MemberProfileOut(
             display_name=member.display_name, phone=member.phone,
             photo_url=member.photo_url, emergency_contact=member.emergency_contact,
@@ -359,7 +359,7 @@ async def decide_approval(
     member = await members.decide_approval(session, org_id=ctx.org_id, member_id=member_id,
                                             approve=data.approve, reason=data.reason, actor_id=ctx.user_id)
     user = await session.get(User, member.user_id)
-    return await _item_with_trainers(session, ctx.org_id, member, user)
+    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=ctx.role == Role.OWNER)
 
 
 @router.post("/{member_id}/status", response_model=MemberDirectoryItem)
@@ -372,7 +372,7 @@ async def change_status(
     member = await members.change_status(session, org_id=ctx.org_id, member_id=member_id,
                                           action=data.action, reason=data.reason, actor_id=ctx.user_id)
     user = await session.get(User, member.user_id)
-    return await _item_with_trainers(session, ctx.org_id, member, user)
+    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=ctx.role == Role.OWNER)
 
 
 @router.patch("/{member_id}/role", response_model=MemberDirectoryItem)
@@ -385,7 +385,7 @@ async def change_role(
     member = await members.change_role(session, org_id=ctx.org_id, member_id=member_id,
                                         new_role=data.role, actor_id=ctx.user_id, actor_role=ctx.role)
     user = await session.get(User, member.user_id)
-    return await _item_with_trainers(session, ctx.org_id, member, user)
+    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=ctx.role == Role.OWNER)
 
 
 @router.patch("/{member_id}/email", response_model=MemberDirectoryItem)
@@ -398,7 +398,7 @@ async def change_email(
     member = await members.update_email(session, org_id=ctx.org_id, member_id=member_id,
                                          new_email=data.email, actor_id=ctx.user_id)
     user = await session.get(User, member.user_id)
-    return await _item_with_trainers(session, ctx.org_id, member, user)
+    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=ctx.role == Role.OWNER)
 
 
 @router.delete("/{member_id}", response_model=Message)

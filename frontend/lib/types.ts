@@ -124,10 +124,10 @@ export interface MemberDirectoryItem {
   phone: string | null;
   profile_complete: boolean;
   created_at: string;
-  fixed_monthly_salary: number;
-  hourly_rate: number;
-  per_class_rate: number;
-  commission_rate: number;
+  fixed_monthly_salary: number | null;
+  hourly_rate: number | null;
+  per_class_rate: number | null;
+  commission_rate: number | null;
   assigned_trainers: string[];
 }
 

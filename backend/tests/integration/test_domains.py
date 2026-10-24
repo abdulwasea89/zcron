@@ -408,3 +408,57 @@ async def test_member_cannot_access_revenue_analytics(client):
     info = await _signup_member(client, org_code, plan_id, "nosy@g.com")
     r = await client.get("/api/v1/analytics/revenue", headers=info["headers"])
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_manager_cannot_read_staff_compensation(client, monkeypatch):
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+    owner_headers, _org_id, _org_code, _plan_id = await _provision_gym(
+        client, owner_email="comp-owner@g.com",
+    )
+
+    trainer_invite = await client.post(
+        "/api/v1/staff/invites", headers=owner_headers,
+        json={"role": "trainer", "email": "comp-trainer@g.com"},
+    )
+    assert trainer_invite.status_code == 201, trainer_invite.text
+    trainer = await client.post("/api/v1/staff/invites/redeem", json={
+        "code": trainer_invite.json()["code"], "full_name": "Trainer",
+        "password": PASSWORD,
+    })
+    assert trainer.status_code == 200, trainer.text
+    trainer_rows = await client.get("/api/v1/members", headers=owner_headers, params={"role": "trainer"})
+    assert trainer_rows.status_code == 200, trainer_rows.text
+    trainer_id = trainer_rows.json()[0]["member_id"]
+    updated = await client.patch(
+        f"/api/v1/staff/{trainer_id}/compensation", headers=owner_headers,
+        json={"fixed_monthly_salary": "1500.10"},
+    )
+    assert updated.status_code == 200, updated.text
+
+    manager_invite = await client.post(
+        "/api/v1/staff/invites", headers=owner_headers,
+        json={"role": "manager", "email": "comp-manager@g.com"},
+    )
+    assert manager_invite.status_code == 201, manager_invite.text
+    manager = await client.post("/api/v1/staff/invites/redeem", json={
+        "code": manager_invite.json()["code"], "full_name": "Manager",
+        "password": PASSWORD,
+    })
+    assert manager.status_code == 200, manager.text
+    manager_headers = {
+        "Authorization": f"Bearer {manager.json()['access_token']}",
+        "X-Organization-Id": manager.json()["organization_id"],
+    }
+
+    owner_rows = await client.get("/api/v1/members", headers=owner_headers, params={"role": "trainer"})
+    manager_rows = await client.get("/api/v1/members", headers=manager_headers, params={"role": "trainer"})
+    assert owner_rows.status_code == manager_rows.status_code == 200
+    assert owner_rows.json()[0]["fixed_monthly_salary"] == 1500.1
+    assert manager_rows.json()[0]["fixed_monthly_salary"] is None
+    detail = await client.get(f"/api/v1/members/{trainer_id}", headers=manager_headers)
+    assert detail.status_code == 200
+    assert detail.json()["member"]["fixed_monthly_salary"] is None

@@ -22,18 +22,18 @@ class MemberDirectoryItem(BaseModel):
     phone: str | None
     profile_complete: bool
     created_at: datetime
-    fixed_monthly_salary: Decimal = Decimal("0.00")
-    hourly_rate: Decimal = Decimal("0.00")
-    per_class_rate: Decimal = Decimal("0.00")
-    commission_rate: Decimal = Decimal("0.000000")
+    fixed_monthly_salary: Decimal | None = None
+    hourly_rate: Decimal | None = None
+    per_class_rate: Decimal | None = None
+    commission_rate: Decimal | None = None
     # Display names of the trainers currently assigned to this member.
     assigned_trainers: list[str] = []
 
     @field_serializer(
         "fixed_monthly_salary", "hourly_rate", "per_class_rate", "commission_rate", when_used="json"
     )
-    def _serialize_compensation(self, value: Decimal) -> float:
-        return float(value)
+    def _serialize_compensation(self, value: Decimal | None) -> float | None:
+        return float(value) if value is not None else None
 
 
 class MemberProfileUpdate(BaseModel):

@@ -692,11 +692,11 @@ export default function StaffPage() {
                       <td className={`${TD} ${CELL} py-2.5 text-xs text-[var(--foreground-muted)]`}>
                         {["trainer", "front_desk", "manager"].includes(s.role) ? (
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                            {s.fixed_monthly_salary > 0 && <span>${s.fixed_monthly_salary}/mo</span>}
-                            {s.hourly_rate > 0 && <span>${s.hourly_rate}/hr</span>}
-                            {s.per_class_rate > 0 && <span>${s.per_class_rate}/class</span>}
-                            {s.commission_rate > 0 && <span>{s.commission_rate * 100}% comm</span>}
-                            {s.fixed_monthly_salary === 0 && s.hourly_rate === 0 && s.per_class_rate === 0 && s.commission_rate === 0 && (
+                            {(s.fixed_monthly_salary ?? 0) > 0 && <span>${s.fixed_monthly_salary}/mo</span>}
+                            {(s.hourly_rate ?? 0) > 0 && <span>${s.hourly_rate}/hr</span>}
+                            {(s.per_class_rate ?? 0) > 0 && <span>${s.per_class_rate}/class</span>}
+                            {(s.commission_rate ?? 0) > 0 && <span>{(s.commission_rate ?? 0) * 100}% comm</span>}
+                            {(s.fixed_monthly_salary ?? 0) === 0 && (s.hourly_rate ?? 0) === 0 && (s.per_class_rate ?? 0) === 0 && (s.commission_rate ?? 0) === 0 && (
                               <span className="text-[var(--muted)] italic">Not set</span>
                             )}
                           </div>
