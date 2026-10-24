@@ -33,7 +33,7 @@ async function safe<T>(p: Promise<T>): Promise<T | null> {
 
 type Tone = "neutral" | "success" | "danger" | "warning" | "info";
 type RetentionSummary = { scored: number; high: number; medium: number; revenue_at_risk: number };
-type RetentionRiskAction = { member_id: string; name: string | null; band: string };
+type RetentionRiskAction = { member_id: string; name: string | null; phone: string | null; band: string };
 
 const PRIMARY_ACTION_CLASS = "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-xs font-medium text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
@@ -233,7 +233,7 @@ export default async function DashboardPage() {
       : "All set — your gym is fully configured.";
 
   // ── Needs attention ─────────────────────────────────────────────────────
-  const attention: { label: string; value: string; href: string; tone: Tone }[] = [];
+  const attention: { label: string; value: string; href: string; tone: Tone; phone?: string | null }[] = [];
   if (metrics?.pending_receipts) {
     attention.push({ label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning" });
   }
@@ -245,6 +245,7 @@ export default async function DashboardPage() {
           value: `${member.band} risk`,
           href: `/app/members?member=${encodeURIComponent(member.member_id)}`,
           tone: member.band === "high" ? "danger" : "warning",
+          phone: member.phone,
         });
       }
       attention.push({
@@ -459,9 +460,10 @@ export default async function DashboardPage() {
                 <ul className="m-0 list-none p-0">
                   {attention.map((item) => (
                     <li key={item.label} className="border-b border-border">
-                      <Link href={item.href} className="flex min-h-12 items-center justify-between gap-3 px-4 text-[12px] font-medium text-foreground no-underline transition-colors hover:bg-foreground/[0.025]">
-                        <span>{item.label}</span><span className="flex shrink-0 items-center gap-2"><Badge tone={item.tone}>{item.value}</Badge><span className="text-brand">Review →</span></span>
-                      </Link>
+                      <div className="flex min-h-12 items-center justify-between gap-3 px-4 text-[12px] font-medium">
+                        <Link href={item.href} className="min-w-0 truncate text-foreground no-underline transition-colors hover:text-brand">{item.label}</Link>
+                        <span className="flex shrink-0 items-center gap-2"><Badge tone={item.tone}>{item.value}</Badge>{item.phone && <a href={`tel:${item.phone}`} aria-label={`Call ${item.label.replace(/^Follow up: /, "")}`} className="text-brand underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">Call</a>}<Link href={item.href} className="text-brand no-underline hover:underline">Review →</Link></span>
+                      </div>
                     </li>
                   ))}
                 </ul>
