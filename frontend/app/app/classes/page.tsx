@@ -58,6 +58,8 @@ export default function ClassesPage() {
   const [bookingsSession, setBookingsSession] = useState<ClassSessionOut | null>(null);
   const [bookings, setBookings] = useState<BookingWithMember[] | null>(null);
   const [bookingsError, setBookingsError] = useState("");
+  const [waitlistMemberId, setWaitlistMemberId] = useState("");
+  const [bookingAction, setBookingAction] = useState<string | null>(null);
 
   // Check-in
   const [checkInLoading, setCheckInLoading] = useState<string | null>(null);
@@ -67,6 +69,7 @@ export default function ClassesPage() {
   const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
 
   const isStaff = currentUser?.role === "owner" || currentUser?.role === "manager" || currentUser?.role === "trainer";
+  const canManageWaitlist = currentUser?.role === "owner" || currentUser?.role === "manager";
 
   const load = useCallback(async () => {
     setError("");
@@ -191,6 +194,35 @@ export default function ClassesPage() {
       setBookings(b);
     } catch (e) {
       setBookingsError((e as ApiError).message);
+    }
+  }
+
+  async function updateBookingStatus(session: ClassSessionOut, booking: BookingWithMember, status: "attend" | "no-show") {
+    setBookingAction(booking.booking_id);
+    setBookingsError("");
+    try {
+      await api.post(`/classes/${session.id}/bookings/${booking.booking_id}/${status}`);
+      await loadBookings(session);
+    } catch (e) {
+      setBookingsError((e as ApiError).message);
+    } finally {
+      setBookingAction(null);
+    }
+  }
+
+  async function addWaitlistMember(e: React.FormEvent) {
+    e.preventDefault();
+    if (!bookingsSession || !waitlistMemberId) return;
+    setBookingAction("waitlist");
+    setBookingsError("");
+    try {
+      await api.post(`/classes/${bookingsSession.id}/waitlist`, { member_id: waitlistMemberId });
+      setWaitlistMemberId("");
+      await Promise.all([loadBookings(bookingsSession), load()]);
+    } catch (e) {
+      setBookingsError((e as ApiError).message);
+    } finally {
+      setBookingAction(null);
     }
   }
 
@@ -341,6 +373,19 @@ export default function ClassesPage() {
             </div>
           </SheetHeader>
           <SheetBody>
+            {bookingsSession && canManageWaitlist && !bookingsSession.cancelled && new Date(bookingsSession.starts_at) > new Date() && bookingsSession.booked_count >= bookingsSession.capacity && (
+              <form onSubmit={addWaitlistMember} className="mb-4 flex flex-wrap items-end gap-2 border-b border-[var(--border)] pb-4">
+                <label className="min-w-48 flex-1 text-xs text-[var(--muted)]">Add active member to waitlist
+                  <select value={waitlistMemberId} onChange={(event) => setWaitlistMemberId(event.target.value)} className="mt-1.5 h-9 w-full rounded-md border border-[var(--border)] bg-background px-2 text-sm text-foreground">
+                    <option value="">Choose a member…</option>
+                    {members.filter((member) => member.role === "member" && member.member_status === "active" && !bookings?.some((booking) => booking.member_id === member.member_id && ["booked", "attended", "waitlisted"].includes(booking.status))).map((member) => (
+                      <option key={member.member_id} value={member.member_id}>{member.display_name || member.full_name || member.email}</option>
+                    ))}
+                  </select>
+                </label>
+                <Button type="submit" disabled={!waitlistMemberId || bookingAction !== null} loading={bookingAction === "waitlist"}>Add to waitlist</Button>
+              </form>
+            )}
             {bookings === null ? (
               <Spinner label="Loading bookings..." />
             ) : bookingsError ? (
@@ -350,12 +395,18 @@ export default function ClassesPage() {
             ) : (
               <div className="divide-y divide-[var(--border)]">
                 {bookings.map((b) => (
-                  <div key={b.booking_id} className="flex items-center justify-between py-2.5">
+                  <div key={b.booking_id} className="flex items-center justify-between gap-3 py-2.5">
                     <div>
                       <p className="text-sm font-medium text-[var(--foreground)]">{b.member_name || b.member_email}</p>
                       <p className="text-xs text-[var(--muted)]">{b.member_email}</p>
                     </div>
-                    <Badge tone={b.status === "booked" ? "success" : "neutral"}>{b.status}</Badge>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge tone={b.status === "booked" ? "success" : "neutral"}>{b.status}</Badge>
+                      {b.status === "booked" && bookingsSession && new Date(bookingsSession.starts_at) <= new Date() && !bookingsSession.cancelled && <>
+                        <Button className="h-7 px-2 text-xs" variant="secondary" disabled={bookingAction !== null} loading={bookingAction === b.booking_id} onClick={() => void updateBookingStatus(bookingsSession, b, "attend")}>Attended</Button>
+                        {(bookingsSession.ends_at ? new Date(bookingsSession.ends_at) : new Date(bookingsSession.starts_at)) <= new Date() && <Button className="h-7 px-2 text-xs" variant="secondary" disabled={bookingAction !== null} onClick={() => void updateBookingStatus(bookingsSession, b, "no-show")}>No-show</Button>}
+                      </>}
+                    </div>
                   </div>
                 ))}
               </div>

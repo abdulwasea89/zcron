@@ -35,6 +35,10 @@ class BookingCreate(BaseModel):
     class_session_id: str
 
 
+class WaitlistCreate(BaseModel):
+    member_id: str
+
+
 class BookingOut(BaseModel):
     id: str
     class_session_id: str

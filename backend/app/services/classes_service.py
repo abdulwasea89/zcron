@@ -81,6 +81,7 @@ async def cancel_session(
         await session.execute(
             select(ClassBooking).where(
                 ClassBooking.class_session_id == cs.id,
+                ClassBooking.organization_id == org_id,
                 ClassBooking.status == BookingStatus.BOOKED,
             )
         )
@@ -88,6 +89,17 @@ async def cancel_session(
     for b in bookings:
         b.status = BookingStatus.CANCELLED
         session.add(b)
+    cs.booked_count = 0
+    waitlisted = (
+        await session.execute(select(ClassBooking).where(
+            ClassBooking.class_session_id == cs.id,
+            ClassBooking.organization_id == org_id,
+            ClassBooking.status == BookingStatus.WAITLISTED,
+        ))
+    ).scalars()
+    for booking in waitlisted:
+        booking.status = BookingStatus.CANCELLED
+        session.add(booking)
     trial_bookings = (
         await session.execute(
             select(LeadBooking).where(
@@ -202,12 +214,54 @@ async def cancel_booking(
     if member is None or booking.member_id != member.id:
         raise HTTPException(status_code=403, detail="Not your booking.")
     if booking.status == BookingStatus.BOOKED:
+        cs = await _get_owned_session(session, org_id, booking.class_session_id)
         booking.status = BookingStatus.CANCELLED
         session.add(booking)
-        cs = await session.get(ClassSession, booking.class_session_id)
-        if cs and cs.booked_count > 0:
-            cs.booked_count -= 1
-            session.add(cs)
+        cs.booked_count = max(0, cs.booked_count - 1)
+        next_booking = (
+            await session.execute(select(ClassBooking).where(
+                    ClassBooking.organization_id == org_id,
+                    ClassBooking.class_session_id == cs.id,
+                    ClassBooking.status == BookingStatus.WAITLISTED,
+                ).order_by(ClassBooking.created_at, ClassBooking.id).limit(1).with_for_update())
+        ).scalar_one_or_none()
+        if next_booking and not cs.cancelled:
+            next_booking.status = BookingStatus.BOOKED
+            cs.booked_count += 1
+            session.add(next_booking)
+        session.add(cs)
+    return booking
+
+
+async def add_to_waitlist(
+    session: AsyncSession, *, org_id: str, class_id: str, member_id: str, actor_id: str
+) -> ClassBooking:
+    cs = await _get_owned_session(session, org_id, class_id)
+    if cs.cancelled or cs.starts_at <= now_utc():
+        raise HTTPException(status_code=409, detail="Only upcoming classes can accept bookings.")
+    member = await session.get(OrganizationMember, member_id)
+    if member is None or member.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Member not found in this gym.")
+    if member.member_status != MemberStatus.ACTIVE:
+        raise HTTPException(status_code=409, detail="Only active members can be booked into a class.")
+    existing = (await session.execute(select(ClassBooking).where(
+        ClassBooking.organization_id == org_id,
+        ClassBooking.class_session_id == cs.id,
+        ClassBooking.member_id == member.id,
+        ClassBooking.status.in_([BookingStatus.BOOKED, BookingStatus.ATTENDED, BookingStatus.WAITLISTED]),
+    ))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Member already has an active booking for this class.")
+
+    status = BookingStatus.BOOKED if cs.booked_count < cs.capacity else BookingStatus.WAITLISTED
+    booking = ClassBooking(organization_id=org_id, class_session_id=cs.id, member_id=member.id, status=status)
+    session.add(booking)
+    if status == BookingStatus.BOOKED:
+        cs.booked_count += 1
+        session.add(cs)
+    await session.flush()
+    await record_audit(session, action=f"class.{status.value}", organization_id=org_id,
+                       actor_user_id=actor_id, entity_type="class_booking", entity_id=booking.id)
     return booking
 
 
@@ -265,6 +319,24 @@ async def mark_attended(
         class_session_id=cs.id,
     )
     await record_audit(session, action="class.attended", organization_id=org_id,
+                       actor_user_id=actor_id, entity_type="class_booking", entity_id=booking.id)
+    return booking
+
+
+async def mark_no_show(
+    session: AsyncSession, *, org_id: str, class_id: str, booking_id: str, actor_id: str
+) -> ClassBooking:
+    cs = await _get_owned_session(session, org_id, class_id)
+    booking = await session.get(ClassBooking, booking_id)
+    if booking is None or booking.organization_id != org_id or booking.class_session_id != cs.id:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+    if booking.status != BookingStatus.BOOKED:
+        raise HTTPException(status_code=409, detail="Only booked members can be marked as a no-show.")
+    if (cs.ends_at or cs.starts_at) > now_utc():
+        raise HTTPException(status_code=409, detail="A class can be marked no-show after it has ended.")
+    booking.status = BookingStatus.NO_SHOW
+    session.add(booking)
+    await record_audit(session, action="class.no_show", organization_id=org_id,
                        actor_user_id=actor_id, entity_type="class_booking", entity_id=booking.id)
     return booking
 

@@ -18,6 +18,7 @@ from app.schemas.classes import (
     ClassSessionCreate,
     ClassSessionOut,
     MyBookingOut,
+    WaitlistCreate,
 )
 from app.schemas.common import Message
 from app.services import classes_service as classes
@@ -110,6 +111,34 @@ async def mark_attended(
 
     booking = await classes.mark_attended(
         session, org_id=ctx.org_id, class_id=class_id, booking_id=booking_id, actor_id=ctx.user_id
+    )
+    return BookingOut(id=booking.id, class_session_id=booking.class_session_id,
+                      member_id=booking.member_id, status=booking.status.value)
+
+
+@router.post("/{class_id}/bookings/{booking_id}/no-show", response_model=BookingOut)
+async def mark_no_show(
+    class_id: str,
+    booking_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.TAKE_ATTENDANCE)),
+    session: AsyncSession = Depends(get_session),
+):
+    booking = await classes.mark_no_show(
+        session, org_id=ctx.org_id, class_id=class_id, booking_id=booking_id, actor_id=ctx.user_id
+    )
+    return BookingOut(id=booking.id, class_session_id=booking.class_session_id,
+                      member_id=booking.member_id, status=booking.status.value)
+
+
+@router.post("/{class_id}/waitlist", response_model=BookingOut, status_code=201)
+async def add_to_waitlist(
+    class_id: str,
+    data: WaitlistCreate,
+    ctx: TenantContext = Depends(require_capability(Capability.CREATE_EDIT_PLANS)),
+    session: AsyncSession = Depends(get_session),
+):
+    booking = await classes.add_to_waitlist(
+        session, org_id=ctx.org_id, class_id=class_id, member_id=data.member_id, actor_id=ctx.user_id
     )
     return BookingOut(id=booking.id, class_session_id=booking.class_session_id,
                       member_id=booking.member_id, status=booking.status.value)

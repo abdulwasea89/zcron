@@ -203,6 +203,7 @@ class BookingStatus(str, Enum):
     ATTENDED = "attended"
     CANCELLED = "cancelled"
     NO_SHOW = "no_show"
+    WAITLISTED = "waitlisted"
 
 
 class AttendanceMethod(str, Enum):

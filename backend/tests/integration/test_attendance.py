@@ -367,6 +367,56 @@ async def test_class_attendance_unifies_into_visit(client):
     assert r.json()[0]["class_session_id"] == class_id
 
 
+@pytest.mark.asyncio
+async def test_class_waitlist_promotes_on_cancellation_and_staff_can_mark_no_show(client, monkeypatch):
+    from app.services import organizations_service
+    from app.integrations.stripe_connect import connect_stripe
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(connect_stripe, "live", False)
+    headers, _org_id, org_code, plan_id = await _provision_gym(client)
+    first = await _signup_member(client, org_code, plan_id, "waitlist1@att.com")
+    second = await _signup_member(client, org_code, plan_id, "waitlist2@att.com")
+    starts_at = (now_utc() + timedelta(days=1)).isoformat()
+    r = await client.post("/api/v1/classes", headers=headers, json={
+        "title": "Full class", "starts_at": starts_at, "capacity": 1,
+    })
+    assert r.status_code == 201, r.text
+    class_id = r.json()["id"]
+
+    first_headers = await _member_headers(client, org_code, first["email"])
+    booked = await client.post("/api/v1/classes/book", headers={
+        **first_headers, "Idempotency-Key": str(uuid.uuid4()),
+    }, json={"class_session_id": class_id})
+    assert booked.status_code == 200, booked.text
+    queued = await client.post(f"/api/v1/classes/{class_id}/waitlist", headers=headers,
+                               json={"member_id": second["member_id"]})
+    assert queued.status_code == 201, queued.text
+    assert queued.json()["status"] == "waitlisted"
+
+    cancelled = await client.delete(f"/api/v1/classes/bookings/{booked.json()['id']}", headers=first_headers)
+    assert cancelled.status_code == 200, cancelled.text
+    bookings = (await client.get(f"/api/v1/classes/{class_id}/bookings", headers=headers)).json()
+    assert next(row for row in bookings if row["member_id"] == second["member_id"])["status"] == "booked"
+
+    past = await client.post("/api/v1/classes", headers=headers, json={
+        "title": "Completed class", "starts_at": (now_utc() - timedelta(days=1)).isoformat(),
+        "capacity": 1,
+    })
+    assert past.status_code == 201, past.text
+    second_headers = await _member_headers(client, org_code, second["email"])
+    past_booking = await client.post("/api/v1/classes/book", headers={
+        **second_headers, "Idempotency-Key": str(uuid.uuid4()),
+    }, json={"class_session_id": past.json()["id"]})
+    assert past_booking.status_code == 200, past_booking.text
+    no_show = await client.post(
+        f"/api/v1/classes/{past.json()['id']}/bookings/{past_booking.json()['id']}/no-show",
+        headers=headers,
+    )
+    assert no_show.status_code == 200, no_show.text
+    assert no_show.json()["status"] == "no_show"
+
+
 # ------------------------------------------------------------- offline (#23)
 @pytest.mark.asyncio
 async def test_roster_lists_everyone(client):
