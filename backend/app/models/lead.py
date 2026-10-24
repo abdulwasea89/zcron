@@ -36,6 +36,8 @@ class Lead(UUIDModel, TimestampModel, table=True):
     profile_sources: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     email_followup_consent: bool = Field(default=False, nullable=False)
     email_followup_consent_at: datetime | None = None
+    sms_followup_consent: bool = Field(default=False, nullable=False)
+    sms_followup_consent_at: datetime | None = None
     lost_reason: str | None = Field(default=None, index=True)
 
 

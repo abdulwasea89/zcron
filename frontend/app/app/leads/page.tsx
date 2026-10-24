@@ -28,6 +28,8 @@ type Lead = {
   profile_sources: Record<string, string>;
   email_followup_consent: boolean;
   email_followup_consent_at: string | null;
+  sms_followup_consent: boolean;
+  sms_followup_consent_at: string | null;
   lost_reason: string | null;
   lead_score: number;
   lead_score_factors: string[];
@@ -69,7 +71,7 @@ const LOST_REASONS = [
 ] as const;
 
 function profileOf(lead: Lead) {
-  return { name: lead.name, email: lead.email ?? "", phone: lead.phone ?? "", source: lead.source, goal: lead.goal ?? "", budget: lead.budget ?? "", preferred_times: lead.preferred_times ?? "", preferences: lead.preferences ?? "", email_followup_consent: lead.email_followup_consent };
+  return { name: lead.name, email: lead.email ?? "", phone: lead.phone ?? "", source: lead.source, goal: lead.goal ?? "", budget: lead.budget ?? "", preferred_times: lead.preferred_times ?? "", preferences: lead.preferences ?? "", email_followup_consent: lead.email_followup_consent, sms_followup_consent: lead.sms_followup_consent };
 }
 
 export default function LeadsPage() {
@@ -89,7 +91,7 @@ export default function LeadsPage() {
   const [notice, setNotice] = useState("");
   const [showLostReason, setShowLostReason] = useState(false);
   const [lostReason, setLostReason] = useState("no_response");
-  const [profile, setProfile] = useState({ name: "", email: "", phone: "", source: "staff_entered", goal: "", budget: "", preferred_times: "", preferences: "", email_followup_consent: false });
+  const [profile, setProfile] = useState({ name: "", email: "", phone: "", source: "staff_entered", goal: "", budget: "", preferred_times: "", preferences: "", email_followup_consent: false, sms_followup_consent: false });
 
   const load = useCallback(async (preferredId?: string) => {
     try {
@@ -174,6 +176,18 @@ export default function LeadsPage() {
     finally { setBusy(false); }
   }
 
+  async function logMissedCall() {
+    if (!selected) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await api.post<{ sms_status: string }>(
+        `/leads/${selected.id}/missed-call`, {}, { "Idempotency-Key": crypto.randomUUID() },
+      );
+      setNotice(result.sms_status === "sent" ? "Callback task assigned and text sent." : result.sms_status === "failed" ? "Callback task assigned, but the text could not be sent." : "Callback task assigned. No text sent because SMS permission or a phone number is missing.");
+    } catch (e) { setError((e as ApiError).message); }
+    finally { setBusy(false); }
+  }
+
   if (!ready) return <div className="p-8"><Spinner /></div>;
 
   return (
@@ -194,6 +208,7 @@ export default function LeadsPage() {
           <select name="source" aria-label="Lead source" defaultValue="staff_entered" className="h-10 rounded-md border border-foreground/15 bg-background px-3 text-sm text-foreground">{SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         </div>
         <label className="mt-4 flex items-start gap-2 text-sm text-muted-foreground"><input name="email_followup_consent" type="checkbox" value="true" className="mt-1" /><span>Prospect gave permission to receive these follow-up emails. Leave unchecked otherwise.</span></label>
+        <label className="mt-2 flex items-start gap-2 text-sm text-muted-foreground"><input name="sms_followup_consent" type="checkbox" value="true" className="mt-1" /><span>Prospect gave permission to receive follow-up texts. Leave unchecked otherwise.</span></label>
         <div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Create lead"}</Button></div>
       </form>
         </SheetBody></SheetContent>
@@ -264,8 +279,9 @@ export default function LeadsPage() {
               onLeadChanged={() => load(selected.id)}
             />
             <LeadFollowUps key={`followups-${selected.id}`} leadId={selected.id} />
+            {selected.phone && <div className="mb-4 flex justify-end"><Button type="button" variant="secondary" disabled={busy} onClick={() => void logMissedCall()}>Log missed call &amp; assign callback</Button></div>}
             <form onSubmit={saveProfile} className="space-y-5"><fieldset disabled={busy} className="space-y-5">
-              <div><h3 className="text-sm font-semibold">Contact details</h3><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm">Name<Input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} required maxLength={160} /></label><label className="grid gap-1.5 text-sm">Email<Input type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Phone<Input type="tel" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Lead source<select value={profile.source} onChange={(e) => setProfile({ ...profile, source: e.target.value })} className="h-10 rounded-md border border-foreground/15 bg-background px-3 text-sm text-foreground">{SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div><label className="mt-3 flex items-start gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={profile.email_followup_consent} onChange={(event) => setProfile({ ...profile, email_followup_consent: event.target.checked })} className="mt-1" /><span>Prospect gave permission to receive day 0/1/3/7 follow-up emails. Uncheck to stop future emails. Changing the email address resets permission.</span></label>{selected.email_followup_consent_at && <p className="mt-1 text-xs text-muted-foreground">Permission recorded {new Date(selected.email_followup_consent_at).toLocaleString()}</p>}</div>
+              <div><h3 className="text-sm font-semibold">Contact details</h3><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm">Name<Input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} required maxLength={160} /></label><label className="grid gap-1.5 text-sm">Email<Input type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Phone<Input type="tel" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Lead source<select value={profile.source} onChange={(e) => setProfile({ ...profile, source: e.target.value })} className="h-10 rounded-md border border-foreground/15 bg-background px-3 text-sm text-foreground">{SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div><label className="mt-3 flex items-start gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={profile.email_followup_consent} onChange={(event) => setProfile({ ...profile, email_followup_consent: event.target.checked })} className="mt-1" /><span>Prospect gave permission to receive day 0/1/3/7 follow-up emails. Uncheck to stop future emails. Changing the email address resets permission.</span></label>{selected.email_followup_consent_at && <p className="mt-1 text-xs text-muted-foreground">Email permission recorded {new Date(selected.email_followup_consent_at).toLocaleString()}</p>}<label className="mt-3 flex items-start gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={profile.sms_followup_consent} onChange={(event) => setProfile({ ...profile, sms_followup_consent: event.target.checked })} className="mt-1" /><span>Prospect gave permission to receive follow-up texts. Uncheck to stop future texts; changing the phone number resets permission.</span></label>{selected.sms_followup_consent_at && <p className="mt-1 text-xs text-muted-foreground">SMS permission recorded {new Date(selected.sms_followup_consent_at).toLocaleString()}</p>}</div>
               <div><h3 className="text-sm font-semibold">What matters to them</h3><p className="mt-1 text-xs text-muted-foreground">Record only what the prospect shares or your team confirms. Each saved profile detail is marked staff-entered.</p><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm">Fitness goal<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.goal} maxLength={2000} placeholder="Build strength, improve mobility…" onChange={(e) => setProfile({ ...profile, goal: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Budget<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.budget} maxLength={200} placeholder="Comfortable monthly range" onChange={(e) => setProfile({ ...profile, budget: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Preferred times<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.preferred_times} maxLength={500} placeholder="Weekday evenings, Saturday mornings…" onChange={(e) => setProfile({ ...profile, preferred_times: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Preferences<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.preferences} maxLength={2000} placeholder="Class style, trainer preferences, other notes…" onChange={(e) => setProfile({ ...profile, preferences: e.target.value })} /></label></div></div>
               <div className="flex justify-end border-t border-border pt-4"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save profile"}</Button></div>
             </fieldset></form>

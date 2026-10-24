@@ -19,6 +19,7 @@ from app.schemas.leads import (
     LeadFollowUpOut,
     LeadFollowUpUpdate,
     LeadHistoryOut,
+    LeadMissedCallOut,
     LeadOut,
     LeadUpdate,
     TrialSlotOut,
@@ -26,6 +27,29 @@ from app.schemas.leads import (
 from app.services import idempotency_service, leads_service
 
 router = APIRouter()
+
+
+@router.post("/{lead_id}/missed-call", response_model=LeadMissedCallOut)
+async def log_missed_call(
+    lead_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    org: Organization = Depends(require_writable_org),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    claim = await idempotency_service.claim(
+        session, key=idempotency_key or "", endpoint=f"leads.missed_call:{lead_id}",
+        body={"lead_id": lead_id}, organization_id=ctx.org_id, user_id=ctx.user_id,
+    )
+    if not claim.claimed:
+        return LeadMissedCallOut.model_validate_json(claim.cached_response or "{}")
+    result = await leads_service.log_missed_call(
+        session, org_id=ctx.org_id, lead_id=lead_id, actor_id=ctx.user_id,
+        idempotency_key=idempotency_key or "",
+    )
+    output = LeadMissedCallOut(**result)
+    await idempotency_service.complete(session, claim.record, code=200, body=output.model_dump_json())
+    return output
 
 
 @router.get("/trial-slots", response_model=list[TrialSlotOut])

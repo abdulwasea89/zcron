@@ -53,7 +53,7 @@ async def run_due_lead_followups(session: AsyncSession, *, org_id: str) -> dict:
             session.add(followup)
             skipped += 1
             continue
-        if lead.email_followup_consent and lead.email:
+        if lead.email_followup_consent and lead.email and not (followup.day == 0 and followup.email_status == "sent"):
             subject, template = _EMAILS[followup.day]
             followup.email_attempted_at = now_utc()
             followup.email_attempts += 1

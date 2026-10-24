@@ -16,9 +16,11 @@ from app.models.lead import Lead, LeadBooking, LeadFollowUp
 from app.models.membership import OrganizationMember
 from app.models.audit_log import AuditLog
 from app.models.user import User
+from app.models.staff import Task
 from app.core.security import now_utc
 from app.schemas.leads import LeadCreate, LeadUpdate
 from app.services.audit_service import record_audit
+from app.integrations.email import send_email_safe
 
 _PROFILE_FIELDS = {"goal", "budget", "preferred_times", "preferences"}
 _STAGES = {"new", "contacted", "trial_booked", "visited", "joined", "lost"}
@@ -149,25 +151,45 @@ async def create_lead(session: AsyncSession, *, org_id: str, actor_id: str, data
     )
     consent = values.pop("email_followup_consent", False)
     consent_at = now_utc() if consent and values.get("email") else None
+    sms_consent = values.pop("sms_followup_consent", False)
+    sms_consent = bool(sms_consent and values.get("phone"))
+    sms_consent_at = now_utc() if sms_consent else None
     values["profile_sources"] = {key: "staff_entered" for key in _PROFILE_FIELDS if values[key]}
     lead = Lead(
         organization_id=org_id,
         created_by=actor_id,
         email_followup_consent=bool(consent and values.get("email")),
         email_followup_consent_at=consent_at,
+        sms_followup_consent=sms_consent,
+        sms_followup_consent_at=sms_consent_at,
         **values,
     )
     session.add(lead)
     await session.flush()
     await change_stage(session, lead=lead, stage="new", actor_id=actor_id, created=True)
     for day in (0, 1, 3, 7):
-        session.add(LeadFollowUp(
+        followup = LeadFollowUp(
             organization_id=org_id,
             lead_id=lead.id,
             day=day,
             due_at=lead.created_at + timedelta(days=day),
             email_status="pending" if lead.email_followup_consent else "skipped",
-        ))
+        )
+        session.add(followup)
+        if day == 0 and lead.email_followup_consent and lead.email:
+            from app.workers.lead_followups import _EMAILS
+
+            subject, template = _EMAILS[0]
+            followup.email_attempted_at = now_utc()
+            followup.email_attempts = 1
+            sent = await send_email_safe(
+                lead.email,
+                subject,
+                template.format(name=lead.name.split()[0]),
+            )
+            followup.email_status = "sent" if sent else "failed"
+            followup.email_sent_at = now_utc() if sent else None
+            session.add(followup)
     await record_audit(session, action="lead.created", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="lead", entity_id=lead.id, new_values={"name": lead.name, "source": lead.source})
     return lead
@@ -224,6 +246,8 @@ async def update_lead(session: AsyncSession, *, org_id: str, actor_id: str,
     changes = data.model_dump(exclude_unset=True, mode="json")
     if "email" in changes and changes["email"] != lead.email:
         changes["email_followup_consent"] = False
+    if "phone" in changes and changes["phone"] != lead.phone:
+        changes["sms_followup_consent"] = False
     if "stage" in changes and changes["stage"] not in _STAGES:
         raise HTTPException(status_code=422, detail="Invalid lead stage.")
     requested_stage = changes.pop("stage", None)
@@ -239,6 +263,10 @@ async def update_lead(session: AsyncSession, *, org_id: str, actor_id: str,
         opted_in = bool(changes["email_followup_consent"] and changes.get("email", lead.email))
         changes["email_followup_consent"] = opted_in
         changes["email_followup_consent_at"] = now_utc() if opted_in else None
+    if "sms_followup_consent" in changes:
+        opted_in = bool(changes["sms_followup_consent"] and changes.get("phone", lead.phone))
+        changes["sms_followup_consent"] = opted_in
+        changes["sms_followup_consent_at"] = now_utc() if opted_in else None
     await _reject_duplicate_contact(
         session,
         org_id=org_id,
@@ -285,6 +313,57 @@ async def update_lead(session: AsyncSession, *, org_id: str, actor_id: str,
                        entity_type="lead", entity_id=lead.id,
                        old_values=previous_values, new_values=changes)
     return lead
+
+
+async def log_missed_call(
+    session: AsyncSession, *, org_id: str, lead_id: str, actor_id: str, idempotency_key: str,
+) -> dict:
+    lead = await get_lead(session, org_id=org_id, lead_id=lead_id)
+    actor = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.organization_id == org_id,
+        OrganizationMember.user_id == actor_id,
+    ))).scalar_one_or_none()
+    task = Task(
+        organization_id=org_id,
+        title=f"Call {lead.name} back",
+        description="Follow up after a missed call.",
+        assignee_member_id=actor.id if actor else None,
+        created_by=actor_id,
+        deadline=now_utc() + timedelta(hours=1),
+    )
+    session.add(task)
+    await session.flush()
+
+    status = "skipped_no_phone"
+    conversation_id = None
+    if lead.phone and lead.sms_followup_consent:
+        from app.core.constants import Channel
+        from app.services import inbox_service
+
+        conv = await inbox_service.find_or_create(
+            session, org_id=org_id, channel=Channel.SMS,
+            handle=lead.phone, contact_name=lead.name,
+        )
+        conversation_id = conv.id
+        thread = await inbox_service.reply(
+            session, org_id=org_id, user_id=actor_id, conversation_id=conv.id,
+            body=f"Hi {lead.name.split()[0]}, sorry we missed your call. Our team will get back to you shortly. Reply STOP to opt out.",
+            idempotency_key=f"missed-call:{idempotency_key}",
+        )
+        status = next(
+            (message["delivery_status"] for message in reversed(thread["messages"])
+             if message["direction"] == "outbound"),
+            "failed",
+        )
+    elif lead.phone:
+        status = "skipped_no_consent"
+
+    await record_audit(
+        session, action="lead.missed_call_logged", organization_id=org_id,
+        actor_user_id=actor_id, entity_type="lead", entity_id=lead.id,
+        metadata={"task_id": task.id, "sms_status": status},
+    )
+    return {"task_id": task.id, "conversation_id": conversation_id, "sms_status": status}
 
 
 async def list_trial_slots(session: AsyncSession, *, org_id: str) -> list[dict]:

@@ -38,6 +38,7 @@ class LeadProfileFields(BaseModel):
     preferred_times: str | None = Field(default=None, max_length=500)
     preferences: str | None = Field(default=None, max_length=2000)
     email_followup_consent: bool | None = None
+    sms_followup_consent: bool | None = None
 
     @field_validator("name")
     @classmethod
@@ -68,6 +69,7 @@ class LeadCreate(LeadProfileFields):
     name: str = Field(min_length=1, max_length=160)
     source: LeadSource = LeadSource.STAFF_ENTERED
     email_followup_consent: bool = False
+    sms_followup_consent: bool = False
 
 
 class LeadUpdate(LeadProfileFields):
@@ -103,6 +105,8 @@ class LeadOut(BaseModel):
     profile_sources: dict[str, str]
     email_followup_consent: bool
     email_followup_consent_at: datetime | None
+    sms_followup_consent: bool
+    sms_followup_consent_at: datetime | None
     lost_reason: str | None
     created_at: datetime
     updated_at: datetime
@@ -168,6 +172,12 @@ class LeadFollowUpUpdate(BaseModel):
     @classmethod
     def clean_note(cls, value: str | None) -> str | None:
         return _clean_optional_text(value)
+
+
+class LeadMissedCallOut(BaseModel):
+    task_id: str
+    conversation_id: str | None
+    sms_status: Literal["sent", "failed", "skipped_no_consent", "skipped_no_phone"]
 
 
 def _naive_utc(value: datetime | None) -> datetime | None:

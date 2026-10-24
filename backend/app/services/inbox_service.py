@@ -171,6 +171,27 @@ async def record_inbound(
     await detect_freeze_request_from_message(
         session, org_id=org_id, member_id=conv.member_id, body=body,
     )
+    if ch in {Channel.SMS, Channel.WHATSAPP} and body.strip().casefold() in {
+        "stop", "stopall", "unsubscribe", "cancel", "end", "quit",
+    }:
+        from app.models.lead import Lead
+        import re
+
+        digits = re.sub(r"\D", "", handle.removeprefix("whatsapp:"))
+        leads = (await session.execute(select(Lead).where(
+            Lead.organization_id == org_id,
+            Lead.phone.in_({digits, f"+{digits}"}),
+            Lead.sms_followup_consent.is_(True),
+        ).with_for_update())).scalars()
+        for lead in leads:
+            lead.sms_followup_consent = False
+            lead.sms_followup_consent_at = None
+            session.add(lead)
+            await record_audit(
+                session, action="lead.sms_consent_revoked", organization_id=org_id,
+                actor_user_id=None, entity_type="lead", entity_id=lead.id,
+                metadata={"source": "inbound_stop", "channel": ch.value},
+            )
     await record_audit(
         session, action="inbox.received", organization_id=org_id,
         entity_type="inbox_conversation", entity_id=conv.id,
