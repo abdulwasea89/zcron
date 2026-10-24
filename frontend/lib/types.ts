@@ -199,6 +199,16 @@ export interface ClientAssignment {
   assigned_at: string;
 }
 
+export interface TrainerSessionLog {
+  id: string;
+  client_member_id: string;
+  client_name: string;
+  performed_at: string;
+  duration_minutes: number;
+  focus: string;
+  notes: string;
+}
+
 export interface CashMemberItem {
   member_id: string;
   full_name: string | null;

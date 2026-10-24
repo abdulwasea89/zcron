@@ -78,6 +78,32 @@ class ShiftScheduleOut(BaseModel):
     note: str | None
 
 
+class TrainerSessionCreate(BaseModel):
+    client_member_id: str
+    performed_at: datetime
+    duration_minutes: int = Field(ge=1, le=300)
+    focus: str = Field(min_length=2, max_length=160)
+    notes: str = Field(default="", max_length=4000)
+
+    @field_validator("focus")
+    @classmethod
+    def nonblank_focus(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Workout focus must contain at least two characters.")
+        return value
+
+
+class TrainerSessionOut(BaseModel):
+    id: str
+    client_member_id: str
+    client_name: str
+    performed_at: datetime
+    duration_minutes: int
+    focus: str
+    notes: str
+
+
 class CompensationUpdate(BaseModel):
     fixed_monthly_salary: Decimal | None = Field(default=None, max_digits=14, decimal_places=2, ge=0)
     hourly_rate: Decimal | None = Field(default=None, max_digits=14, decimal_places=2, ge=0)

@@ -248,6 +248,7 @@ export default async function DashboardPage() {
       ? [
           { label: "My tasks", href: "/app/tasks", icon: ICONS.approvals },
           { label: "My clients", href: "/app/staff#my-clients", icon: ICONS.members },
+          { label: "Log a training session", href: "/app/training", icon: ICONS.checkin },
           { label: "My classes", href: "/app/classes", icon: ICONS.approvals },
           { label: "My pay", href: "/app/my-pay", icon: ICONS.revenue },
         ]

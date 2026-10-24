@@ -39,6 +39,7 @@ from app.models.referral import Referral, ReferralCode, ReferralProgram, Referra
 from app.models.session import AuthSession
 from app.models.signup_attempt import SignupAttempt
 from app.models.staff import ScheduledShift, Shift, StaffInvite, Task
+from app.models.trainer_session import TrainerSessionLog
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.models.verification import VerificationToken
@@ -99,6 +100,7 @@ __all__ = [
     "StaffInvite",
     "Subscription",
     "Task",
+    "TrainerSessionLog",
     "User",
     "VerificationToken",
     "Visitor",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -13,6 +13,7 @@ from app.core.constants import Role
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
 from app.models.membership import OrganizationMember
+from app.models.user import User
 from app.models.base import utcnow
 from app.models.staff import ScheduledShift
 from app.schemas.auth import LoginResponse
@@ -30,11 +31,52 @@ from app.schemas.staff import (
     TaskCreateIn,
     TaskOut,
     TaskUpdateIn,
+    TrainerSessionCreate,
+    TrainerSessionOut,
 )
 from app.services import staff_service as staff
+from app.services import trainer_sessions_service as trainer_sessions
 from app.services.audit_service import record_audit
 
 router = APIRouter()
+
+
+@router.get("/trainer-sessions", response_model=list[TrainerSessionOut])
+async def list_trainer_sessions(
+    client_member_id: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_ASSIGNED_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    trainer_id = await _actor_member_id(session, ctx) if ctx.role == Role.TRAINER else None
+    return await trainer_sessions.list_logs(
+        session, org_id=ctx.org_id, trainer_member_id=trainer_id,
+        client_member_id=client_member_id, limit=limit,
+    )
+
+
+@router.post("/trainer-sessions", response_model=TrainerSessionOut, status_code=201,
+             dependencies=[Depends(require_writable_org)])
+async def create_trainer_session(
+    data: TrainerSessionCreate,
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_ASSIGNED_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    if ctx.role != Role.TRAINER:
+        raise HTTPException(status_code=403, detail="Only trainers can log their own sessions.")
+    trainer_id = await _actor_member_id(session, ctx)
+    log = await trainer_sessions.create_log(
+        session, org_id=ctx.org_id, trainer_member_id=trainer_id,
+        actor_id=ctx.user_id, data=data,
+    )
+    client = await session.get(OrganizationMember, log.client_member_id)
+    user = await session.get(User, client.user_id)
+    return TrainerSessionOut(
+        id=log.id, client_member_id=client.id,
+        client_name=client.display_name or user.full_name or user.email,
+        performed_at=log.performed_at, duration_minutes=log.duration_minutes,
+        focus=log.focus, notes=log.notes,
+    )
 
 
 @router.get("/schedule", response_model=list[ShiftScheduleOut])
