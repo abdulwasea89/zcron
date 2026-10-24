@@ -413,9 +413,10 @@ export default async function DashboardPage() {
         <aside className="min-w-0 space-y-6" aria-label="Actions and setup">
           {(tasks !== null || attention.length > 0 || canManageWorkspace) && <section aria-label="Today’s priorities and workspace setup">
             <div className="overflow-hidden border border-border bg-background">
-              {tasks !== null && (
-                <DashboardTaskList tasks={priorityTasks} />
-              )}
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <h2 className="text-[13px] font-semibold">Work queue</h2>
+                <span className="text-[11px] tabular-nums text-muted-foreground">{attention.length + openTasks.length} open</span>
+              </div>
               {attention.length > 0 && (
                 <ul className="m-0 list-none p-0">
                   {attention.map((item) => (
@@ -427,6 +428,7 @@ export default async function DashboardPage() {
                   ))}
                 </ul>
               )}
+              {tasks !== null && <DashboardTaskList tasks={priorityTasks} />}
               {canManageWorkspace && <div className="px-4 py-4">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <h3 className="text-[13px] font-semibold">Workspace setup</h3>

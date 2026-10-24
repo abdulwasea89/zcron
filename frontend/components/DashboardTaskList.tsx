@@ -30,7 +30,7 @@ export function DashboardTaskList({
   return (
     <div className="border-b border-border px-4 py-4">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-[13px] font-semibold">Today’s priorities</h3>
+        <h3 className="text-[13px] font-semibold">Open team tasks</h3>
         <Link href="/app/tasks" className="text-[11px] font-medium text-brand no-underline hover:underline">View tasks ↗</Link>
       </div>
       {openTasks.length ? (
