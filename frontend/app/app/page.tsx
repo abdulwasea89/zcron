@@ -233,9 +233,9 @@ export default async function DashboardPage() {
       : "All set — your gym is fully configured.";
 
   // ── Needs attention ─────────────────────────────────────────────────────
-  const attention: { label: string; value: string; href: string; tone: Tone; phone?: string | null }[] = [];
+  const attention: { label: string; value: string; href: string; tone: Tone; phone?: string | null; priority: number }[] = [];
   if (metrics?.pending_receipts) {
-    attention.push({ label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning" });
+    attention.push({ label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning", priority: 3 });
   }
   if (retentionSummary && retentionSummary.high + retentionSummary.medium > 0) {
     if (retentionRisks?.length) {
@@ -246,6 +246,7 @@ export default async function DashboardPage() {
           href: `/app/members?member=${encodeURIComponent(member.member_id)}`,
           tone: member.band === "high" ? "danger" : "warning",
           phone: member.phone,
+          priority: member.band === "high" ? 0 : 1,
         });
       }
       attention.push({
@@ -253,6 +254,7 @@ export default async function DashboardPage() {
         value: money(retentionSummary.revenue_at_risk, currency),
         href: "/app/retention",
         tone: "danger",
+        priority: 8,
       });
     } else {
       attention.push({
@@ -260,14 +262,15 @@ export default async function DashboardPage() {
         value: `${retentionSummary.high + retentionSummary.medium} members · ${money(retentionSummary.revenue_at_risk, currency)} at risk`,
         href: "/app/retention",
         tone: "danger",
+        priority: 1,
       });
     }
   }
   if (metrics?.pending_approvals) {
-    attention.push({ label: "Resolve member approvals", value: `${metrics.pending_approvals} waiting`, href: "/app/approvals", tone: "warning" });
+    attention.push({ label: "Resolve member approvals", value: `${metrics.pending_approvals} waiting`, href: "/app/approvals", tone: "warning", priority: 4 });
   }
   if (isOffice && (metrics?.outstanding_invoices ?? 0) > 0) {
-    attention.push({ label: "Follow up on invoices", value: money(metrics!.outstanding_invoices ?? 0, currency), href: "/app/invoices", tone: "danger" });
+    attention.push({ label: "Follow up on invoices", value: money(metrics!.outstanding_invoices ?? 0, currency), href: "/app/invoices", tone: "danger", priority: 3 });
   }
 
   // ── Quick actions ───────────────────────────────────────────────────────
@@ -455,19 +458,7 @@ export default async function DashboardPage() {
                 </div>
                 <span className="text-[11px] tabular-nums text-muted-foreground">{attention.length + openTasks.length} open</span>
               </div>
-              {tasks !== null && <DashboardTaskList tasks={priorityTasks} />}
-              {attention.length > 0 && (
-                <ul className="m-0 list-none p-0">
-                  {attention.map((item) => (
-                    <li key={item.label} className="border-b border-border">
-                      <div className="flex min-h-12 items-center justify-between gap-3 px-4 text-[12px] font-medium">
-                        <Link href={item.href} className="min-w-0 truncate text-foreground no-underline transition-colors hover:text-brand">{item.label}</Link>
-                        <span className="flex shrink-0 items-center gap-2"><Badge tone={item.tone}>{item.value}</Badge>{item.phone && <a href={`tel:${item.phone}`} aria-label={`Call ${item.label.replace(/^Follow up: /, "")}`} className="text-brand underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">Call</a>}<Link href={item.href} className="text-brand no-underline hover:underline">Review →</Link></span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <DashboardTaskList tasks={priorityTasks} attention={attention} />
               {canManageWorkspace && <div className="px-4 py-4">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <h3 className="text-[13px] font-semibold">Workspace setup</h3>

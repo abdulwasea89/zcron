@@ -8,8 +8,10 @@ import type { TaskOut } from "@/lib/types";
 
 export function DashboardTaskList({
   tasks,
+  attention,
 }: {
   tasks: (TaskOut & { dueLabel: string; overdue: boolean; dueToday: boolean })[];
+  attention: { label: string; value: string; href: string; tone: "neutral" | "success" | "danger" | "warning" | "info"; phone?: string | null; priority: number }[];
 }) {
   const [openTasks, setOpenTasks] = useState(tasks);
   const [completing, setCompleting] = useState<string | null>(null);
@@ -27,40 +29,55 @@ export function DashboardTaskList({
     }
   }
 
+  const items = [
+    ...openTasks.map((task) => ({
+      id: `task:${task.id}`,
+      label: task.title,
+      value: task.dueLabel,
+      href: "/app/tasks",
+      tone: task.overdue ? "danger" as const : task.dueToday ? "warning" as const : "neutral" as const,
+      priority: task.overdue ? 0 : task.dueToday ? 2 : task.deadline ? 5 : 7,
+      phone: null,
+      task,
+    })),
+    ...attention.map((item, index) => ({ ...item, id: `attention:${index}:${item.label}`, task: null })),
+  ].sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label)).slice(0, 6);
+
   return (
-    <div className="border-b border-border px-4 py-4">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-[13px] font-semibold">Open team tasks</h3>
-        <Link href="/app/tasks" className="text-[11px] font-medium text-brand no-underline hover:underline">View tasks ↗</Link>
-      </div>
-      {openTasks.length ? (
+    <div className="px-4 py-2">
+      {items.length ? (
         <ul className="m-0 list-none divide-y divide-border p-0">
-          {openTasks.slice(0, 4).map((task) => (
-            <li key={task.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
-              <span className="min-w-0 truncate font-medium">{task.title}</span>
+          {items.map((item) => (
+            <li key={item.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
+              <Link href={item.href} className="min-w-0 truncate font-medium text-foreground no-underline hover:text-brand">{item.label}</Link>
               <span className="flex shrink-0 items-center gap-2">
-                <span className={task.overdue ? "text-danger" : task.dueToday ? "text-warning" : "text-muted-foreground"}>
-                  {task.dueLabel}
+                <span className={item.tone === "danger" ? "text-danger" : item.tone === "warning" ? "text-warning" : "text-muted-foreground"}>
+                  {item.value}
                 </span>
-                <button
+                {item.phone && <a href={`tel:${item.phone}`} className="text-brand no-underline hover:underline">Call</a>}
+                {item.task && <button
                   type="button"
-                  aria-label={`Mark ${task.title} complete`}
+                  aria-label={`Mark ${item.task.title} complete`}
                   title="Mark complete"
                   disabled={completing !== null}
-                  onClick={() => void complete(task)}
+                  onClick={() => void complete(item.task!)}
                   className="inline-flex h-7 w-7 items-center justify-center border border-border text-muted-foreground transition-colors hover:border-success hover:text-success disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="m5 12 4 4L19 6" />
                   </svg>
-                </button>
+                </button>}
               </span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-[12px] text-muted-foreground">You’re clear. No open tasks.</p>
+        <p className="py-2 text-[12px] text-muted-foreground">You’re clear. Nothing needs attention today.</p>
       )}
+      <div className="flex gap-3 border-t border-border pt-2 text-[11px]">
+        <Link href="/app/tasks" className="font-medium text-brand no-underline hover:underline">All tasks ↗</Link>
+        {attention.length > 0 && <Link href="/app/approvals" className="font-medium text-brand no-underline hover:underline">Review queue ↗</Link>}
+      </div>
     </div>
   );
 }
