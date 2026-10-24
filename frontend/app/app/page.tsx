@@ -34,6 +34,7 @@ async function safe<T>(p: Promise<T>): Promise<T | null> {
 type Tone = "neutral" | "success" | "danger" | "warning" | "info";
 type RetentionSummary = { scored: number; high: number; medium: number; revenue_at_risk: number };
 type RetentionRiskAction = { member_id: string; name: string | null; phone: string | null; band: string };
+type LeadResponseSummary = { uncontacted: number };
 
 const PRIMARY_ACTION_CLASS = "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-xs font-medium text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
@@ -159,9 +160,12 @@ export default async function DashboardPage() {
   const industry = org?.industry ?? "gym";
   const isOffice = industry === "office";
   const isAcademy = industry === "academy";
-  const retentionSummary = canManageWorkspace && industry === "gym"
-    ? await safe(backend<RetentionSummary>("/retention/summary"))
-    : null;
+  const [retentionSummary, leadResponseSummary] = canManageWorkspace && industry === "gym"
+    ? await Promise.all([
+        safe(backend<RetentionSummary>("/retention/summary")),
+        safe(backend<LeadResponseSummary>("/leads/speed-report?days=30")),
+      ])
+    : [null, null];
   const retentionRisks = retentionSummary && retentionSummary.high + retentionSummary.medium > 0
     ? await safe(backend<RetentionRiskAction[]>("/retention/at-risk?min_score=40&limit=3"))
     : null;
@@ -236,6 +240,9 @@ export default async function DashboardPage() {
   const attention: { label: string; value: string; href: string; tone: Tone; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[] = [];
   if (metrics?.pending_receipts) {
     attention.push({ label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning", priority: 3 });
+  }
+  if (leadResponseSummary?.uncontacted) {
+    attention.push({ label: "Contact untouched leads", value: `${leadResponseSummary.uncontacted} · last 30 days`, href: "/app/leads", tone: "warning", priority: 0 });
   }
   if (retentionSummary && retentionSummary.high + retentionSummary.medium > 0) {
     if (retentionRisks?.length) {
@@ -456,7 +463,7 @@ export default async function DashboardPage() {
               <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
                 <div>
                   <h2 className="text-[13px] font-semibold">Priority queue</h2>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">Deadlines, member risk, and reviews that need a decision.</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">Untouched leads, deadlines, member risk, and reviews that need a decision.</p>
                 </div>
                 <span className="text-[11px] tabular-nums text-muted-foreground">{attention.length + openTasks.length} open</span>
               </div>
