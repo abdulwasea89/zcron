@@ -26,11 +26,13 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.constants import MemberStatus, SubscriptionStatus
+from app.core.constants import MemberStatus, PaymentStatus, SubscriptionStatus
 from app.core.security import now_utc
 from app.models.attendance import Attendance
+from app.models.audit_log import AuditLog
 from app.models.membership import OrganizationMember
 from app.models.onboarding import OnboardingJourney
+from app.models.payment import Payment
 from app.models.subscription import Subscription
 from app.models.user import User
 
@@ -407,3 +409,27 @@ async def retention_summary(session: AsyncSession, *, org_id: str) -> dict:
         "silent": sum(1 for r in drops if r.trend.severity == "silent"),
         "revenue_at_risk": round(revenue_at_risk, 2),
     }
+
+
+async def recovered_renewals(session: AsyncSession, *, org_id: str, limit: int = 10) -> list[dict]:
+    rows = (await session.execute(
+        select(AuditLog.created_at, Payment, OrganizationMember.display_name)
+        .join(Payment, Payment.id == AuditLog.entity_id)
+        .outerjoin(OrganizationMember, OrganizationMember.id == Payment.member_id)
+        .where(
+            AuditLog.organization_id == org_id,
+            AuditLog.action == "member.renewal_recovered",
+            AuditLog.entity_type == "payment",
+            Payment.organization_id == org_id,
+            Payment.status.in_([PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED]),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(100)
+    )).all()
+    return [
+        {"payment_id": payment.id, "member_id": payment.member_id,
+         "member_name": member_name or "Member", "amount": round(payment.amount - payment.refunded_amount, 2),
+         "currency": payment.currency, "recovered_at": recovered_at}
+        for recovered_at, payment, member_name in rows
+        if payment.amount > payment.refunded_amount
+    ][:limit]

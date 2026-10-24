@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_session, require_capability
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
-from app.schemas.retention import MemberRiskOut, RetentionSummaryOut
+from app.schemas.retention import MemberRiskOut, RenewalRecoveryOut, RetentionSummaryOut
 from app.services import retention_service as retention
 
 router = APIRouter()
@@ -26,6 +26,15 @@ async def summary(
     session: AsyncSession = Depends(get_session),
 ):
     return RetentionSummaryOut(**await retention.retention_summary(session, org_id=ctx.org_id))
+
+
+@router.get("/wins", response_model=list[RenewalRecoveryOut])
+async def wins(
+    limit: int = Query(default=10, ge=1, le=100),
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_RETENTION)),
+    session: AsyncSession = Depends(get_session),
+):
+    return await retention.recovered_renewals(session, org_id=ctx.org_id, limit=limit)
 
 
 @router.get("/at-risk", response_model=list[MemberRiskOut])

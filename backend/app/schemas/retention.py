@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -44,3 +46,12 @@ class RetentionSummaryOut(BaseModel):
     attendance_drops: int
     silent: int
     revenue_at_risk: float
+
+
+class RenewalRecoveryOut(BaseModel):
+    payment_id: str
+    member_id: str | None
+    member_name: str
+    amount: float
+    currency: str
+    recovered_at: datetime

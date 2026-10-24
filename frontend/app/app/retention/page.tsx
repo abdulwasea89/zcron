@@ -39,6 +39,14 @@ type RetentionSummary = {
   silent: number;
   revenue_at_risk: number;
 };
+type RenewalRecovery = {
+  payment_id: string;
+  member_id: string | null;
+  member_name: string;
+  amount: number;
+  currency: string;
+  recovered_at: string;
+};
 type SeverityFilter = "all" | Exclude<Severity, null>;
 type RiskBandFilter = "all" | "high" | "medium" | "low";
 
@@ -98,6 +106,7 @@ export default function AttendanceRetentionPage() {
   const [rows, setRows] = useState<MemberRisk[]>([]);
   const [riskRows, setRiskRows] = useState<MemberRisk[]>([]);
   const [summary, setSummary] = useState<RetentionSummary | null>(null);
+  const [wins, setWins] = useState<RenewalRecovery[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [view, setView] = useState<"drops" | "risk" | "ladder">("drops");
@@ -106,12 +115,13 @@ export default function AttendanceRetentionPage() {
   const [query, setQuery] = useState("");
 
   const fetchData = useCallback(async () => {
-    const [drops, risks, totals] = await Promise.all([
+    const [drops, risks, totals, recoveries] = await Promise.all([
       api.get<MemberRisk[]>("/retention/drops?limit=500"),
       api.get<MemberRisk[]>("/retention/at-risk?min_score=0&limit=500"),
       api.get<RetentionSummary>("/retention/summary"),
+      api.get<RenewalRecovery[]>("/retention/wins?limit=5"),
     ]);
-    return { drops, risks, totals };
+    return { drops, risks, totals, wins: recoveries };
   }, []);
 
   const refresh = useCallback(async () => {
@@ -122,6 +132,7 @@ export default function AttendanceRetentionPage() {
       setRows(result.drops);
       setRiskRows(result.risks);
       setSummary(result.totals);
+      setWins(result.wins);
     }
     catch (cause) { setError(safeError(cause)); }
     finally { setLoading(false); }
@@ -134,6 +145,7 @@ export default function AttendanceRetentionPage() {
         setRows(result.drops);
         setRiskRows(result.risks);
         setSummary(result.totals);
+        setWins(result.wins);
       }
     })
       .catch((cause: unknown) => { if (!cancelled) setError(safeError(cause)); })
@@ -166,6 +178,17 @@ export default function AttendanceRetentionPage() {
   return (
     <>
       <PageHeader title="Member retention" subtitle="Understand who may need support and what signals are driving the risk." />
+
+      <section aria-label="Recent membership recoveries" className="mb-6 border border-[var(--border)] bg-card">
+        <div className="flex items-baseline justify-between gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
+          <div><h2 className="text-sm font-semibold text-foreground">Recent recoveries</h2><p className="mt-0.5 text-xs text-muted-foreground">Successful renewal payments that restored a past-due membership.</p></div>
+          <span className="text-xs text-muted-foreground">Last 5</span>
+        </div>
+        {wins.length ? <ul className="divide-y divide-[var(--border)]">{wins.map((win) => <li key={win.payment_id} className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5">
+          <div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{win.member_name}</p><p className="text-xs text-muted-foreground">{new Date(win.recovered_at).toLocaleDateString()}</p></div>
+          <p className="shrink-0 text-sm font-semibold tabular-nums text-success">{new Intl.NumberFormat(undefined, { style: "currency", currency: win.currency }).format(win.amount)}</p>
+        </li>)}</ul> : <p className="px-4 py-4 text-sm text-muted-foreground sm:px-5">No recovered renewal payments yet.</p>}
+      </section>
 
       <div className="mb-5 flex gap-2 border-b border-[var(--border)]" role="tablist" aria-label="Retention views">
         <button type="button" role="tab" aria-selected={view === "drops"} onClick={() => setView("drops")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "drops" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Attendance trends <span className="ml-1 text-xs tabular-nums">{rows.length}</span></button>

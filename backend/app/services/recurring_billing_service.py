@@ -150,7 +150,8 @@ def _mark_grace(sub: Subscription, member: OrganizationMember, *, attempt: int) 
 async def complete_recurring_renewal(session: AsyncSession, payment: Payment) -> bool:
     """Extend one membership term once, only after Stripe confirms settlement."""
     sub = await session.get(Subscription, payment.subscription_id) if payment.subscription_id else None
-    if sub is None or not (payment.note or "").startswith("member_renewal:"):
+    if (sub is None or payment.status != PaymentStatus.SUCCEEDED
+            or not (payment.note or "").startswith("member_renewal:")):
         return False
     sub = (await session.execute(
         select(Subscription).where(Subscription.id == sub.id).with_for_update()
@@ -160,6 +161,7 @@ async def complete_recurring_renewal(session: AsyncSession, payment: Payment) ->
     cycle_key = sub.current_period_end.isoformat() if sub.current_period_end else ""
     if not payment.note.startswith(f"member_renewal:{sub.id}:{cycle_key}:"):
         return True
+    recovered = sub.status == SubscriptionStatus.GRACE
     org = await session.get(Organization, sub.organization_id)
     member = await session.get(OrganizationMember, sub.member_id)
     plan = await session.get(MembershipPlan, sub.plan_id)
@@ -181,6 +183,13 @@ async def complete_recurring_renewal(session: AsyncSession, payment: Payment) ->
     session.add(member)
     from app.services.family_service import sync_family_status
     await sync_family_status(session, org.id, member.id, MemberStatus.ACTIVE)
+    if recovered:
+        from app.services.audit_service import record_audit
+
+        await record_audit(
+            session, action="member.renewal_recovered", organization_id=org.id,
+            entity_type="payment", entity_id=payment.id,
+        )
     return True
 
 

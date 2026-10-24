@@ -8,13 +8,18 @@ from datetime import timedelta
 import pytest
 from sqlmodel import select
 
-from app.core.constants import AttendanceMethod, AttendanceSource, MemberStatus, SubscriptionStatus
+from app.core.constants import (
+    AttendanceMethod, AttendanceSource, MemberStatus, PaymentKind, PaymentMethod,
+    PaymentStatus, SubscriptionStatus,
+)
 from app.core.security import now_utc
 from app.models.attendance import Attendance
 from app.models.membership import OrganizationMember
+from app.models.payment import Payment
 from app.models.staff import Task
 from app.models.subscription import Subscription
 from app.services import retention_service as retention
+from app.services.recurring_billing_service import complete_recurring_renewal
 from app.workers.retention import run_retention_sweep
 from tests.helpers import OWNER_PROFILE, latest_code_for
 
@@ -155,6 +160,44 @@ async def test_retention_summary_counts_revenue_at_risk(client, db):
     summary = await retention.retention_summary(db, org_id=org_id)
     assert summary["high"] >= 1
     assert summary["revenue_at_risk"] == 149.0
+
+
+@pytest.mark.asyncio
+async def test_recovered_renewal_appears_in_tenant_scoped_wins_feed(client, db, monkeypatch):
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+    headers, org_id, org_code, plan_id = await _provision_gym(client)
+    member_id = await _signup_member(client, org_code, plan_id, "recovered@ret.com")
+    member = await db.get(OrganizationMember, member_id)
+    sub = (await db.execute(
+        select(Subscription).where(Subscription.member_id == member_id)
+    )).scalar_one()
+    sub.status = SubscriptionStatus.GRACE
+    member.member_status = MemberStatus.GRACE
+    payment = Payment(
+        organization_id=org_id, member_id=member_id, subscription_id=sub.id, plan_id=plan_id,
+        kind=PaymentKind.MEMBER_FEE, method=PaymentMethod.CARD, status=PaymentStatus.SUCCEEDED,
+        amount=149.0, currency="USD",
+        note=f"member_renewal:{sub.id}:{sub.current_period_end.isoformat()}:2:123",
+    )
+    db.add_all([sub, member, payment])
+    await db.flush()
+
+    assert await complete_recurring_renewal(db, payment)
+    await db.commit()
+
+    response = await client.get("/api/v1/retention/wins", headers=headers)
+    assert response.status_code == 200, response.text
+    assert len(response.json()) == 1
+    assert response.json()[0]["payment_id"] == payment.id
+    assert response.json()[0]["member_id"] == member_id
+    assert response.json()[0]["amount"] == 149.0
+
+    other_headers, *_ = await _provision_gym(client, owner_email="other-wins@ret.com")
+    response = await client.get("/api/v1/retention/wins", headers=other_headers)
+    assert response.status_code == 200 and response.json() == []
 
 
 # --------------------------------------------------------------------- worker
