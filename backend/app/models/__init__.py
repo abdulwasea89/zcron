@@ -14,6 +14,7 @@ from app.models.company import Company
 from app.models.company_contract import CompanyContract
 from app.models.conversation import Conversation
 from app.models.conversation_message import ConversationMessage
+from app.models.data_subject_request import DataSubjectRequest
 from app.models.freeze_request import MembershipFreezeRequest
 from app.models.membership_change_request import MembershipChangeRequest
 from app.models.gamification import GymChallenge, MemberChallengeProgress, MemberStreak
@@ -59,6 +60,7 @@ __all__ = [
     "CompanyContract",
     "Conversation",
     "ConversationMessage",
+    "DataSubjectRequest",
     "MembershipFreezeRequest",
     "MembershipChangeRequest",
     "MembershipReminder",

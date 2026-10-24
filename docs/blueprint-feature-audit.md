@@ -169,8 +169,8 @@ By priority (Section 1 only):
 | # | Feature | Pri | Status | Evidence / gap | Surface |
 |---|---|---|---|---|---|
 | 67 | Waivers, health forms (PAR-Q), contracts with e-signature | P1 | ❌ | 0 matches for `waiver` / `parq`. All `esignature` hits are `Stripe-Signature` webhook headers | none |
-| 68 | Consent management per channel and purpose (opt-in, opt-out) | P0 | ❌ | 0 matches for `opt_in\|opt_out\|consent\|unsubscribe`. The `SUPPRESSED` delivery status is **not** consent — `campaign_service.py:276` derives `wants_email` from the campaign's channel; the only suppression is `email_verified == False` | none |
-| 69 | Data-subject requests: access, export, correction, erasure | P0 | ❌ | 0 matches for `gdpr\|dsar\|erasure` | none |
+| 68 | Consent management per channel and purpose (opt-in, opt-out) | P0 | ⚠️ | Lead email/SMS follow-up now stores separate explicit consent and timestamps; signed STOP keywords revoke SMS consent. Member and campaign preferences are still not modeled per channel/purpose, and email unsubscribe is not implemented | backend + web |
+| 69 | Data-subject requests: access, export, correction, erasure | P0 | ⚠️ | Owner/manager Settings queue records and audits requests; provides workspace-scoped member exports; correction uses existing profile editing; erasure redacts workspace profile, revokes access, and stops renewals before staff reviews linked records and retention. Shared identities are blocked for manual review; payment/attendance records and external processor/backups are retained | backend + web |
 | 70 | Auto-renewal disclosures, cooling-off and online cancellation | P0 | ❌ | 0 matches for `cooling_off\|auto_renewal` | none |
 | 71 | Role-based access to sensitive data | P0 | ⚠️ | RBAC roles + capabilities enforced in deps. Missing: field-level sensitivity | backend |
 | 72 | Evidence Vault (section 8) | P0 | ❌ | Audit log exists but is editable — no hash chain (`prev_hash: 0`), no soft delete (`deleted_at: 0`), no packs, no WORM, no residency. See rows 109–118 | none |

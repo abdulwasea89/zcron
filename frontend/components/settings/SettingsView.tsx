@@ -7,6 +7,7 @@ import { AccountFields, emptyAccountFields, type AccountFieldsValue } from "@/ap
 import AuditPage from "@/app/app/audit/page";
 import BillingPage from "@/app/app/billing/page";
 import { MfaCard } from "@/app/app/account/MfaCard";
+import { DataRequestsSection } from "@/components/settings/DataRequestsSection";
 import { LiveIndicator } from "@/components/Realtime";
 import { Alert, Badge, Button, Input, Select, Spinner } from "@/components/ui";
 import { Row, ReadValue, Section } from "@/components/settings/primitives";
@@ -45,6 +46,7 @@ const SECTION_KEYWORDS: Record<string, string[]> = {
   audit: ["audit", "log", "activity", "trail", "history"],
   sessions: ["sessions", "devices", "login"],
   security: ["rotate", "code", "security"],
+  privacy: ["privacy", "data", "request", "export", "erasure", "consent"],
 };
 
 /** Rail icons. */
@@ -67,6 +69,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
   const [org, setOrg] = useState<OrganizationOut | null>(null);
   const [metrics, setMetrics] = useState<HeadlineMetrics | null>(null);
   const [profile, setProfile] = useState<ProfileOut | null>(null);
+  const [role, setRole] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -98,8 +101,12 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
   async function load() {
     setError("");
     try {
-      const o = await api.get<OrganizationOut>("/organizations/me");
+      const [o, identity] = await Promise.all([
+        api.get<OrganizationOut>("/organizations/me"),
+        api.get<{ role: string }>("/auth/me"),
+      ]);
       setOrg(o);
+      setRole(identity.role);
       // Headline metrics and profile are secondary: a failure must not block
       // the organization settings that this dialog exists for.
       const m = await api
@@ -149,11 +156,12 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
     if (!org) return;
     const valid = [
       "account", "organization", "preferences", "tools", "billing", "sessions", "security", "audit", "channels",
+      ...(role === "owner" || role === "manager" ? ["privacy"] : []),
       ...(invoice ? ["invoice"] : []),
       ...(org.industry !== "office" ? ["payments"] : []),
     ];
     if (!valid.includes(active)) queueMicrotask(() => selectTab("organization"));
-  }, [org, invoice, active, selectTab]);
+  }, [org, invoice, active, role, selectTab]);
 
   const dirty = useMemo(() => {
     if (!baseline) return false;
@@ -295,6 +303,10 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
             ...(org.industry !== "office" ? [{ id: "payments", label: "Payments", icon: NAV_ICON.card }] : []),
           ],
         },
+        ...(role === "owner" || role === "manager" ? [{
+          label: "Privacy",
+          items: [{ id: "privacy", label: "Data requests", icon: NAV_ICON.shield }],
+        }] : []),
         {
           label: "Security",
           items: [
@@ -507,6 +519,10 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
                 </Row>
               </Section>
             )}
+
+            <Section id="privacy" title="Privacy requests" description="Record and resolve member data requests" hidden={active !== "privacy"}>
+              <DataRequestsSection onNavigate={onNavigate} />
+            </Section>
 
             <Section id="sessions" title="Sessions" hidden={active !== "sessions"}>
               <SessionsSection />

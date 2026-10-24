@@ -19,6 +19,7 @@ from app.api.v1.routes import (
     celebrations,
     challenges,
     classes,
+    data_subject_requests,
     companies,
     front_desk,
     industries,
@@ -65,6 +66,7 @@ api_router.include_router(payments.router, prefix="/payments", tags=["payments"]
 api_router.include_router(cash.router, prefix="/cash", tags=["cash"])
 api_router.include_router(receipts.router, prefix="/receipts", tags=["receipts"])
 api_router.include_router(classes.router, prefix="/classes", tags=["classes"])
+api_router.include_router(data_subject_requests.router, prefix="/privacy", tags=["privacy"])
 api_router.include_router(attendance.router, prefix="/attendance", tags=["attendance"])
 api_router.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
