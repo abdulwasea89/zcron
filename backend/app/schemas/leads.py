@@ -173,6 +173,8 @@ class LeadSpeedStaffOut(BaseModel):
     staff_name: str
     contacted: int
     median_minutes: float
+    conversions: int
+    conversion_rate: float
 
 
 class LeadSpeedReportOut(BaseModel):

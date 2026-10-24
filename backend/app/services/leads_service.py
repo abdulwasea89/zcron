@@ -103,6 +103,7 @@ def speed_to_lead_metrics(leads: list[Lead], staff_names: dict[str, str] | None 
     """Summarize first recorded contact times for a bounded recent lead set."""
     by_source: dict[str, list[float]] = {}
     by_staff: dict[str, list[float]] = {}
+    staff_conversions: dict[str, int] = {}
     response_minutes: list[float] = []
     for lead in leads:
         if lead.first_contacted_at is None:
@@ -114,6 +115,8 @@ def speed_to_lead_metrics(leads: list[Lead], staff_names: dict[str, str] | None 
         by_source.setdefault(lead.source, []).append(minutes)
         if lead.first_contacted_by_user_id:
             by_staff.setdefault(lead.first_contacted_by_user_id, []).append(minutes)
+            if lead.stage == "joined":
+                staff_conversions[lead.first_contacted_by_user_id] = staff_conversions.get(lead.first_contacted_by_user_id, 0) + 1
 
     def group_metrics(times: list[float], count: int) -> dict:
         return {
@@ -141,6 +144,8 @@ def speed_to_lead_metrics(leads: list[Lead], staff_names: dict[str, str] | None 
                 "staff_name": (staff_names or {}).get(staff_id, "Staff member"),
                 "contacted": len(times),
                 "median_minutes": round(median(times), 1),
+                "conversions": staff_conversions.get(staff_id, 0),
+                "conversion_rate": round(staff_conversions.get(staff_id, 0) / len(times) * 100, 1),
             }
             for staff_id, times in sorted(by_staff.items(), key=lambda item: (staff_names or {}).get(item[0], "Staff member").casefold())
         ],

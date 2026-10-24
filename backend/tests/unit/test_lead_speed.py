@@ -12,7 +12,7 @@ def test_speed_to_lead_reports_median_response_by_source_and_staff():
     start = datetime(2026, 1, 1)
     leads = [
         SimpleNamespace(source="web_form", stage="contacted", created_at=start, first_contacted_at=start + timedelta(minutes=10), first_contacted_by_user_id="staff-1"),
-        SimpleNamespace(source="web_form", stage="contacted", created_at=start, first_contacted_at=start + timedelta(minutes=30), first_contacted_by_user_id="staff-2"),
+        SimpleNamespace(source="web_form", stage="joined", created_at=start, first_contacted_at=start + timedelta(minutes=30), first_contacted_by_user_id="staff-2"),
         SimpleNamespace(source="referral", stage="new", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None),
         SimpleNamespace(source="website", stage="lost", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None),
     ]
@@ -30,8 +30,8 @@ def test_speed_to_lead_reports_median_response_by_source_and_staff():
         {"source": "website", "leads": 1, "contacted": 0, "response_rate": 0, "median_minutes": None},
     ]
     assert report["by_staff"] == [
-        {"staff_name": "Amina", "contacted": 1, "median_minutes": 10},
-        {"staff_name": "Bilal", "contacted": 1, "median_minutes": 30},
+        {"staff_name": "Amina", "contacted": 1, "median_minutes": 10, "conversions": 0, "conversion_rate": 0.0},
+        {"staff_name": "Bilal", "contacted": 1, "median_minutes": 30, "conversions": 1, "conversion_rate": 100.0},
     ]
 
 
