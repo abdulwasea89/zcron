@@ -170,6 +170,17 @@ async def test_recovered_renewal_appears_in_tenant_scoped_wins_feed(client, db, 
     monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
     headers, org_id, org_code, plan_id = await _provision_gym(client)
     member_id = await _signup_member(client, org_code, plan_id, "recovered@ret.com")
+    lead_response = await client.post(
+        "/api/v1/leads", headers={**headers, "Idempotency-Key": "source-lead"},
+        json={"name": "Recovered Prospect", "email": "recovered@ret.com", "source": "whatsapp"},
+    )
+    assert lead_response.status_code == 201, lead_response.text
+    lead_id = lead_response.json()["id"]
+    joined = await client.patch(
+        f"/api/v1/leads/{lead_id}", headers={**headers, "Idempotency-Key": "source-lead-joined"},
+        json={"stage": "joined"},
+    )
+    assert joined.status_code == 200, joined.text
     member = await db.get(OrganizationMember, member_id)
     sub = (await db.execute(
         select(Subscription).where(Subscription.member_id == member_id)
@@ -194,6 +205,7 @@ async def test_recovered_renewal_appears_in_tenant_scoped_wins_feed(client, db, 
     assert response.json()[0]["payment_id"] == payment.id
     assert response.json()[0]["member_id"] == member_id
     assert response.json()[0]["amount"] == 149.0
+    assert response.json()[0]["lead_source"] == "whatsapp"
 
     other_headers, *_ = await _provision_gym(client, owner_email="other-wins@ret.com")
     response = await client.get("/api/v1/retention/wins", headers=other_headers)

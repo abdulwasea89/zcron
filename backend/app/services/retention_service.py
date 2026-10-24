@@ -30,6 +30,7 @@ from app.core.constants import MemberStatus, PaymentStatus, SubscriptionStatus
 from app.core.security import now_utc
 from app.models.attendance import Attendance
 from app.models.audit_log import AuditLog
+from app.models.lead import Lead
 from app.models.membership import OrganizationMember
 from app.models.onboarding import OnboardingJourney
 from app.models.payment import Payment
@@ -416,8 +417,18 @@ async def retention_summary(session: AsyncSession, *, org_id: str) -> dict:
 
 
 async def recovered_renewals(session: AsyncSession, *, org_id: str, limit: int = 10) -> list[dict]:
+    lead_source = (
+        select(Lead.source)
+        .where(
+            Lead.organization_id == org_id,
+            Lead.converted_member_id == Payment.member_id,
+        )
+        .order_by(Lead.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
     rows = (await session.execute(
-        select(AuditLog.created_at, Payment, OrganizationMember.display_name)
+        select(AuditLog.created_at, Payment, OrganizationMember.display_name, lead_source)
         .join(Payment, Payment.id == AuditLog.entity_id)
         .outerjoin(OrganizationMember, OrganizationMember.id == Payment.member_id)
         .where(
@@ -433,7 +444,7 @@ async def recovered_renewals(session: AsyncSession, *, org_id: str, limit: int =
     return [
         {"payment_id": payment.id, "member_id": payment.member_id,
          "member_name": member_name or "Member", "amount": round(payment.amount - payment.refunded_amount, 2),
-         "currency": payment.currency, "recovered_at": recovered_at}
-        for recovered_at, payment, member_name in rows
+         "currency": payment.currency, "recovered_at": recovered_at, "lead_source": lead_source}
+        for recovered_at, payment, member_name, lead_source in rows
         if payment.amount > payment.refunded_amount
     ][:limit]

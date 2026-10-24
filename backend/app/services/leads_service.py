@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -17,6 +17,7 @@ from app.models.membership import OrganizationMember
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.staff import Task
+from app.core.constants import Role
 from app.core.security import now_utc
 from app.schemas.leads import LeadCreate, LeadUpdate
 from app.services.audit_service import record_audit
@@ -257,6 +258,21 @@ async def update_lead(session: AsyncSession, *, org_id: str, actor_id: str,
         await change_stage(session, lead=lead, stage=requested_stage, actor_id=actor_id)
         if requested_stage != "lost":
             changes["lost_reason"] = None
+        if requested_stage == "joined" and not lead.converted_member_id:
+            email = changes.get("email", lead.email)
+            if email:
+                matches = (await session.execute(
+                    select(OrganizationMember.id)
+                    .join(User, User.id == OrganizationMember.user_id)
+                    .where(
+                        OrganizationMember.organization_id == org_id,
+                        OrganizationMember.role == Role.MEMBER,
+                        func.lower(User.email) == email.lower(),
+                    )
+                    .limit(2)
+                )).scalars().all()
+                if len(matches) == 1:
+                    changes["converted_member_id"] = matches[0]
     elif "lost_reason" in changes and lead.stage != "lost":
         raise HTTPException(status_code=422, detail="Lost reason can only be set while the lead is Lost.")
     if "email_followup_consent" in changes:

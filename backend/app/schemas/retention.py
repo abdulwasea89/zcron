@@ -56,3 +56,4 @@ class RenewalRecoveryOut(BaseModel):
     amount: float
     currency: str
     recovered_at: datetime
+    lead_source: str | None = None
