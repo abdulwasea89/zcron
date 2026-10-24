@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { InactivityLadderPanel } from "@/components/InactivityLadderPanel";
 import { RetentionWinBackPanel } from "@/components/RetentionWinBackPanel";
 import { NpsFeedbackPanel } from "@/components/NpsFeedbackPanel";
+import { ChallengesAdminPanel } from "@/components/ChallengesAdminPanel";
 import { Alert, Badge, Button, Input, Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
@@ -117,7 +118,7 @@ export default function AttendanceRetentionPage() {
   const [wins, setWins] = useState<RetentionWin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [view, setView] = useState<"drops" | "risk" | "ladder" | "winback" | "feedback">("drops");
+  const [view, setView] = useState<"drops" | "risk" | "ladder" | "winback" | "feedback" | "challenges">("drops");
   const [filter, setFilter] = useState<SeverityFilter>("all");
   const [riskFilter, setRiskFilter] = useState<RiskBandFilter>("all");
   const [query, setQuery] = useState("");
@@ -223,9 +224,10 @@ export default function AttendanceRetentionPage() {
         <button type="button" role="tab" aria-selected={view === "ladder"} onClick={() => setView("ladder")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "ladder" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Inactivity ladder</button>
         <button type="button" role="tab" aria-selected={view === "winback"} onClick={() => setView("winback")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "winback" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Win-back & celebrations</button>
         <button type="button" role="tab" aria-selected={view === "feedback"} onClick={() => setView("feedback")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "feedback" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Member feedback</button>
+        <button type="button" role="tab" aria-selected={view === "challenges"} onClick={() => setView("challenges")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "challenges" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Challenges</button>
       </div>
 
-      {view === "feedback" ? <NpsFeedbackPanel /> : view === "winback" ? <RetentionWinBackPanel /> : view === "ladder" ? <InactivityLadderPanel /> : <>
+      {view === "feedback" ? <NpsFeedbackPanel /> : view === "challenges" ? <ChallengesAdminPanel /> : view === "winback" ? <RetentionWinBackPanel /> : view === "ladder" ? <InactivityLadderPanel /> : <>
       {view === "drops" ? <>
         <section aria-label="Attendance drop overview" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Metric label="Members with a drop" count={rows.length} />
