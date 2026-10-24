@@ -1,0 +1,58 @@
+from datetime import datetime, timedelta
+from types import SimpleNamespace
+
+import pytest
+
+from app.models.lead import Lead
+from app.services import leads_service
+from app.services.leads_service import speed_to_lead_metrics
+
+
+def test_speed_to_lead_reports_median_response_and_source_rates():
+    start = datetime(2026, 1, 1)
+    leads = [
+        SimpleNamespace(source="web_form", created_at=start, first_contacted_at=start + timedelta(minutes=10)),
+        SimpleNamespace(source="web_form", created_at=start, first_contacted_at=start + timedelta(minutes=30)),
+        SimpleNamespace(source="referral", created_at=start, first_contacted_at=None),
+    ]
+
+    report = speed_to_lead_metrics(leads)
+
+    assert report["leads"] == 3
+    assert report["contacted"] == 2
+    assert report["uncontacted"] == 1
+    assert report["response_rate"] == 66.7
+    assert report["median_minutes"] == 20
+    assert report["by_source"] == [
+        {"source": "referral", "leads": 1, "contacted": 0, "response_rate": 0, "median_minutes": None},
+        {"source": "web_form", "leads": 2, "contacted": 2, "response_rate": 100.0, "median_minutes": 20},
+    ]
+
+
+def test_speed_to_lead_empty_period_returns_zero_rates():
+    assert speed_to_lead_metrics([]) == {
+        "leads": 0,
+        "contacted": 0,
+        "response_rate": 0,
+        "median_minutes": None,
+        "uncontacted": 0,
+        "by_source": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_first_contact_is_recorded_on_first_meaningful_stage_change(monkeypatch):
+    lead = Lead(organization_id="org", name="Prospect", stage="new")
+    session = SimpleNamespace(add=lambda _row: None)
+
+    async def record_audit(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(leads_service, "record_audit", record_audit)
+    await leads_service.change_stage(session, lead=lead, stage="trial_booked", actor_id="owner")
+    first_contact = lead.first_contacted_at
+
+    await leads_service.change_stage(session, lead=lead, stage="contacted", actor_id="owner")
+
+    assert first_contact is not None
+    assert lead.first_contacted_at == first_contact

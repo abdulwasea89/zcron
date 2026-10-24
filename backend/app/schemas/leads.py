@@ -115,6 +115,7 @@ class LeadOut(BaseModel):
     sms_followup_consent: bool
     sms_followup_consent_at: datetime | None
     lost_reason: str | None
+    first_contacted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -158,6 +159,24 @@ class LeadHistoryOut(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class LeadSpeedSourceOut(BaseModel):
+    source: str
+    leads: int
+    contacted: int
+    response_rate: float
+    median_minutes: float | None
+
+
+class LeadSpeedReportOut(BaseModel):
+    days: int
+    leads: int
+    contacted: int
+    uncontacted: int
+    response_rate: float
+    median_minutes: float | None
+    by_source: list[LeadSpeedSourceOut]
 
 
 class LeadFollowUpOut(BaseModel):

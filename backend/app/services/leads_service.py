@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from statistics import median
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
@@ -38,6 +39,8 @@ async def change_stage(session: AsyncSession, *, lead: Lead, stage: str,
         return
     lead.stage = stage
     lead.updated_at = now_utc()
+    if stage in {"contacted", "trial_booked", "visited", "joined"} and lead.first_contacted_at is None:
+        lead.first_contacted_at = lead.updated_at
     session.add(lead)
     await record_audit(
         session, action="lead.stage_changed", organization_id=lead.organization_id,
@@ -93,6 +96,49 @@ async def list_leads(session: AsyncSession, *, org_id: str) -> list[Lead]:
     return list((await session.execute(
         select(Lead).where(Lead.organization_id == org_id).order_by(Lead.updated_at.desc())
     )).scalars())
+
+
+def speed_to_lead_metrics(leads: list[Lead]) -> dict:
+    """Summarize first recorded contact times for a bounded recent lead set."""
+    by_source: dict[str, list[float]] = {}
+    response_minutes: list[float] = []
+    for lead in leads:
+        if lead.first_contacted_at is None:
+            continue
+        minutes = (lead.first_contacted_at - lead.created_at).total_seconds() / 60
+        if minutes < 0:
+            continue
+        response_minutes.append(minutes)
+        by_source.setdefault(lead.source, []).append(minutes)
+
+    def group_metrics(times: list[float], count: int) -> dict:
+        return {
+            "leads": count,
+            "contacted": len(times),
+            "response_rate": round(len(times) / count * 100, 1) if count else 0,
+            "median_minutes": round(median(times), 1) if times else None,
+        }
+
+    source_counts: dict[str, int] = {}
+    for lead in leads:
+        source_counts[lead.source] = source_counts.get(lead.source, 0) + 1
+    return {
+        **group_metrics(response_minutes, len(leads)),
+        "uncontacted": len(leads) - len(response_minutes),
+        "by_source": [
+            {"source": source, **group_metrics(by_source.get(source, []), count)}
+            for source, count in sorted(source_counts.items())
+        ],
+    }
+
+
+async def lead_speed_report(session: AsyncSession, *, org_id: str, days: int) -> dict:
+    since = now_utc() - timedelta(days=days)
+    leads = list((await session.execute(
+        select(Lead).where(Lead.organization_id == org_id, Lead.created_at >= since)
+        .order_by(Lead.created_at.desc()).limit(5000)
+    )).scalars())
+    return {"days": days, **speed_to_lead_metrics(leads)}
 
 
 async def get_lead(session: AsyncSession, *, org_id: str, lead_id: str) -> Lead:

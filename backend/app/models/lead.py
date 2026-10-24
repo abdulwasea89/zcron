@@ -32,6 +32,7 @@ class Lead(UUIDModel, TimestampModel, table=True):
     preferences: str | None = None
     source: str = Field(default="staff_entered", index=True)
     stage: str = Field(default="new", index=True)
+    first_contacted_at: datetime | None = None
     created_by: str | None = Field(default=None, foreign_key="users.id")
     converted_member_id: str | None = Field(default=None, foreign_key="organization_members.id")
     referred_by_member_id: str | None = Field(default=None, foreign_key="organization_members.id")

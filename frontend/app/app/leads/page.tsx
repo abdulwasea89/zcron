@@ -37,6 +37,15 @@ type Lead = {
   created_at: string;
   updated_at: string;
 };
+type LeadSpeedReport = {
+  days: number;
+  leads: number;
+  contacted: number;
+  uncontacted: number;
+  response_rate: number;
+  median_minutes: number | null;
+  by_source: { source: string; leads: number; contacted: number; response_rate: number; median_minutes: number | null }[];
+};
 
 const STAGES = ["new", "contacted", "trial_booked", "visited", "joined", "lost"] as const;
 const SOURCES = [
@@ -75,9 +84,18 @@ function profileOf(lead: Lead) {
   return { name: lead.name, email: lead.email ?? "", phone: lead.phone ?? "", contact_handle: lead.contact_handle ?? "", source: lead.source, goal: lead.goal ?? "", budget: lead.budget ?? "", preferred_times: lead.preferred_times ?? "", preferences: lead.preferences ?? "", email_followup_consent: lead.email_followup_consent, sms_followup_consent: lead.sms_followup_consent };
 }
 
+function responseTime(minutes: number | null) {
+  if (minutes == null) return "—";
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = Math.round(minutes % 60);
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
 export default function LeadsPage() {
   const { ready } = useModuleGate("leads");
   const [leads, setLeads] = useState<Lead[] | null>(null);
+  const [speedReport, setSpeedReport] = useState<LeadSpeedReport | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"active" | "joined" | "lost">("active");
@@ -111,6 +129,13 @@ export default function LeadsPage() {
   }, []);
 
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  useEffect(() => {
+    queueMicrotask(() => {
+      void api.get<LeadSpeedReport>("/leads/speed-report?days=30")
+        .then(setSpeedReport)
+        .catch(() => setSpeedReport(null));
+    });
+  }, []);
 
   const filtered = useMemo(() => (leads ?? []).filter((lead) =>
     (filter === "active" ? !["joined", "lost"].includes(lead.stage) : lead.stage === filter) &&
@@ -195,6 +220,13 @@ export default function LeadsPage() {
     <main className="w-full">
       <PageHeader title="Leads" subtitle="Track prospects from first contact to membership."
         action={<Button onClick={() => { setShowCreate(true); setError(""); }}>+ New lead</Button>} />
+      {speedReport && <section aria-labelledby="lead-speed-title" className="mb-5 border border-border bg-background">
+        <div className="border-b border-border px-4 py-3"><h2 id="lead-speed-title" className="text-sm font-semibold">Speed to lead · last 30 days</h2><p className="mt-1 text-xs text-muted-foreground">Time from lead creation until your team first marks it Contacted.</p></div>
+        <dl className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
+          {[["New leads", speedReport.leads], ["Contacted", `${speedReport.response_rate}% · ${speedReport.contacted}`], ["Median first contact", responseTime(speedReport.median_minutes)], ["Not contacted", speedReport.uncontacted]].map(([label, value]) => <div key={String(label)} className="bg-background px-4 py-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-foreground">{value}</dd></div>)}
+        </dl>
+        {speedReport.by_source.length > 1 && <div className="overflow-x-auto px-4 py-3"><table className="w-full text-left text-xs"><caption className="sr-only">Lead response time by source</caption><thead className="text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="py-2 pr-4 font-medium">Source</th><th className="py-2 pr-4 font-medium">Leads</th><th className="py-2 pr-4 font-medium">Contacted</th><th className="py-2 font-medium">Median</th></tr></thead><tbody className="divide-y divide-border">{speedReport.by_source.map((source) => <tr key={source.source}><th scope="row" className="py-2 pr-4 font-medium text-foreground">{SOURCES.find(([key]) => key === source.source)?.[1] ?? source.source}</th><td className="py-2 pr-4 tabular-nums text-foreground">{source.leads}</td><td className="py-2 pr-4 tabular-nums text-foreground">{source.response_rate}%</td><td className="py-2 tabular-nums text-foreground">{responseTime(source.median_minutes)}</td></tr>)}</tbody></table></div>}
+      </section>}
       {error && <Alert tone="danger">{error}</Alert>}
       {notice && <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
       {showLostReason && selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><section role="dialog" aria-modal="true" aria-labelledby="lost-reason-title" className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-xl"><h2 id="lost-reason-title" className="text-lg font-semibold">Why was this lead lost?</h2><p className="mt-1 text-sm text-muted-foreground">Choose the closest reason so your team can improve follow-up and qualification.</p><label className="mt-4 grid gap-1.5 text-sm">Lost reason<select value={lostReason} onChange={(event) => setLostReason(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3">{LOST_REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><div className="mt-5 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setShowLostReason(false)}>Cancel</Button><Button type="button" variant="danger" disabled={busy} onClick={() => void saveStage("lost", lostReason)}>Mark lost</Button></div></section></div>}

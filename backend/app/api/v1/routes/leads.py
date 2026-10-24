@@ -21,6 +21,7 @@ from app.schemas.leads import (
     LeadHistoryOut,
     LeadMissedCallOut,
     LeadOut,
+    LeadSpeedReportOut,
     LeadUpdate,
     TrialSlotOut,
 )
@@ -103,6 +104,15 @@ async def update_lead_followup(
 async def list_leads(ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
                      session: AsyncSession = Depends(get_session)):
     return await leads_service.list_leads(session, org_id=ctx.org_id)
+
+
+@router.get("/speed-report", response_model=LeadSpeedReportOut)
+async def speed_report(
+    days: int = Query(default=30, ge=7, le=90),
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    return await leads_service.lead_speed_report(session, org_id=ctx.org_id, days=days)
 
 
 @router.post("", response_model=LeadOut, status_code=201)
