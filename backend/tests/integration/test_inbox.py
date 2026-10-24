@@ -129,6 +129,20 @@ async def test_public_web_chat_sends_immediate_acknowledgement(client, monkeypat
     assert "Your message is in the team's inbox" in messages[1]["body"]
     admin_thread = await client.get(f"/api/v1/inbox/conversations/{thread['id']}", headers=headers)
     assert admin_thread.status_code == 200 and len(admin_thread.json()["messages"]) == 2
+    leads = await client.get("/api/v1/leads", headers=headers)
+    assert leads.status_code == 200, leads.text
+    assert len(leads.json()) == 1
+    assert leads.json()[0]["email"] == "jordan@prospect.com"
+    assert leads.json()[0]["source"] == "web_form"
+    assert leads.json()[0]["email_followup_consent"] is False
+    assert leads.json()[0]["sms_followup_consent"] is False
+
+    duplicate = await client.post(f"/api/v1/inbox/public/{org_code}/conversations", json={
+        "name": "Jordan", "email": "jordan@prospect.com", "message": "One more question",
+    })
+    assert duplicate.status_code == 201, duplicate.text
+    leads = await client.get("/api/v1/leads", headers=headers)
+    assert len(leads.json()) == 1
 
     followup = await client.post(
         f"/api/v1/inbox/public/conversations/{thread['id']}/messages",
@@ -138,6 +152,30 @@ async def test_public_web_chat_sends_immediate_acknowledgement(client, monkeypat
     assert followup.status_code == 201, followup.text
     assert sum("Your message is in the team's inbox" in item["body"]
                for item in followup.json()["messages"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_public_web_chat_does_not_create_lead_for_existing_member(client, monkeypatch):
+    from app.services import organizations_service
+    from app.api.v1.routes import inbox as inbox_routes
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+
+    async def web_chat_enabled(*_args):
+        return {"enabled": True}
+
+    monkeypatch.setattr(inbox_routes, "get_credentials", web_chat_enabled)
+    headers, _org_id, org_code = await _provision_gym(client)
+    email = "member@inbox.com"
+    await _signup_member(client, org_code, email)
+
+    response = await client.post(f"/api/v1/inbox/public/{org_code}/conversations", json={
+        "name": "Member", "email": email, "message": "I have a membership question.",
+    })
+    assert response.status_code == 201, response.text
+    leads = await client.get("/api/v1/leads", headers=headers)
+    assert leads.status_code == 200 and leads.json() == []
 
 
 @pytest.mark.asyncio
