@@ -17,6 +17,7 @@ export function DashboardTaskList({
   const [completing, setCompleting] = useState<string | null>(null);
   const [addingTaskFor, setAddingTaskFor] = useState<string | null>(null);
   const [taskCreatedFor, setTaskCreatedFor] = useState<Set<string>>(new Set());
+  const [showAll, setShowAll] = useState(false);
 
   async function complete(task: TaskOut) {
     setCompleting(task.id);
@@ -69,13 +70,14 @@ export function DashboardTaskList({
       task,
     })),
     ...attention.filter((item) => !item.member_id || !taskCreatedFor.has(item.member_id)).map((item, index) => ({ ...item, id: `attention:${index}:${item.label}`, task: null })),
-  ].sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label)).slice(0, 6);
+  ].sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label));
+  const visibleItems = showAll ? items : items.slice(0, 6);
 
   return (
     <div className="px-4 py-2">
       {items.length ? (
         <ul className="m-0 list-none divide-y divide-border p-0">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <li key={item.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
               <Link href={item.href} className="min-w-0 truncate font-medium text-foreground no-underline hover:text-brand">{item.label}</Link>
               <span className="flex shrink-0 items-center gap-2">
@@ -109,6 +111,7 @@ export function DashboardTaskList({
         <p className="py-2 text-[12px] text-muted-foreground">You’re clear. Nothing needs attention today.</p>
       )}
       <div className="flex gap-3 border-t border-border pt-2 text-[11px]">
+        {items.length > 6 && <button type="button" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)} className="font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">{showAll ? "Show fewer" : `Show all ${items.length}`}</button>}
         <Link href="/app/tasks" className="font-medium text-brand no-underline hover:underline">All tasks ↗</Link>
         {attention.length > 0 && <Link href="/app/approvals" className="font-medium text-brand no-underline hover:underline">Review queue ↗</Link>}
       </div>
