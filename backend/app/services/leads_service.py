@@ -108,6 +108,8 @@ async def _reject_duplicate_contact(
     org_id: str,
     email: str | None,
     phone: str | None,
+    source: str | None = None,
+    contact_handle: str | None = None,
     exclude_lead_id: str | None = None,
 ) -> None:
     contact_matches = []
@@ -122,6 +124,10 @@ async def _reject_duplicate_contact(
         if len(national) == 10:
             phone_variants.update({national, f"+{national}", f"1{national}", f"+1{national}"})
         contact_matches.append(Lead.phone.in_(phone_variants))
+    if source and contact_handle:
+        contact_matches.append(
+            (Lead.source == source) & (func.lower(Lead.contact_handle) == contact_handle.lower())
+        )
     if not contact_matches:
         return
 
@@ -135,7 +141,12 @@ async def _reject_duplicate_contact(
     if duplicate is None:
         return
 
-    matched_field = "email" if email and duplicate.email == email else "phone number"
+    matched_field = (
+        "email" if email and duplicate.email == email
+        else "social handle" if contact_handle and duplicate.contact_handle
+        and duplicate.contact_handle.casefold() == contact_handle.casefold()
+        else "phone number"
+    )
     raise HTTPException(
         status_code=409,
         detail=f"A lead with this {matched_field} already exists.",
@@ -149,6 +160,8 @@ async def create_lead(session: AsyncSession, *, org_id: str, actor_id: str | Non
         org_id=org_id,
         email=values["email"],
         phone=values["phone"],
+        source=values["source"],
+        contact_handle=values["contact_handle"],
     )
     consent = values.pop("email_followup_consent", False)
     consent_at = now_utc() if consent and values.get("email") else None
@@ -288,6 +301,8 @@ async def update_lead(session: AsyncSession, *, org_id: str, actor_id: str,
         org_id=org_id,
         email=changes.get("email"),
         phone=changes.get("phone"),
+        source=changes.get("source", lead.source),
+        contact_handle=changes.get("contact_handle", lead.contact_handle),
         exclude_lead_id=lead.id,
     )
     previous_values = {key: getattr(lead, key) for key in changes}

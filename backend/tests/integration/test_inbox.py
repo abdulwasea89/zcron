@@ -110,6 +110,35 @@ async def test_second_message_same_handle_appends(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_social_inbox_contact_is_captured_as_lead(client, monkeypatch):
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+    headers, _org_id, _code = await _provision_gym(client)
+    first = await _ingest(
+        client, headers, channel="instagram", handle="@JordanFit",
+        contact_name="Jordan", body="Can I try a class?",
+    )
+    assert first.status_code == 201, first.text
+    leads = await client.get("/api/v1/leads", headers=headers)
+    assert leads.status_code == 200 and len(leads.json()) == 1
+    assert leads.json()[0]["source"] == "instagram"
+    assert leads.json()[0]["contact_handle"] == "@JordanFit"
+    assert "Contact method (+25)" in leads.json()[0]["lead_score_factors"]
+    assert leads.json()[0]["email_followup_consent"] is False
+    assert leads.json()[0]["sms_followup_consent"] is False
+
+    second = await _ingest(
+        client, headers, channel="instagram", handle="@jordanfit",
+        contact_name="Jordan", body="What times are classes?",
+    )
+    assert second.status_code == 201, second.text
+    leads = await client.get("/api/v1/leads", headers=headers)
+    assert len(leads.json()) == 1
+
+
+@pytest.mark.asyncio
 async def test_external_id_is_idempotent(client):
     headers, _org_id, _code = await _provision_gym(client)
     await _ingest(client, headers, body="Hi", external_id="wa-1")

@@ -19,6 +19,7 @@ type Lead = {
   name: string;
   email: string | null;
   phone: string | null;
+  contact_handle: string | null;
   goal: string | null;
   budget: string | null;
   preferred_times: string | null;
@@ -71,7 +72,7 @@ const LOST_REASONS = [
 ] as const;
 
 function profileOf(lead: Lead) {
-  return { name: lead.name, email: lead.email ?? "", phone: lead.phone ?? "", source: lead.source, goal: lead.goal ?? "", budget: lead.budget ?? "", preferred_times: lead.preferred_times ?? "", preferences: lead.preferences ?? "", email_followup_consent: lead.email_followup_consent, sms_followup_consent: lead.sms_followup_consent };
+  return { name: lead.name, email: lead.email ?? "", phone: lead.phone ?? "", contact_handle: lead.contact_handle ?? "", source: lead.source, goal: lead.goal ?? "", budget: lead.budget ?? "", preferred_times: lead.preferred_times ?? "", preferences: lead.preferences ?? "", email_followup_consent: lead.email_followup_consent, sms_followup_consent: lead.sms_followup_consent };
 }
 
 export default function LeadsPage() {
@@ -91,7 +92,7 @@ export default function LeadsPage() {
   const [notice, setNotice] = useState("");
   const [showLostReason, setShowLostReason] = useState(false);
   const [lostReason, setLostReason] = useState("no_response");
-  const [profile, setProfile] = useState({ name: "", email: "", phone: "", source: "staff_entered", goal: "", budget: "", preferred_times: "", preferences: "", email_followup_consent: false, sms_followup_consent: false });
+  const [profile, setProfile] = useState({ name: "", email: "", phone: "", contact_handle: "", source: "staff_entered", goal: "", budget: "", preferred_times: "", preferences: "", email_followup_consent: false, sms_followup_consent: false });
 
   const load = useCallback(async (preferredId?: string) => {
     try {
@@ -113,10 +114,10 @@ export default function LeadsPage() {
 
   const filtered = useMemo(() => (leads ?? []).filter((lead) =>
     (filter === "active" ? !["joined", "lost"].includes(lead.stage) : lead.stage === filter) &&
-    `${lead.name} ${lead.email ?? ""} ${lead.phone ?? ""} ${lead.source}`.toLowerCase().includes(query.toLowerCase().trim()) &&
+    `${lead.name} ${lead.email ?? ""} ${lead.phone ?? ""} ${lead.contact_handle ?? ""} ${lead.source}`.toLowerCase().includes(query.toLowerCase().trim()) &&
     (sourceFilter === NONE || lead.source === sourceFilter) &&
     (scoreFilter === NONE || (scoreFilter === "high" ? lead.lead_score >= 70 : scoreFilter === "medium" ? lead.lead_score >= 40 && lead.lead_score < 70 : lead.lead_score < 40)) &&
-    (contactFilter === NONE || (contactFilter === "email" ? Boolean(lead.email) : Boolean(lead.phone))) &&
+    (contactFilter === NONE || (contactFilter === "email" ? Boolean(lead.email) : contactFilter === "phone" ? Boolean(lead.phone) : Boolean(lead.contact_handle))) &&
     (consentFilter === NONE || lead.email_followup_consent === (consentFilter === "yes"))
   ), [leads, filter, query, sourceFilter, scoreFilter, contactFilter, consentFilter]);
   const activeLeadFilterCount = [sourceFilter, scoreFilter, contactFilter, consentFilter].filter((v) => v !== NONE).length;
@@ -205,6 +206,7 @@ export default function LeadsPage() {
           <Input name="name" placeholder="Full name *" required maxLength={160} />
           <Input name="email" type="email" placeholder="Email" />
           <Input name="phone" type="tel" placeholder="Phone" />
+          <Input name="contact_handle" placeholder="Social channel handle" maxLength={256} />
           <select name="source" aria-label="Lead source" defaultValue="staff_entered" className="h-10 rounded-md border border-foreground/15 bg-background px-3 text-sm text-foreground">{SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         </div>
         <label className="mt-4 flex items-start gap-2 text-sm text-muted-foreground"><input name="email_followup_consent" type="checkbox" value="true" className="mt-1" /><span>Prospect gave permission to receive these follow-up emails. Leave unchecked otherwise.</span></label>
@@ -231,7 +233,7 @@ export default function LeadsPage() {
               <SelectItem value={NONE}>Any score</SelectItem><SelectItem value="high">High · 70–100</SelectItem><SelectItem value="medium">Medium · 40–69</SelectItem><SelectItem value="low">Low · under 40</SelectItem>
             </FieldSelect>
             <FieldSelect label="Contact detail" value={contactFilter} onChange={setContactFilter}>
-              <SelectItem value={NONE}>Any contact detail</SelectItem><SelectItem value="email">Has email</SelectItem><SelectItem value="phone">Has phone</SelectItem>
+              <SelectItem value={NONE}>Any contact detail</SelectItem><SelectItem value="email">Has email</SelectItem><SelectItem value="phone">Has phone</SelectItem><SelectItem value="handle">Has social handle</SelectItem>
             </FieldSelect>
             <FieldSelect label="Email follow-up permission" value={consentFilter} onChange={setConsentFilter}>
               <SelectItem value={NONE}>Any permission status</SelectItem><SelectItem value="yes">Permission granted</SelectItem><SelectItem value="no">No permission</SelectItem>
@@ -252,7 +254,7 @@ export default function LeadsPage() {
             </tr></thead>
             <tbody>{filtered.map((lead) => <tr key={lead.id} className={`${TR} ${TR_INTERACTIVE}`} onClick={() => selectLead(lead)}>
               <td className={`${TD} ${CELL_FIRST} py-3`}><button className="text-left text-[13px] font-medium text-foreground focus-visible:outline-2 focus-visible:outline-brand" onClick={(event) => { event.stopPropagation(); selectLead(lead); }}>{lead.name}</button><p className="text-[11px] text-muted-foreground">{lead.goal || "No goal added"}</p></td>
-              <td className={`${TD} ${CELL} py-3 text-[12px]`}>{lead.email || lead.phone || "—"}</td>
+              <td className={`${TD} ${CELL} py-3 text-[12px]`}>{lead.email || lead.phone || lead.contact_handle || "—"}</td>
               <td className={`${TD} ${CELL} py-3 text-[12px]`}>{lead.source.replaceAll("_", " ")}</td>
               <td className={`${TD} ${CELL} py-3`}><span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STAGE_STYLE[lead.stage] ?? STAGE_STYLE.new}`}>{STAGE_LABEL[lead.stage] ?? lead.stage}</span></td>
               <td className={`${TD} ${CELL} py-3 text-[12px] tabular-nums`}>{lead.lead_score}/100</td>
@@ -281,7 +283,7 @@ export default function LeadsPage() {
             <LeadFollowUps key={`followups-${selected.id}`} leadId={selected.id} />
             {selected.phone && <div className="mb-4 flex justify-end"><Button type="button" variant="secondary" disabled={busy} onClick={() => void logMissedCall()}>Log missed call &amp; assign callback</Button></div>}
             <form onSubmit={saveProfile} className="space-y-5"><fieldset disabled={busy} className="space-y-5">
-              <div><h3 className="text-sm font-semibold">Contact details</h3><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm">Name<Input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} required maxLength={160} /></label><label className="grid gap-1.5 text-sm">Email<Input type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Phone<Input type="tel" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Lead source<select value={profile.source} onChange={(e) => setProfile({ ...profile, source: e.target.value })} className="h-10 rounded-md border border-foreground/15 bg-background px-3 text-sm text-foreground">{SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div><label className="mt-3 flex items-start gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={profile.email_followup_consent} onChange={(event) => setProfile({ ...profile, email_followup_consent: event.target.checked })} className="mt-1" /><span>Prospect gave permission to receive day 0/1/3/7 follow-up emails. Uncheck to stop future emails. Changing the email address resets permission.</span></label>{selected.email_followup_consent_at && <p className="mt-1 text-xs text-muted-foreground">Email permission recorded {new Date(selected.email_followup_consent_at).toLocaleString()}</p>}<label className="mt-3 flex items-start gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={profile.sms_followup_consent} onChange={(event) => setProfile({ ...profile, sms_followup_consent: event.target.checked })} className="mt-1" /><span>Prospect gave permission to receive follow-up texts. Uncheck to stop future texts; changing the phone number resets permission.</span></label>{selected.sms_followup_consent_at && <p className="mt-1 text-xs text-muted-foreground">SMS permission recorded {new Date(selected.sms_followup_consent_at).toLocaleString()}</p>}</div>
+              <div><h3 className="text-sm font-semibold">Contact details</h3><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm">Name<Input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} required maxLength={160} /></label><label className="grid gap-1.5 text-sm">Email<Input type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Phone<Input type="tel" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Social channel handle<Input value={profile.contact_handle} onChange={(e) => setProfile({ ...profile, contact_handle: e.target.value })} maxLength={256} /></label><label className="grid gap-1.5 text-sm">Lead source<select value={profile.source} onChange={(e) => setProfile({ ...profile, source: e.target.value })} className="h-10 rounded-md border border-foreground/15 bg-background px-3 text-sm text-foreground">{SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div><label className="mt-3 flex items-start gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={profile.email_followup_consent} onChange={(event) => setProfile({ ...profile, email_followup_consent: event.target.checked })} className="mt-1" /><span>Prospect gave permission to receive day 0/1/3/7 follow-up emails. Uncheck to stop future emails. Changing the email address resets permission.</span></label>{selected.email_followup_consent_at && <p className="mt-1 text-xs text-muted-foreground">Email permission recorded {new Date(selected.email_followup_consent_at).toLocaleString()}</p>}<label className="mt-3 flex items-start gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={profile.sms_followup_consent} onChange={(event) => setProfile({ ...profile, sms_followup_consent: event.target.checked })} className="mt-1" /><span>Prospect gave permission to receive follow-up texts. Uncheck to stop future texts; changing the phone number resets permission.</span></label>{selected.sms_followup_consent_at && <p className="mt-1 text-xs text-muted-foreground">SMS permission recorded {new Date(selected.sms_followup_consent_at).toLocaleString()}</p>}</div>
               <div><h3 className="text-sm font-semibold">What matters to them</h3><p className="mt-1 text-xs text-muted-foreground">Record only what the prospect shares or your team confirms. Each saved profile detail is marked staff-entered.</p><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm">Fitness goal<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.goal} maxLength={2000} placeholder="Build strength, improve mobility…" onChange={(e) => setProfile({ ...profile, goal: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Budget<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.budget} maxLength={200} placeholder="Comfortable monthly range" onChange={(e) => setProfile({ ...profile, budget: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Preferred times<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.preferred_times} maxLength={500} placeholder="Weekday evenings, Saturday mornings…" onChange={(e) => setProfile({ ...profile, preferred_times: e.target.value })} /></label><label className="grid gap-1.5 text-sm">Preferences<textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={profile.preferences} maxLength={2000} placeholder="Class style, trainer preferences, other notes…" onChange={(e) => setProfile({ ...profile, preferences: e.target.value })} /></label></div></div>
               <div className="flex justify-end border-t border-border pt-4"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save profile"}</Button></div>
             </fieldset></form>

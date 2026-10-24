@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Column, JSON, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Index, JSON, UniqueConstraint
 from sqlmodel import Field
 
 from app.models.base import TimestampModel, UUIDModel
@@ -18,12 +18,14 @@ class Lead(UUIDModel, TimestampModel, table=True):
             "('price', 'schedule', 'timing', 'location', 'joined_elsewhere', 'no_response', 'not_interested', 'other')",
             name="ck_leads_lost_reason",
         ),
+        Index("ix_leads_org_source_contact_handle", "organization_id", "source", "contact_handle"),
     )
 
     organization_id: str = Field(index=True, foreign_key="organizations.id")
     name: str
     email: str | None = Field(default=None, index=True)
     phone: str | None = None
+    contact_handle: str | None = None
     goal: str | None = None
     budget: str | None = None
     preferred_times: str | None = None

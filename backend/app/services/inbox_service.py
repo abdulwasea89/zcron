@@ -119,6 +119,10 @@ async def _capture_inbound_lead(
         Channel.WEB_CHAT: LeadSource.WEB_FORM,
         Channel.WHATSAPP: LeadSource.WHATSAPP,
         Channel.SMS: LeadSource.SMS,
+        Channel.INSTAGRAM: LeadSource.INSTAGRAM,
+        Channel.MESSENGER: LeadSource.FACEBOOK,
+        Channel.LINE: LeadSource.LINE,
+        Channel.WECHAT: LeadSource.WECHAT,
     }
     source = sources.get(channel)
     if source is None:
@@ -130,7 +134,12 @@ async def _capture_inbound_lead(
     phone = handle.removeprefix("whatsapp:").strip() if channel in {Channel.WHATSAPP, Channel.SMS} else None
     if phone and len(re.sub(r"\D", "", phone)) < 7:
         phone = None
-    if not email and not phone:
+    contact_handle = handle.strip() if channel in {
+        Channel.INSTAGRAM, Channel.MESSENGER, Channel.LINE, Channel.WECHAT,
+    } else None
+    if contact_handle and len(contact_handle) > 256:
+        contact_handle = None
+    if not email and not phone and not contact_handle:
         return
 
     try:
@@ -139,8 +148,8 @@ async def _capture_inbound_lead(
         await leads_service.create_lead(
             session, org_id=org_id, actor_id=None,
             data=LeadCreate(
-                name=(contact_name or email or phone or "Website prospect").strip(),
-                email=email, phone=phone, source=source,
+                name=(contact_name or email or phone or contact_handle or "Prospect").strip()[:160],
+                email=email, phone=phone, contact_handle=contact_handle, source=source,
             ),
         )
     except HTTPException as exc:

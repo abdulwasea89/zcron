@@ -33,6 +33,7 @@ class LeadProfileFields(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
     email: str | None = Field(default=None, max_length=320)
     phone: str | None = Field(default=None, max_length=40)
+    contact_handle: str | None = Field(default=None, max_length=256)
     goal: str | None = Field(default=None, max_length=2000)
     budget: str | None = Field(default=None, max_length=200)
     preferred_times: str | None = Field(default=None, max_length=500)
@@ -58,6 +59,11 @@ class LeadProfileFields(BaseModel):
     @classmethod
     def clean_phone(cls, value: str | None) -> str | None:
         return _clean_phone(value)
+
+    @field_validator("contact_handle")
+    @classmethod
+    def clean_contact_handle(cls, value: str | None) -> str | None:
+        return _clean_optional_text(value)
 
     @field_validator("goal", "budget", "preferred_times", "preferences")
     @classmethod
@@ -96,6 +102,7 @@ class LeadOut(BaseModel):
     name: str
     email: str | None
     phone: str | None
+    contact_handle: str | None
     goal: str | None
     budget: str | None
     preferred_times: str | None
@@ -126,7 +133,7 @@ class LeadOut(BaseModel):
 
     def _score_parts(self) -> list[tuple[str, int, bool]]:
         return [
-            ("Contact method", 25, bool(self.email or self.phone)),
+            ("Contact method", 25, bool(self.email or self.phone or self.contact_handle)),
             ("Fitness goal", 25, bool(self.goal)),
             ("Budget", 15, bool(self.budget)),
             ("Preferred times", 15, bool(self.preferred_times)),

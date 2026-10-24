@@ -134,6 +134,7 @@ def _upgrade_sqlite_leads_schema(connection) -> None:
 
     existing = {column["name"] for column in inspector.get_columns("leads")}
     additions = {
+        "contact_handle": "VARCHAR(256)",
         "converted_member_id": "VARCHAR",
         "referred_by_member_id": "VARCHAR",
         "email_followup_consent": "BOOLEAN NOT NULL DEFAULT 0",
@@ -145,6 +146,10 @@ def _upgrade_sqlite_leads_schema(connection) -> None:
             connection.exec_driver_sql(f'ALTER TABLE leads ADD COLUMN "{name}" {definition}')
 
     connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_leads_lost_reason ON leads (lost_reason)")
+    connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_leads_org_source_contact_handle "
+        "ON leads (organization_id, source, contact_handle)"
+    )
 
 
 def _upgrade_sqlite_member_profile_schema(connection) -> None:
