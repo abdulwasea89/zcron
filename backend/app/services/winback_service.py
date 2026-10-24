@@ -94,10 +94,13 @@ async def lapsed_members(session: AsyncSession, *, org_id: str, limit: int = 200
             "days_since_last_visit": (now - last).days if last else None,
             "win_back_status": attempt.status.value if attempt and hasattr(attempt.status, "value") else (str(attempt.status) if attempt else None),
             "contacted_at": attempt.contacted_at if attempt else None,
-            "can_contact": attempt is None or attempt.status == WinBackStatus.LOST or (
+            "email_opt_in": member.marketing_email_consent,
+            "in_app_opt_in": member.marketing_in_app_consent,
+            "can_contact": (member.marketing_email_consent or member.marketing_in_app_consent)
+            and (attempt is None or attempt.status == WinBackStatus.LOST or (
                 attempt.status == WinBackStatus.CONTACTED
                 and attempt.contacted_at < now - timedelta(days=DEFAULT_COOLDOWN_DAYS)
-            ),
+            )),
         })
     return out
 
@@ -125,8 +128,10 @@ async def run_campaign(
     attempts = await _latest_attempts(
         session, org_id=org_id, member_ids=[e["member_id"] for e in lapsed]
     )
-    sent = 0
+    targeted = sent = 0
     for entry in lapsed:
+        if not (entry["email_opt_in"] or entry["in_app_opt_in"]):
+            continue
         attempt = attempts.get(entry["member_id"])
         if attempt is not None:
             if attempt.status == WinBackStatus.RECOVERED:
@@ -134,22 +139,16 @@ async def run_campaign(
             if attempt.status == WinBackStatus.CONTACTED and attempt.contacted_at >= cutoff:
                 continue  # cooldown
 
-        session.add(
-            WinBackAttempt(
-                organization_id=org_id,
-                member_id=entry["member_id"],
-                status=WinBackStatus.CONTACTED,
-                offer_text=offer,
-                channel="email",
-                contacted_at=now,
-            )
-        )
-        await send_email(entry["email"], f"We miss you at {org.name}", offer)
-
-        from app.services.notifications_service import create_notification
-
+        targeted += 1
         member = await session.get(OrganizationMember, entry["member_id"])
-        if member is not None:
+        if member is None:
+            continue
+        delivered = False
+        if member.marketing_email_consent:
+            delivered = await send_email(entry["email"], f"We miss you at {org.name}", offer)
+        if member.marketing_in_app_consent:
+            from app.services.notifications_service import create_notification
+
             await create_notification(
                 session,
                 org_id=org_id,
@@ -159,6 +158,20 @@ async def run_campaign(
                 body=offer,
                 data={"offer": offer},
             )
+            delivered = True
+        if not delivered:
+            continue
+        session.add(
+            WinBackAttempt(
+                organization_id=org_id,
+                member_id=entry["member_id"],
+                status=WinBackStatus.CONTACTED,
+                offer_text=offer,
+                channel="email+in_app" if member.marketing_email_consent and member.marketing_in_app_consent
+                else "email" if member.marketing_email_consent else "in_app",
+                contacted_at=now,
+            )
+        )
         sent += 1
 
     if sent:
@@ -172,7 +185,7 @@ async def run_campaign(
             entity_id=org_id,
             metadata={"sent": sent},
         )
-    return {"targeted": len(lapsed), "sent": sent}
+    return {"targeted": targeted, "sent": sent}
 
 
 async def mark_recovered(

@@ -17,6 +17,8 @@ class LapsedMemberOut(BaseModel):
     win_back_status: str | None = None
     contacted_at: datetime | None = None
     can_contact: bool = True
+    email_opt_in: bool = False
+    in_app_opt_in: bool = False
 
 
 class CampaignIn(BaseModel):

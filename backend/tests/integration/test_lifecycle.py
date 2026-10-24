@@ -156,10 +156,22 @@ async def test_anniversary_and_upcoming(client, db):
 
 # ------------------------------------------------------------------ win-back
 @pytest.mark.asyncio
-async def test_win_back_campaign_cooldown_and_recovery(client, db):
+async def test_win_back_campaign_cooldown_and_recovery(client, db, monkeypatch):
+    async def delivered(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(winback, "send_email", delivered)
     headers, org_id, org_code, plan_id = await _provision_gym(client)
     member_id = await _signup_member(client, org_code, plan_id, "lost@cel.com")
     await _expire(db, member_id)
+    lapsed = await winback.lapsed_members(db, org_id=org_id)
+    assert next(row for row in lapsed if row["member_id"] == member_id)["can_contact"] is False
+    member = await db.get(OrganizationMember, member_id)
+    member.marketing_email_consent = True
+    db.add(member)
+    await db.commit()
+    lapsed = await winback.lapsed_members(db, org_id=org_id)
+    assert next(row for row in lapsed if row["member_id"] == member_id)["can_contact"] is True
 
     r = await winback.run_campaign(db, org_id=org_id, actor_user_id="u1")
     await db.commit()
