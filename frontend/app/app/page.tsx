@@ -227,13 +227,13 @@ export default async function DashboardPage() {
   // ── Needs attention ─────────────────────────────────────────────────────
   const attention: { label: string; value: string; href: string; tone: Tone }[] = [];
   if (metrics?.pending_receipts) {
-    attention.push({ label: "Receipts to review", value: String(metrics.pending_receipts), href: "/app/receipts", tone: "warning" });
+    attention.push({ label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning" });
   }
   if (metrics?.pending_approvals) {
-    attention.push({ label: "Approvals pending", value: String(metrics.pending_approvals), href: "/app/approvals", tone: "warning" });
+    attention.push({ label: "Resolve member approvals", value: `${metrics.pending_approvals} waiting`, href: "/app/approvals", tone: "warning" });
   }
   if (isOffice && (metrics?.outstanding_invoices ?? 0) > 0) {
-    attention.push({ label: "Outstanding invoices", value: money(metrics!.outstanding_invoices ?? 0, currency), href: "/app/invoices", tone: "danger" });
+    attention.push({ label: "Follow up on invoices", value: money(metrics!.outstanding_invoices ?? 0, currency), href: "/app/invoices", tone: "danger" });
   }
 
   // ── Quick actions ───────────────────────────────────────────────────────
@@ -415,21 +415,24 @@ export default async function DashboardPage() {
           {(tasks !== null || attention.length > 0 || canManageWorkspace) && <section aria-label="Today’s priorities and workspace setup">
             <div className="overflow-hidden border border-border bg-background">
               <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                <h2 className="text-[13px] font-semibold">Work queue</h2>
+                <div>
+                  <h2 className="text-[13px] font-semibold">Priority queue</h2>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">Tasks are sorted by deadline, followed by reviews that need a decision.</p>
+                </div>
                 <span className="text-[11px] tabular-nums text-muted-foreground">{attention.length + openTasks.length} open</span>
               </div>
+              {tasks !== null && <DashboardTaskList tasks={priorityTasks} />}
               {attention.length > 0 && (
                 <ul className="m-0 list-none p-0">
                   {attention.map((item) => (
                     <li key={item.label} className="border-b border-border">
                       <Link href={item.href} className="flex min-h-12 items-center justify-between gap-3 px-4 text-[12px] font-medium text-foreground no-underline transition-colors hover:bg-foreground/[0.025]">
-                        <span>{item.label}</span><Badge tone={item.tone}>{item.value}</Badge>
+                        <span>{item.label}</span><span className="flex shrink-0 items-center gap-2"><Badge tone={item.tone}>{item.value}</Badge><span className="text-brand">Review →</span></span>
                       </Link>
                     </li>
                   ))}
                 </ul>
               )}
-              {tasks !== null && <DashboardTaskList tasks={priorityTasks} />}
               {canManageWorkspace && <div className="px-4 py-4">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <h3 className="text-[13px] font-semibold">Workspace setup</h3>
