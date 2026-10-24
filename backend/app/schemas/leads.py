@@ -169,6 +169,12 @@ class LeadSpeedSourceOut(BaseModel):
     median_minutes: float | None
 
 
+class LeadSpeedStaffOut(BaseModel):
+    staff_name: str
+    contacted: int
+    median_minutes: float
+
+
 class LeadSpeedReportOut(BaseModel):
     days: int
     leads: int
@@ -177,6 +183,7 @@ class LeadSpeedReportOut(BaseModel):
     response_rate: float
     median_minutes: float | None
     by_source: list[LeadSpeedSourceOut]
+    by_staff: list[LeadSpeedStaffOut]
 
 
 class LeadFollowUpOut(BaseModel):
