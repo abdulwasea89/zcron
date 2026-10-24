@@ -17,16 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.api.deps import get_session, require_capability
-from app.core.constants import LeadSource
 from app.core.permissions import Capability
 from app.core.tenancy import IDEMPOTENCY_HEADER, TenantContext
 from app.core.config import settings
 from app.core.rate_limit import rate_limiter
 from app.core.security import safe_decode
 from app.models.inbox import InboxConversation
-from app.models.lead import Lead
 from app.models.organization import Organization
-from app.schemas.leads import LeadCreate
 from app.services.inbox_channels_service import get_credentials
 from app.schemas.inbox import (
     AssignCreate,
@@ -38,7 +35,7 @@ from app.schemas.inbox import (
     ReplyCreate,
     StatusCreate,
 )
-from app.services import inbox_service as inbox, leads_service
+from app.services import inbox_service as inbox
 
 router = APIRouter()
 
@@ -96,15 +93,6 @@ async def public_chat_start(org_code: str, data: PublicChatStart, request: Reque
         raise HTTPException(status_code=404, detail="This workspace has not enabled web chat.")
     handle = data.email.strip().lower()
     thread = await inbox.record_inbound(session, org_id=org.id, channel="web_chat", handle=handle, body=data.message.strip(), contact_name=data.name.strip(), force_new=True)
-    if not thread.get("member_id"):
-        lead = (await session.execute(select(Lead).where(
-            Lead.organization_id == org.id, Lead.email == handle,
-        ).limit(1))).scalar_one_or_none()
-        if lead is None:
-            await leads_service.create_lead(
-                session, org_id=org.id, actor_id=None,
-                data=LeadCreate(name=data.name.strip(), email=handle, source=LeadSource.WEB_FORM),
-            )
     await inbox.record_web_chat_ack(
         session, org_id=org.id, conversation_id=thread["id"],
         body=f"Thanks for contacting {org.name}. Your message is in the team's inbox, and someone will follow up as soon as they are available.",

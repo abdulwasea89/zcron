@@ -61,7 +61,11 @@ async def _ingest(client, headers, **overrides):
 
 # ------------------------------------------------------------------- ingest
 @pytest.mark.asyncio
-async def test_ingest_creates_and_lists(client):
+async def test_ingest_creates_and_lists(client, monkeypatch):
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
     headers, _org_id, _code = await _provision_gym(client)
     r = await _ingest(client, headers)
     assert r.status_code == 201, r.text
@@ -78,10 +82,19 @@ async def test_ingest_creates_and_lists(client):
     assert len(rows) == 1
     assert rows[0]["preview"].startswith("Hi, do you have")
     assert rows[0]["unread_count"] == 1
+    leads = await client.get("/api/v1/leads", headers=headers)
+    assert leads.status_code == 200 and len(leads.json()) == 1
+    assert leads.json()[0]["source"] == "whatsapp"
+    assert leads.json()[0]["phone"] == "+923001234567"
+    assert leads.json()[0]["sms_followup_consent"] is False
 
 
 @pytest.mark.asyncio
-async def test_second_message_same_handle_appends(client):
+async def test_second_message_same_handle_appends(client, monkeypatch):
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
     headers, _org_id, _code = await _provision_gym(client)
     await _ingest(client, headers, body="First")
     r = await _ingest(client, headers, body="Second")
@@ -92,6 +105,8 @@ async def test_second_message_same_handle_appends(client):
 
     r = await client.get("/api/v1/inbox/conversations", headers=headers)
     assert len(r.json()) == 1  # still one thread
+    leads = await client.get("/api/v1/leads", headers=headers)
+    assert len(leads.json()) == 1  # repeated inbound messages do not duplicate leads
 
 
 @pytest.mark.asyncio

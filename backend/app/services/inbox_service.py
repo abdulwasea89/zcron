@@ -8,6 +8,8 @@ Phone and walk-in interactions are recorded as staff-entered inbox messages.
 
 from __future__ import annotations
 
+import re
+
 from fastapi import HTTPException
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,7 @@ from sqlmodel import select
 from app.core.constants import (
     Channel,
     ConversationStatus,
+    LeadSource,
     MessageDirection,
     SenderKind,
 )
@@ -25,6 +28,7 @@ from app.models.membership import OrganizationMember
 from app.models.user import User
 from app.realtime import events
 from app.services.audit_service import record_audit
+from app.schemas.leads import LeadCreate
 
 
 def _value(v) -> str:
@@ -107,6 +111,43 @@ async def find_or_create(
     return conv
 
 
+async def _capture_inbound_lead(
+    session: AsyncSession, *, org_id: str, channel: Channel,
+    handle: str, contact_name: str | None,
+) -> None:
+    sources = {
+        Channel.WEB_CHAT: LeadSource.WEB_FORM,
+        Channel.WHATSAPP: LeadSource.WHATSAPP,
+        Channel.SMS: LeadSource.SMS,
+    }
+    source = sources.get(channel)
+    if source is None:
+        return
+
+    email = handle.strip().lower() if channel == Channel.WEB_CHAT else None
+    if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        email = None
+    phone = handle.removeprefix("whatsapp:").strip() if channel in {Channel.WHATSAPP, Channel.SMS} else None
+    if phone and len(re.sub(r"\D", "", phone)) < 7:
+        phone = None
+    if not email and not phone:
+        return
+
+    try:
+        from app.services import leads_service
+
+        await leads_service.create_lead(
+            session, org_id=org_id, actor_id=None,
+            data=LeadCreate(
+                name=(contact_name or email or phone or "Website prospect").strip(),
+                email=email, phone=phone, source=source,
+            ),
+        )
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+
+
 async def record_inbound(
     session: AsyncSession,
     *,
@@ -146,6 +187,11 @@ async def record_inbound(
         await session.flush()
     if conv.member_id is None:
         conv.member_id = member_id or await _match_member(session, org_id, handle)
+        if conv.member_id is None:
+            await _capture_inbound_lead(
+                session, org_id=org_id, channel=ch, handle=handle,
+                contact_name=contact_name,
+            )
     # A new inbound reopens a resolved thread.
     if conv.status == ConversationStatus.RESOLVED:
         conv.status = ConversationStatus.OPEN

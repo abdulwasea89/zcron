@@ -141,7 +141,7 @@ async def _reject_duplicate_contact(
     )
 
 
-async def create_lead(session: AsyncSession, *, org_id: str, actor_id: str, data: LeadCreate) -> Lead:
+async def create_lead(session: AsyncSession, *, org_id: str, actor_id: str | None, data: LeadCreate) -> Lead:
     values = data.model_dump(mode="json")
     await _reject_duplicate_contact(
         session,
