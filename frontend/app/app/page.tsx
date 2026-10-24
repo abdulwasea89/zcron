@@ -233,7 +233,7 @@ export default async function DashboardPage() {
       : "All set — your gym is fully configured.";
 
   // ── Needs attention ─────────────────────────────────────────────────────
-  const attention: { label: string; value: string; href: string; tone: Tone; phone?: string | null; priority: number }[] = [];
+  const attention: { label: string; value: string; href: string; tone: Tone; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[] = [];
   if (metrics?.pending_receipts) {
     attention.push({ label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning", priority: 3 });
   }
@@ -246,6 +246,8 @@ export default async function DashboardPage() {
           href: `/app/members?member=${encodeURIComponent(member.member_id)}`,
           tone: member.band === "high" ? "danger" : "warning",
           phone: member.phone,
+          member_id: member.member_id,
+          personName: member.name,
           priority: member.band === "high" ? 0 : 1,
         });
       }

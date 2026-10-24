@@ -11,10 +11,12 @@ export function DashboardTaskList({
   attention,
 }: {
   tasks: (TaskOut & { dueLabel: string; overdue: boolean; dueToday: boolean })[];
-  attention: { label: string; value: string; href: string; tone: "neutral" | "success" | "danger" | "warning" | "info"; phone?: string | null; priority: number }[];
+  attention: { label: string; value: string; href: string; tone: "neutral" | "success" | "danger" | "warning" | "info"; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[];
 }) {
   const [openTasks, setOpenTasks] = useState(tasks);
   const [completing, setCompleting] = useState<string | null>(null);
+  const [addingTaskFor, setAddingTaskFor] = useState<string | null>(null);
+  const [taskCreatedFor, setTaskCreatedFor] = useState<Set<string>>(new Set());
 
   async function complete(task: TaskOut) {
     setCompleting(task.id);
@@ -29,6 +31,30 @@ export function DashboardTaskList({
     }
   }
 
+  async function createFollowUpTask(item: (typeof attention)[number]) {
+    if (!item.member_id || addingTaskFor) return;
+    setAddingTaskFor(item.member_id);
+    try {
+      const created = await api.post<TaskOut>("/staff/tasks", {
+        title: `Follow up: ${item.personName || "member"}`,
+        description: `${item.label} (${item.value}). Open member: ${item.href}`,
+        deadline: new Date().toISOString(),
+      });
+      setOpenTasks((current) => [{
+        ...created,
+        dueLabel: "Due today",
+        overdue: false,
+        dueToday: true,
+      }, ...current]);
+      setTaskCreatedFor((current) => new Set(current).add(item.member_id!));
+      toast.success("Follow-up task added to the team queue.");
+    } catch (error) {
+      toast.error((error as ApiError).message || "Could not create follow-up task.");
+    } finally {
+      setAddingTaskFor(null);
+    }
+  }
+
   const items = [
     ...openTasks.map((task) => ({
       id: `task:${task.id}`,
@@ -38,9 +64,11 @@ export function DashboardTaskList({
       tone: task.overdue ? "danger" as const : task.dueToday ? "warning" as const : "neutral" as const,
       priority: task.overdue ? 0 : task.dueToday ? 2 : task.deadline ? 5 : 7,
       phone: null,
+      member_id: undefined,
+      personName: undefined,
       task,
     })),
-    ...attention.map((item, index) => ({ ...item, id: `attention:${index}:${item.label}`, task: null })),
+    ...attention.filter((item) => !item.member_id || !taskCreatedFor.has(item.member_id)).map((item, index) => ({ ...item, id: `attention:${index}:${item.label}`, task: null })),
   ].sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label)).slice(0, 6);
 
   return (
@@ -55,6 +83,12 @@ export function DashboardTaskList({
                   {item.value}
                 </span>
                 {item.phone && <a href={`tel:${item.phone}`} className="text-brand no-underline hover:underline">Call</a>}
+                {item.member_id && <button
+                  type="button"
+                  disabled={addingTaskFor !== null}
+                  onClick={() => void createFollowUpTask(item)}
+                  className="text-brand no-underline hover:underline disabled:opacity-50"
+                >{addingTaskFor === item.member_id ? "Adding…" : "Add task"}</button>}
                 {item.task && <button
                   type="button"
                   aria-label={`Mark ${item.task.title} complete`}
