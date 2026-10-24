@@ -33,6 +33,7 @@ async function safe<T>(p: Promise<T>): Promise<T | null> {
 
 type Tone = "neutral" | "success" | "danger" | "warning" | "info";
 type RetentionSummary = { scored: number; high: number; medium: number; revenue_at_risk: number };
+type RetentionRiskAction = { member_id: string; name: string | null; band: string };
 
 const PRIMARY_ACTION_CLASS = "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-xs font-medium text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
@@ -161,6 +162,9 @@ export default async function DashboardPage() {
   const retentionSummary = canManageWorkspace && industry === "gym"
     ? await safe(backend<RetentionSummary>("/retention/summary"))
     : null;
+  const retentionRisks = retentionSummary && retentionSummary.high + retentionSummary.medium > 0
+    ? await safe(backend<RetentionRiskAction[]>("/retention/at-risk?min_score=40&limit=3"))
+    : null;
 
   const today = new Date().toLocaleDateString("en-US", {
     timeZone: org?.timezone || "UTC",
@@ -234,12 +238,29 @@ export default async function DashboardPage() {
     attention.push({ label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning" });
   }
   if (retentionSummary && retentionSummary.high + retentionSummary.medium > 0) {
-    attention.push({
-      label: "Follow up on at-risk members",
-      value: `${retentionSummary.high + retentionSummary.medium} members · ${money(retentionSummary.revenue_at_risk, currency)} at risk`,
-      href: "/app/retention",
-      tone: "danger",
-    });
+    if (retentionRisks?.length) {
+      for (const member of retentionRisks) {
+        attention.push({
+          label: `Follow up: ${member.name || "member"}`,
+          value: `${member.band} risk`,
+          href: `/app/members?member=${encodeURIComponent(member.member_id)}`,
+          tone: member.band === "high" ? "danger" : "warning",
+        });
+      }
+      attention.push({
+        label: "Estimated revenue at risk",
+        value: money(retentionSummary.revenue_at_risk, currency),
+        href: "/app/retention",
+        tone: "danger",
+      });
+    } else {
+      attention.push({
+        label: "Follow up on at-risk members",
+        value: `${retentionSummary.high + retentionSummary.medium} members · ${money(retentionSummary.revenue_at_risk, currency)} at risk`,
+        href: "/app/retention",
+        tone: "danger",
+      });
+    }
   }
   if (metrics?.pending_approvals) {
     attention.push({ label: "Resolve member approvals", value: `${metrics.pending_approvals} waiting`, href: "/app/approvals", tone: "warning" });

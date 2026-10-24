@@ -157,7 +157,7 @@ By priority (Section 1 only):
 
 | # | Feature | Pri | Status | Evidence / gap | Surface |
 |---|---|---|---|---|---|
-| 61 | "Today" command centre | P0 | ⚠️ | Dashboard priority queue combines team deadlines, receipt/member approvals, office invoices, and gym at-risk member count plus estimated revenue at risk. Still lacks per-person ranked actions with Send/Edit/Skip/Call | web |
+| 61 | "Today" command centre | P0 | ⚠️ | Dashboard queue shows deadlines, receipts/approvals, estimated at-risk revenue, and the top three high/medium-risk members with direct member-sheet links; Retention offers direct calls and internal follow-up tasks. A unified ranked queue and Send/Edit/Skip actions remain open | web |
 | 62 | Daily owner brief on the owner's preferred channel | P0 | ⚠️ | `routes/assistant.py:331 POST /briefing` → `workflows.weekly_briefing`. **Weekly, not daily**; **in-app only**, not on preferred channel | backend |
 | 63 | KPIs: active members, joins, churn, MRR, collections, conversion | P0 | ✅ | `analytics_service.py`, `routes/analytics.py`, KPI strip `frontend/app/app/page.tsx:196` | backend + web + mobile |
 | 64 | Revenue-at-risk panel; Wins feed (money recovered) | P0 | ⚠️ | Revenue-at-risk remains on the owner dashboard. Web Retention records tenant-scoped successful renewals that restore grace-status memberships and shows the latest five; mobile wins and lead-conversion attribution remain open | backend + frontend web |
