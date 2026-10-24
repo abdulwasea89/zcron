@@ -192,6 +192,7 @@ class ProfileOut(BaseModel):
     id_document_type: str | None = None
     id_document_last4: str | None = None
     summary: str | None = None
+    daily_brief_email: bool = False
 
 
 class ProfileUpdate(MemberProfileUpdate):
@@ -200,3 +201,4 @@ class ProfileUpdate(MemberProfileUpdate):
     city: str | None = None
     occupation: str | None = None
     education: str | None = None
+    daily_brief_email: bool | None = None

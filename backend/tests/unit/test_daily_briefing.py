@@ -17,9 +17,12 @@ from app.workers import daily_briefing
 async def test_daily_owner_brief_sends_once_per_local_day(db, monkeypatch):
     org = Organization(name="Daily Brief Gym", org_code="DAILY-BRIEF", timezone="Asia/Karachi")
     owner = User(email="brief-owner@example.com", full_name="Brief Owner", hashed_password="unused")
+    owner.email_verified = True
     db.add_all([org, owner])
     await db.flush()
-    db.add(OrganizationMember(organization_id=org.id, user_id=owner.id, role=Role.OWNER))
+    db.add(OrganizationMember(
+        organization_id=org.id, user_id=owner.id, role=Role.OWNER, daily_brief_email=True,
+    ))
     await db.flush()
 
     clock = datetime(2026, 10, 24, 4, 15, tzinfo=timezone.utc)
@@ -32,6 +35,13 @@ async def test_daily_owner_brief_sends_once_per_local_day(db, monkeypatch):
         return "Two renewals need attention today."
 
     monkeypatch.setattr(daily_briefing.workflows, "weekly_briefing", briefing)
+    emails = []
+
+    async def send_email(to, subject, body):
+        emails.append((to, subject, body))
+        return True
+
+    monkeypatch.setattr(daily_briefing, "send_email_safe", send_email)
     assert await daily_briefing.run_daily_owner_brief(db, org_id=org.id) == {
         "sent": 1, "briefing_date": "2026-10-24",
     }
@@ -44,4 +54,9 @@ async def test_daily_owner_brief_sends_once_per_local_day(db, monkeypatch):
     ))).scalars().all()
     assert len(notifications) == 1
     assert notifications[0].body == "Two renewals need attention today."
+    assert emails == [(
+        owner.email,
+        "Daily Brief Gym: daily owner brief",
+        "Two renewals need attention today.",
+    )]
     assert calls == 1

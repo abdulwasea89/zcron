@@ -494,6 +494,7 @@ export interface ProfileOut {
   id_document_type: string | null;
   id_document_last4: string | null;
   summary: string | null;
+  daily_brief_email: boolean;
 }
 
 // ------------------------------------------------------------------ audit

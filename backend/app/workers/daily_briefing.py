@@ -12,9 +12,11 @@ from sqlmodel import select
 from app.agent import workflows
 from app.core.constants import NotificationKind, Role
 from app.core.security import now_utc
+from app.integrations.email import send_email_safe
 from app.models.membership import OrganizationMember
 from app.models.notification import Notification
 from app.models.organization import Organization
+from app.models.user import User
 from app.services.notifications_service import create_notification
 
 
@@ -59,4 +61,8 @@ async def run_daily_owner_brief(session: AsyncSession, *, org_id: str) -> dict:
             category=NotificationKind.SYSTEM, title="Daily owner brief",
             body=body, data=key,
         )
+        member = next((admin for admin in admins if admin.user_id == user_id), None)
+        user = await session.get(User, user_id)
+        if member and member.daily_brief_email and user and user.email_verified:
+            await send_email_safe(user.email, f"{org.name}: daily owner brief", body)
     return {"sent": len(recipients), "briefing_date": key["briefing_date"]}

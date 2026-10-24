@@ -69,6 +69,7 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
     marketing_sms_consent_at: datetime | None = None
     marketing_in_app_consent: bool = False
     marketing_in_app_consent_at: datetime | None = None
+    daily_brief_email: bool = False
 
     # Lifecycle
     joined_at: datetime | None = None

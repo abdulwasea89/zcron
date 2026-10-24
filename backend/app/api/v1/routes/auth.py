@@ -38,6 +38,7 @@ from app.schemas.auth import (
 )
 
 from app.services import auth_service, members_service, mfa_service
+from app.services.audit_service import record_audit
 from app.schemas.members import MemberProfileUpdate
 from app.schemas.common import Message
 
@@ -99,6 +100,7 @@ def _profile_out(user: User, member: OrganizationMember | None) -> ProfileOut:
         id_document_type=member.id_document_type if member else None,
         id_document_last4=member.id_document_last4 if member else None,
         summary=members_service.profile_summary(member, None, include_private=True) if member else None,
+        daily_brief_email=bool(member and member.role in {Role.OWNER, Role.MANAGER} and member.daily_brief_email),
     )
 
 
@@ -117,6 +119,20 @@ async def update_profile(
             OrganizationMember.organization_id == ctx.org_id,
         ))
     ).scalar_one_or_none()
+    if "daily_brief_email" in data.model_fields_set:
+        if ctx.role not in {Role.OWNER, Role.MANAGER} or member is None:
+            raise HTTPException(status_code=403, detail="Daily owner brief preferences require owner or manager access.")
+        value = bool(data.daily_brief_email)
+        if member.daily_brief_email != value:
+            old = member.daily_brief_email
+            member.daily_brief_email = value
+            session.add(member)
+            await record_audit(
+                session, action="profile.daily_brief_email_updated",
+                organization_id=ctx.org_id, actor_user_id=ctx.user_id,
+                entity_type="organization_member", entity_id=member.id,
+                old_values={"daily_brief_email": old}, new_values={"daily_brief_email": value},
+            )
     for field in ("full_name", "phone", "address", "city", "occupation", "education", "emergency_contact"):
         if field in data.model_fields_set:
             setattr(user, field, getattr(data, field))

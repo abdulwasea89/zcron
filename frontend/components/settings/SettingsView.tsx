@@ -28,6 +28,7 @@ interface Baseline {
   gymStatus: string;
   invoice: InvoiceSettings | null;
   account: AccountFieldsValue;
+  dailyBriefEmail: boolean;
 }
 
 /** Row labels per section, so the rail search can match the things inside. */
@@ -37,7 +38,7 @@ const SECTION_KEYWORDS: Record<string, string[]> = {
     "name", "code", "industry", "status", "currency", "timezone", "plan",
     "subscription", "member", "mfa", "created",
   ],
-  preferences: ["theme", "connection", "enrollment"],
+  preferences: ["theme", "connection", "enrollment", "daily brief", "email"],
   tools: ["staff", "payroll", "receipts", "workspace", "manage"],
   invoice: ["legal", "tax", "vat", "address", "payment terms"],
   payments: ["stripe", "connect", "payments"],
@@ -95,6 +96,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
   const [gymStatus, setGymStatus] = useState("open");
   const [invoice, setInvoice] = useState<InvoiceSettings | null>(null);
   const [account, setAccount] = useState<AccountFieldsValue>(emptyAccountFields);
+  const [dailyBriefEmail, setDailyBriefEmail] = useState(false);
   // The values as last loaded, to detect unsaved changes and to discard.
   const [baseline, setBaseline] = useState<Baseline | null>(null);
 
@@ -115,6 +117,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
       setMetrics(m);
       const p = await api.get<ProfileOut>("/auth/me/profile").catch(() => null);
       setProfile(p);
+      const briefEmail = p?.daily_brief_email ?? false;
       const inv = o.industry === "office"
         ? await api.get<InvoiceSettings>("/organizations/me/invoice-settings")
         : null;
@@ -134,12 +137,14 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
       setGymStatus(o.gym_status);
       setInvoice(inv);
       setAccount(acc);
+      setDailyBriefEmail(briefEmail);
       setBaseline({
         name: o.name,
         enrollment: o.enrollment_mode,
         gymStatus: o.gym_status,
         invoice: inv,
         account: acc,
+        dailyBriefEmail: briefEmail,
       });
     } catch (e) {
       setError((e as ApiError).message);
@@ -171,8 +176,9 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
       gymStatus !== baseline.gymStatus ||
       JSON.stringify(invoice) !== JSON.stringify(baseline.invoice) ||
       JSON.stringify(account) !== JSON.stringify(baseline.account)
+      || dailyBriefEmail !== baseline.dailyBriefEmail
     );
-  }, [baseline, name, enrollment, gymStatus, invoice, account]);
+  }, [baseline, name, enrollment, gymStatus, invoice, account, dailyBriefEmail]);
 
   async function saveAll() {
     if (!org || !baseline) return;
@@ -227,6 +233,11 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
         }),
       );
     }
+    if (dailyBriefEmail !== baseline.dailyBriefEmail) {
+      await attempt("Daily brief email", () =>
+        api.patch("/auth/me/profile", { daily_brief_email: dailyBriefEmail }),
+      );
+    }
 
     await load();
     setSaving(false);
@@ -241,6 +252,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
     setGymStatus(baseline.gymStatus);
     setInvoice(baseline.invoice);
     setAccount(baseline.account);
+    setDailyBriefEmail(baseline.dailyBriefEmail);
     setError("");
     setNotice("");
   }
@@ -449,6 +461,17 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
               <Row label="Connection" description="Live data sync status">
                 <LiveIndicator />
               </Row>
+              {(role === "owner" || role === "manager") && (
+                <Row label="Daily owner brief" description="Email me a copy of the daily brief alongside the in-app notification">
+                  <input
+                    aria-label="Email me the daily owner brief"
+                    type="checkbox"
+                    checked={dailyBriefEmail}
+                    onChange={(event) => setDailyBriefEmail(event.target.checked)}
+                    className="size-4 accent-brand"
+                  />
+                </Row>
+              )}
               <Row
                 label="Enrollment mode"
                 description="Controls how new members can join your organization"
