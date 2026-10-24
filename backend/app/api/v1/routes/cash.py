@@ -12,7 +12,7 @@ from sqlmodel import select
 from app.api.deps import get_session, require_capability, require_writable_org
 from app.core.permissions import Capability
 from app.core.tenancy import IDEMPOTENCY_HEADER, TenantContext
-from app.core.constants import PaymentMethod
+from app.core.constants import PaymentMethod, Role
 from app.models.membership import OrganizationMember
 from app.models.payment import Payment
 from app.models.plan import MembershipPlan
@@ -74,7 +74,12 @@ async def search_cash_members(
     ctx: TenantContext = Depends(require_capability(Capability.LOG_CASH_PAYMENT)),
     session: AsyncSession = Depends(get_session),
 ):
-    rows = await cash.search_members(session, org_id=ctx.org_id, q=q)
+    if ctx.role == Role.FRONT_DESK and len((q or "").strip()) < 2:
+        return []
+    rows = await cash.search_members(
+        session, org_id=ctx.org_id, q=q,
+        role=Role.MEMBER if ctx.role == Role.FRONT_DESK else None,
+    )
     return [_cash_member(m, u) for m, u in rows]
 
 

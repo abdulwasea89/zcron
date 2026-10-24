@@ -22,6 +22,7 @@ from app.core.constants import (
     PaymentKind,
     PaymentMethod,
     PaymentStatus,
+    Role,
     SubscriptionStatus,
 )
 from app.core.security import now_utc
@@ -213,19 +214,17 @@ async def render_receipt(session: AsyncSession, *, org_id: str, payment_id: str)
 
 async def search_members(
     session: AsyncSession, *, org_id: str, q: str | None = None, limit: int = 50,
+    role: Role | None = None,
 ) -> list[tuple[OrganizationMember, User]]:
-    """Search everyone in the org by name/email for the cash-logging box.
-
-    Staff (trainers, front desk, managers) commonly hold their own membership at
-    the gym, so every tenant row is searchable — matching what the Members
-    directory shows. Gated by LOG_CASH_PAYMENT at the route layer.
-    """
+    """Search tenant records by name/email, optionally limited to a role."""
 
     stmt = (
         select(OrganizationMember, User)
         .join(User, User.id == OrganizationMember.user_id)
         .where(OrganizationMember.organization_id == org_id)
     )
+    if role is not None:
+        stmt = stmt.where(OrganizationMember.role == role)
     if q:
         pattern = f"%{q.strip().lower()}%"
         stmt = stmt.where(

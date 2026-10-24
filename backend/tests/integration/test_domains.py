@@ -139,9 +139,14 @@ async def test_cash_reconciliation_discrepancy(client):
 
 # ------------------------------------------------ cash member search (front desk)
 @pytest.mark.asyncio
-async def test_cash_member_search_allows_front_desk(client):
+async def test_cash_member_search_allows_front_desk(client, monkeypatch):
     """Front-desk staff can search members for cash logging and list plans,
     but still can't read the admin directory (which exposes salaries)."""
+
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
 
     headers, org_id, org_code, plan_id = await _provision_gym(client)
     await _signup_member(client, org_code, plan_id, "searchme@g.com")
@@ -160,17 +165,18 @@ async def test_cash_member_search_allows_front_desk(client):
     assert r.status_code == 200, r.text
     rows = r.json()
     assert any(row["email"] == "searchme@g.com" for row in rows)
+    assert all(row["role"] == "member" for row in rows)
 
-    # Staff hold memberships too, so they're searchable and carry their role.
+    # Front desk cannot enumerate employees through the member-payment picker.
     r = await client.get("/api/v1/cash/members", headers=th, params={"q": "fd@cash.com"})
     assert r.status_code == 200, r.text
-    rows = r.json()
-    assert [row["role"] for row in rows] == ["front_desk"]
+    assert r.json() == []
 
-    # Empty query returns everyone in the org: owner + member + front desk.
+    # Empty search does not expose an enumerable workspace directory.
     r = await client.get("/api/v1/cash/members", headers=th)
-    assert r.status_code == 200, r.text
-    assert {row["role"] for row in r.json()} == {"owner", "member", "front_desk"}
+    assert r.status_code == 200 and r.json() == []
+    r = await client.get("/api/v1/cash/members", headers=th, params={"q": "s"})
+    assert r.status_code == 200 and r.json() == []
 
     # Front-desk can list plans (VIEW_PLANS) needed by the cash form.
     r = await client.get("/api/v1/plans", headers=th)
