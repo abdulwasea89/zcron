@@ -226,15 +226,23 @@ async def test_worker_opens_one_task_per_high_risk(client, db):
 
 # ----------------------------------------------------------------------- API
 @pytest.mark.asyncio
-async def test_retention_api_capability_and_isolation(client, db):
+async def test_retention_api_capability_and_isolation(client, db, monkeypatch):
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
     headers, org_id, org_code, plan_id = await _provision_gym(client)
     member_id = await _signup_member(client, org_code, plan_id, "api@ret.com")
+    member = await db.get(OrganizationMember, member_id)
+    member.phone = "+15551234567"
+    db.add(member)
     await _set_tenure(db, member_id, days_ago=100)
     await _add_visits(db, org_id, member_id, _BASELINE_ONLY)
 
     r = await client.get("/api/v1/retention/at-risk", headers=headers)
     assert r.status_code == 200, r.text
     assert any(row["member_id"] == member_id for row in r.json())
+    assert next(row for row in r.json() if row["member_id"] == member_id)["phone"] == "+15551234567"
 
     r = await client.get(f"/api/v1/retention/members/{member_id}", headers=headers)
     assert r.status_code == 200, r.text

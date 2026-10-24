@@ -28,6 +28,7 @@ class RiskReasonOut(BaseModel):
 class MemberRiskOut(BaseModel):
     member_id: str
     name: str | None = None
+    phone: str | None = None
     status: str
     score: int
     band: str                          # high | medium | low

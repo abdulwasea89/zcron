@@ -60,6 +60,7 @@ MEDIUM_BAND = 40
 class MemberFacts:
     member_id: str
     name: str | None
+    phone: str | None
     status: MemberStatus
     joined_at: datetime | None
     first_visit_at: datetime | None
@@ -97,6 +98,7 @@ class RiskReason:
 class MemberRisk:
     member_id: str
     name: str | None
+    phone: str | None
     status: str
     score: int
     band: str                           # high | medium | low
@@ -231,6 +233,7 @@ def compute_risk(facts: MemberFacts, *, now: datetime | None = None) -> MemberRi
     return MemberRisk(
         member_id=facts.member_id,
         name=facts.name,
+        phone=facts.phone,
         status=_status_value(facts.status),
         score=score,
         band=_band(score),
@@ -326,6 +329,7 @@ async def _facts(
             MemberFacts(
                 member_id=m.id,
                 name=m.display_name or (u.full_name if u else None) or (u.email if u else None),
+                phone=m.phone,
                 status=m.member_status,
                 joined_at=m.joined_at,
                 first_visit_at=a["first"],
