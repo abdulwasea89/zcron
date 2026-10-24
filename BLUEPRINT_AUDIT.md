@@ -138,7 +138,7 @@ The supplied Notion page did not load in the available browser during this audit
 | 58 | Door and turnstile access tied to membership status | P2 | ✓ | — | — | — | ❌ Not built | No device integration |
 | 59 | Equipment register and maintenance | P2 | ✓ | — | — | — | ❌ Not built | 0 matches for `asset` / `maintenance` |
 | 60 | Peak-hour tracking; safety checklists | P2 | ✓ | ✓ | — | — | ⚠️ Partial | `ops_peak_hours` specialist. Missing: safety checklists |
-| 61 | "Today" command centre | P0 | ✓ | — | ✓ | — | ⚠️ Partial | `frontend/app/app/page.tsx` (494 lines) with KPI strip + headline metrics. A dashboard, not the blueprint's ranked action list ("8 people need you today; USD 1,240 at stake" with Send/Edit/Skip/Call) |
+| 61 | "Today" command centre | P0 | ✓ | — | ✓ | — | ⚠️ Partial | Dashboard priority queue combines team deadlines, receipt/member approvals, office invoices, and gym at-risk member count plus estimated revenue at risk. Still lacks per-person ranked actions with Send/Edit/Skip/Call |
 | 62 | Daily owner brief on the owner's preferred channel | P0 | ✓ | ✓ | — | — | 🔧 Improvement | `routes/assistant.py:331 POST /briefing` → `workflows.weekly_briefing`. **Weekly, not daily**; **in-app only**, not on preferred channel |
 | 63 | KPIs: active members, joins, churn, MRR, collections, conversion | P0 | ✓ | ✓ | ✓ | ✓ | ✅ Built | `analytics_service.py`, `routes/analytics.py`, KPI strip `frontend/app/app/page.tsx:196` |
 | 64 | Revenue-at-risk panel; Wins feed (money recovered) | P0 | ✓ | ✓ | — | — | ⚠️ Partial | `revenue_at_risk` computed and returned (`retention_service.py:383-409`). **Wins feed absent** — 0 matches for `wins` feed in backend/frontend/mobileapp |
