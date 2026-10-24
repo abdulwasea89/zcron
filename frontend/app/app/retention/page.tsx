@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { InactivityLadderPanel } from "@/components/InactivityLadderPanel";
 import { Alert, Badge, Button, Input, Spinner } from "@/components/ui";
@@ -113,6 +114,8 @@ export default function AttendanceRetentionPage() {
   const [filter, setFilter] = useState<SeverityFilter>("all");
   const [riskFilter, setRiskFilter] = useState<RiskBandFilter>("all");
   const [query, setQuery] = useState("");
+  const [creatingTaskFor, setCreatingTaskFor] = useState<string | null>(null);
+  const [taskCreatedFor, setTaskCreatedFor] = useState<Set<string>>(() => new Set());
 
   const fetchData = useCallback(async () => {
     const [drops, risks, totals, recoveries] = await Promise.all([
@@ -174,6 +177,23 @@ export default function AttendanceRetentionPage() {
   const silentCount = rows.filter((row) => row.trend.severity === "silent").length;
   const severeCount = rows.filter((row) => row.trend.severity === "severe").length;
   const moderateCount = rows.filter((row) => row.trend.severity === "moderate").length;
+
+  async function createFollowUpTask(row: MemberRisk) {
+    setCreatingTaskFor(row.member_id);
+    try {
+      await api.post("/staff/tasks", {
+        title: `Follow up: ${row.name || "member"}`,
+        description: `Review ${row.name || "this member"}'s retention risk (${row.reasons.map((reason) => reason.label).join("; ") || "elevated risk score"}). Open member: /app/members?member=${encodeURIComponent(row.member_id)}`,
+        deadline: new Date().toISOString(),
+      });
+      setTaskCreatedFor((current) => new Set(current).add(row.member_id));
+      toast.success("Follow-up task added to the team queue.");
+    } catch (cause) {
+      toast.error(cause instanceof ApiError ? cause.message : "Could not create follow-up task.");
+    } finally {
+      setCreatingTaskFor(null);
+    }
+  }
 
   return (
     <>
@@ -252,7 +272,7 @@ export default function AttendanceRetentionPage() {
               return <li key={row.member_id} className="grid gap-4 px-4 py-4 sm:px-5 md:grid-cols-[minmax(150px,1fr)_minmax(180px,0.8fr)_minmax(240px,1.7fr)_minmax(120px,0.7fr)] md:items-center">
                 <div className="min-w-0"><button type="button" onClick={() => router.push(href)} className="block max-w-full truncate text-left text-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">{row.name || "Member"}</button><span className="mt-1 block text-xs capitalize text-muted-foreground">{row.status.replaceAll("_", " ")}</span></div>
                 <div><div className="flex items-center gap-2"><span className="text-lg font-semibold tabular-nums text-foreground">{row.score}<span className="text-xs font-normal text-muted-foreground"> / 100</span></span><Badge tone={riskTone(row.band)}>{row.band} risk</Badge></div><div className="mt-2 h-1.5 overflow-hidden bg-foreground/[0.07]" role="img" aria-label={`Risk score ${row.score} out of 100`}><div className={`h-full ${row.band === "high" ? "bg-danger" : row.band === "medium" ? "bg-warning" : "bg-success"}`} style={{ width: `${row.score}%` }} /></div></div>
-                <div className="space-y-1.5">{row.reasons.length ? row.reasons.map((reason) => <div key={reason.code} className="flex items-start justify-between gap-3 text-xs"><span className="leading-5 text-foreground">{reason.label}</span><span className="shrink-0 tabular-nums text-muted-foreground">+{reason.weight}</span></div>) : <p className="text-xs text-muted-foreground">No elevated risk signals</p>}<Button variant="ghost" className="-ml-2 px-2 text-xs" onClick={() => router.push(href)}>Open member</Button></div>
+                <div className="space-y-1.5">{row.reasons.length ? row.reasons.map((reason) => <div key={reason.code} className="flex items-start justify-between gap-3 text-xs"><span className="leading-5 text-foreground">{reason.label}</span><span className="shrink-0 tabular-nums text-muted-foreground">+{reason.weight}</span></div>) : <p className="text-xs text-muted-foreground">No elevated risk signals</p>}<div className="flex flex-wrap gap-1"><Button variant="ghost" className="-ml-2 px-2 text-xs" onClick={() => router.push(href)}>Open member</Button>{row.band !== "low" && <Button variant="ghost" className="px-2 text-xs" disabled={creatingTaskFor !== null || taskCreatedFor.has(row.member_id)} onClick={() => void createFollowUpTask(row)}>{taskCreatedFor.has(row.member_id) ? "Task added" : creatingTaskFor === row.member_id ? "Adding…" : "Create follow-up task"}</Button>}</div></div>
                 <div><span className="text-[10px] uppercase tracking-wider text-muted-foreground md:hidden">Last visit</span><p className="mt-0.5 text-sm text-foreground">{days == null ? "No recorded visit" : days === 0 ? "Today" : `${days} days ago`}</p></div>
               </li>;
             })}</ul>
