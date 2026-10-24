@@ -48,6 +48,7 @@ type RenewalRecovery = {
   amount: number;
   currency: string;
   recovered_at: string;
+  lead_source: string | null;
 };
 type SeverityFilter = "all" | Exclude<Severity, null>;
 type RiskBandFilter = "all" | "high" | "medium" | "low";
@@ -206,7 +207,7 @@ export default function AttendanceRetentionPage() {
           <span className="text-xs text-muted-foreground">Last 5</span>
         </div>
         {wins.length ? <ul className="divide-y divide-[var(--border)]">{wins.map((win) => <li key={win.payment_id} className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5">
-          <div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{win.member_name}</p><p className="text-xs text-muted-foreground">{new Date(win.recovered_at).toLocaleDateString()}</p></div>
+          <div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{win.member_name}</p><p className="text-xs text-muted-foreground">{new Date(win.recovered_at).toLocaleDateString()}{win.lead_source ? ` · Source: ${win.lead_source.replaceAll("_", " ")}` : ""}</p></div>
           <p className="shrink-0 text-sm font-semibold tabular-nums text-success">{new Intl.NumberFormat(undefined, { style: "currency", currency: win.currency }).format(win.amount)}</p>
         </li>)}</ul> : <p className="px-4 py-4 text-sm text-muted-foreground sm:px-5">No recovered renewal payments yet.</p>}
       </section>
