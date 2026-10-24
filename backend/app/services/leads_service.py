@@ -128,7 +128,10 @@ def speed_to_lead_metrics(leads: list[Lead], staff_names: dict[str, str] | None 
         source_counts[lead.source] = source_counts.get(lead.source, 0) + 1
     return {
         **group_metrics(response_minutes, len(leads)),
-        "uncontacted": len(leads) - len(response_minutes),
+        "uncontacted": sum(
+            1 for lead in leads
+            if lead.first_contacted_at is None and lead.stage not in {"joined", "lost"}
+        ),
         "by_source": [
             {"source": source, **group_metrics(by_source.get(source, []), count)}
             for source, count in sorted(source_counts.items())

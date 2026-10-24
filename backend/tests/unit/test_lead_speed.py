@@ -11,21 +11,23 @@ from app.services.leads_service import speed_to_lead_metrics
 def test_speed_to_lead_reports_median_response_by_source_and_staff():
     start = datetime(2026, 1, 1)
     leads = [
-        SimpleNamespace(source="web_form", created_at=start, first_contacted_at=start + timedelta(minutes=10), first_contacted_by_user_id="staff-1"),
-        SimpleNamespace(source="web_form", created_at=start, first_contacted_at=start + timedelta(minutes=30), first_contacted_by_user_id="staff-2"),
-        SimpleNamespace(source="referral", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None),
+        SimpleNamespace(source="web_form", stage="contacted", created_at=start, first_contacted_at=start + timedelta(minutes=10), first_contacted_by_user_id="staff-1"),
+        SimpleNamespace(source="web_form", stage="contacted", created_at=start, first_contacted_at=start + timedelta(minutes=30), first_contacted_by_user_id="staff-2"),
+        SimpleNamespace(source="referral", stage="new", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None),
+        SimpleNamespace(source="website", stage="lost", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None),
     ]
 
     report = speed_to_lead_metrics(leads, {"staff-1": "Amina", "staff-2": "Bilal"})
 
-    assert report["leads"] == 3
+    assert report["leads"] == 4
     assert report["contacted"] == 2
     assert report["uncontacted"] == 1
-    assert report["response_rate"] == 66.7
+    assert report["response_rate"] == 50.0
     assert report["median_minutes"] == 20
     assert report["by_source"] == [
         {"source": "referral", "leads": 1, "contacted": 0, "response_rate": 0, "median_minutes": None},
         {"source": "web_form", "leads": 2, "contacted": 2, "response_rate": 100.0, "median_minutes": 20},
+        {"source": "website", "leads": 1, "contacted": 0, "response_rate": 0, "median_minutes": None},
     ]
     assert report["by_staff"] == [
         {"staff_name": "Amina", "contacted": 1, "median_minutes": 10},
