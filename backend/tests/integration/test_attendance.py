@@ -399,6 +399,27 @@ async def test_class_waitlist_promotes_on_cancellation_and_staff_can_mark_no_sho
     bookings = (await client.get(f"/api/v1/classes/{class_id}/bookings", headers=headers)).json()
     assert next(row for row in bookings if row["member_id"] == second["member_id"])["status"] == "booked"
 
+    staff_cancel_class = await client.post("/api/v1/classes", headers=headers, json={
+        "title": "Staff cancellation", "starts_at": starts_at, "capacity": 1,
+    })
+    second_booking = await client.post("/api/v1/classes/book", headers={
+        **(await _member_headers(client, org_code, second["email"])), "Idempotency-Key": str(uuid.uuid4()),
+    }, json={"class_session_id": staff_cancel_class.json()["id"]})
+    staff_waitlist = await client.post(
+        f"/api/v1/classes/{staff_cancel_class.json()['id']}/waitlist", headers=headers,
+        json={"member_id": first["member_id"]},
+    )
+    assert staff_waitlist.json()["status"] == "waitlisted"
+    staff_cancel = await client.post(
+        f"/api/v1/classes/{staff_cancel_class.json()['id']}/bookings/{second_booking.json()['id']}/cancel",
+        headers=headers,
+    )
+    assert staff_cancel.status_code == 200, staff_cancel.text
+    staff_bookings = (await client.get(
+        f"/api/v1/classes/{staff_cancel_class.json()['id']}/bookings", headers=headers,
+    )).json()
+    assert next(row for row in staff_bookings if row["member_id"] == first["member_id"])["status"] == "booked"
+
     past = await client.post("/api/v1/classes", headers=headers, json={
         "title": "Completed class", "starts_at": (now_utc() - timedelta(days=1)).isoformat(),
         "capacity": 1,

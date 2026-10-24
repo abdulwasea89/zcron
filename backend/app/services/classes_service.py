@@ -218,19 +218,67 @@ async def cancel_booking(
         booking.status = BookingStatus.CANCELLED
         session.add(booking)
         cs.booked_count = max(0, cs.booked_count - 1)
-        next_booking = (
-            await session.execute(select(ClassBooking).where(
-                    ClassBooking.organization_id == org_id,
-                    ClassBooking.class_session_id == cs.id,
-                    ClassBooking.status == BookingStatus.WAITLISTED,
-                ).order_by(ClassBooking.created_at, ClassBooking.id).limit(1).with_for_update())
-        ).scalar_one_or_none()
-        if next_booking and not cs.cancelled:
-            next_booking.status = BookingStatus.BOOKED
-            cs.booked_count += 1
-            session.add(next_booking)
+        await _promote_waitlisted(session, org_id=org_id, class_session=cs)
         session.add(cs)
     return booking
+
+
+async def cancel_staff_booking(
+    session: AsyncSession, *, org_id: str, class_id: str, booking_id: str, actor_id: str
+) -> ClassBooking:
+    class_session = await _get_owned_session(session, org_id, class_id)
+    booking = await session.get(ClassBooking, booking_id)
+    if (
+        booking is None
+        or booking.organization_id != org_id
+        or booking.class_session_id != class_session.id
+    ):
+        raise HTTPException(status_code=404, detail="Booking not found.")
+    if booking.status == BookingStatus.CANCELLED:
+        return booking
+    if booking.status not in {BookingStatus.BOOKED, BookingStatus.WAITLISTED}:
+        raise HTTPException(status_code=409, detail="Only booked or waitlisted members can be removed.")
+    if class_session.starts_at <= now_utc():
+        raise HTTPException(status_code=409, detail="Only upcoming class bookings can be removed by staff.")
+
+    previous_status = booking.status
+    booking.status = BookingStatus.CANCELLED
+    session.add(booking)
+    if previous_status == BookingStatus.BOOKED:
+        class_session.booked_count = max(0, class_session.booked_count - 1)
+        await _promote_waitlisted(session, org_id=org_id, class_session=class_session, actor_id=actor_id)
+        session.add(class_session)
+    await record_audit(
+        session, action="class.booking_cancelled", organization_id=org_id,
+        actor_user_id=actor_id, entity_type="class_booking", entity_id=booking.id,
+        old_values={"status": previous_status.value}, new_values={"status": booking.status.value},
+    )
+    await events.class_changed(org_id, class_session_id=class_session.id, action="booking_cancelled")
+    return booking
+
+
+async def _promote_waitlisted(
+    session: AsyncSession, *, org_id: str, class_session: ClassSession, actor_id: str | None = None
+) -> ClassBooking | None:
+    next_booking = (
+        await session.execute(select(ClassBooking).where(
+            ClassBooking.organization_id == org_id,
+            ClassBooking.class_session_id == class_session.id,
+            ClassBooking.status == BookingStatus.WAITLISTED,
+        ).order_by(ClassBooking.created_at, ClassBooking.id).limit(1).with_for_update())
+    ).scalar_one_or_none()
+    if next_booking is None or class_session.cancelled:
+        return None
+    next_booking.status = BookingStatus.BOOKED
+    class_session.booked_count += 1
+    session.add(next_booking)
+    session.add(class_session)
+    if actor_id:
+        await record_audit(
+            session, action="class.waitlist_promoted", organization_id=org_id,
+            actor_user_id=actor_id, entity_type="class_booking", entity_id=next_booking.id,
+        )
+    return next_booking
 
 
 async def add_to_waitlist(

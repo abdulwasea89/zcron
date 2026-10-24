@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, Badge, Button, EmptyState, Input, Spinner } from "@/components/ui";
 import { FieldSelect, NONE } from "@/components/FieldSelect";
@@ -70,6 +71,7 @@ export default function ClassesPage() {
 
   const isStaff = currentUser?.role === "owner" || currentUser?.role === "manager" || currentUser?.role === "trainer";
   const canManageWaitlist = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const canCancelBooking = ["owner", "manager", "front_desk"].includes(currentUser?.role ?? "");
 
   const load = useCallback(async () => {
     setError("");
@@ -203,6 +205,21 @@ export default function ClassesPage() {
     try {
       await api.post(`/classes/${session.id}/bookings/${booking.booking_id}/${status}`);
       await loadBookings(session);
+    } catch (e) {
+      setBookingsError((e as ApiError).message);
+    } finally {
+      setBookingAction(null);
+    }
+  }
+
+  async function cancelBookingByStaff(session: ClassSessionOut, booking: BookingWithMember) {
+    if (!window.confirm(`Remove ${booking.member_name || booking.member_email} from ${session.title}?`)) return;
+    setBookingAction(booking.booking_id);
+    setBookingsError("");
+    try {
+      await api.post(`/classes/${session.id}/bookings/${booking.booking_id}/cancel`);
+      toast.success(booking.status === "waitlisted" ? "Member removed from the waitlist." : "Booking cancelled.");
+      await Promise.all([loadBookings(session), load()]);
     } catch (e) {
       setBookingsError((e as ApiError).message);
     } finally {
@@ -406,6 +423,7 @@ export default function ClassesPage() {
                         <Button className="h-7 px-2 text-xs" variant="secondary" disabled={bookingAction !== null} loading={bookingAction === b.booking_id} onClick={() => void updateBookingStatus(bookingsSession, b, "attend")}>Attended</Button>
                         {(bookingsSession.ends_at ? new Date(bookingsSession.ends_at) : new Date(bookingsSession.starts_at)) <= new Date() && <Button className="h-7 px-2 text-xs" variant="secondary" disabled={bookingAction !== null} onClick={() => void updateBookingStatus(bookingsSession, b, "no-show")}>No-show</Button>}
                       </>}
+                      {canCancelBooking && bookingsSession && new Date(bookingsSession.starts_at) > new Date() && !bookingsSession.cancelled && ["booked", "waitlisted"].includes(b.status) && <Button className="h-7 px-2 text-xs" variant="ghost" disabled={bookingAction !== null} loading={bookingAction === b.booking_id} onClick={() => void cancelBookingByStaff(bookingsSession, b)}>{b.status === "waitlisted" ? "Remove" : "Cancel"}</Button>}
                     </div>
                   </div>
                 ))}

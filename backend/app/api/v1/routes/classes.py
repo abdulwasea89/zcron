@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header
 
-from app.api.deps import get_session, get_tenant, require_capability
+from app.api.deps import get_session, get_tenant, require_capability, require_writable_org
 from app.core.permissions import Capability
 from app.core.tenancy import IDEMPOTENCY_HEADER, TenantContext
 from app.schemas.classes import (
@@ -125,6 +125,24 @@ async def mark_no_show(
 ):
     booking = await classes.mark_no_show(
         session, org_id=ctx.org_id, class_id=class_id, booking_id=booking_id, actor_id=ctx.user_id
+    )
+    return BookingOut(id=booking.id, class_session_id=booking.class_session_id,
+                      member_id=booking.member_id, status=booking.status.value)
+
+
+@router.post(
+    "/{class_id}/bookings/{booking_id}/cancel",
+    response_model=BookingOut,
+    dependencies=[Depends(require_writable_org)],
+)
+async def cancel_booking_by_staff(
+    class_id: str,
+    booking_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.TAKE_ATTENDANCE)),
+    session: AsyncSession = Depends(get_session),
+):
+    booking = await classes.cancel_staff_booking(
+        session, org_id=ctx.org_id, class_id=class_id, booking_id=booking_id, actor_id=ctx.user_id,
     )
     return BookingOut(id=booking.id, class_session_id=booking.class_session_id,
                       member_id=booking.member_id, status=booking.status.value)
