@@ -18,6 +18,7 @@ from app.schemas.payroll import (
     PayrollRunCreate,
     PayrollRunOut,
     MyPayStatementOut,
+    PayoutReconcile,
 )
 from app.models.membership import OrganizationMember
 from app.models.payroll import PayrollEntry, PayrollRun
@@ -58,6 +59,8 @@ async def my_pay_statements(
         commission_amount=entry.commission_amount, bonus=entry.bonus,
         deductions=entry.deductions, advance_repayment=entry.advance_repayment,
         net=entry.net, payout_method=entry.payout_method.value,
+        entry_paid_at=entry.paid_at, payout_reference=entry.payout_reference,
+        paid_amount=entry.paid_amount,
     ) for run, entry in rows]
 
 
@@ -67,6 +70,7 @@ def _entry_out(e) -> PayrollEntryOut:
         hours_worked=e.hours_worked, class_amount=e.class_amount, classes_taught=e.classes_taught,
         commission_amount=e.commission_amount, bonus=e.bonus, deductions=e.deductions,
         advance_repayment=e.advance_repayment, net=e.net, payout_method=e.payout_method.value,
+        paid_at=e.paid_at, payout_reference=e.payout_reference, paid_amount=e.paid_amount,
         pay_stub_url=e.pay_stub_url, notes=e.notes,
     )
 
@@ -139,6 +143,22 @@ async def pay_run(
     session: AsyncSession = Depends(get_session),
 ):
     run = await payroll.mark_paid(session, org_id=ctx.org_id, run_id=run_id, actor_id=ctx.user_id)
+    return await _run_out(session, run)
+
+
+@router.post("/runs/{run_id}/entries/{entry_id}/reconcile", response_model=PayrollRunOut,
+             dependencies=[Depends(require_writable_org)])
+async def reconcile_payout(
+    run_id: str,
+    entry_id: str,
+    data: PayoutReconcile,
+    ctx: TenantContext = Depends(require_capability(Capability.RUN_PAYROLL)),
+    session: AsyncSession = Depends(get_session),
+):
+    run = await payroll.reconcile_entry(
+        session, org_id=ctx.org_id, run_id=run_id, entry_id=entry_id,
+        actor_id=ctx.user_id, data=data,
+    )
     return await _run_out(session, run)
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from app.core.constants import PayoutMethod
 
@@ -29,15 +29,18 @@ class PayrollEntryOut(BaseModel):
     advance_repayment: Decimal
     net: Decimal
     payout_method: str
+    paid_at: datetime | None = None
+    payout_reference: str | None = None
+    paid_amount: Decimal | None = None
     pay_stub_url: str | None
     notes: str | None
 
     @field_serializer(
         "fixed", "hourly_amount", "class_amount", "commission_amount", "bonus",
-        "deductions", "advance_repayment", "net", when_used="json"
+        "deductions", "advance_repayment", "net", "paid_amount", when_used="json"
     )
-    def _serialize_money(self, value: Decimal) -> float:
-        return float(value)
+    def _serialize_money(self, value: Decimal | None) -> float | None:
+        return float(value) if value is not None else None
 
 
 class PayrollRunOut(BaseModel):
@@ -72,13 +75,16 @@ class MyPayStatementOut(BaseModel):
     advance_repayment: Decimal
     net: Decimal
     payout_method: str
+    entry_paid_at: datetime | None = None
+    payout_reference: str | None = None
+    paid_amount: Decimal | None = None
 
     @field_serializer(
         "fixed", "hourly_amount", "class_amount", "commission_amount", "bonus",
-        "deductions", "advance_repayment", "net", when_used="json"
+        "deductions", "advance_repayment", "net", "paid_amount", when_used="json"
     )
-    def _serialize_money(self, value: Decimal) -> float:
-        return float(value)
+    def _serialize_money(self, value: Decimal | None) -> float | None:
+        return float(value) if value is not None else None
 
 
 class EntryAdjust(BaseModel):
@@ -88,6 +94,19 @@ class EntryAdjust(BaseModel):
     deductions: Decimal | None = Field(default=None, max_digits=14, decimal_places=2, ge=0)
     payout_method: PayoutMethod | None = None
     note: str
+
+
+class PayoutReconcile(BaseModel):
+    payout_reference: str = Field(min_length=2, max_length=120)
+    paid_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+
+    @field_validator("payout_reference")
+    @classmethod
+    def nonblank_reference(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Enter the bank, wallet, or cash receipt reference.")
+        return value
 
 
 class AdvanceRequest(BaseModel):

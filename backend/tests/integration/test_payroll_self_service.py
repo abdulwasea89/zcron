@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -43,7 +43,9 @@ async def test_staff_sees_only_own_finalized_pay_statements(client, db, monkeypa
     await db.flush()
     db.add_all([
         PayrollEntry(organization_id=org_id, payroll_run_id=paid_run.id,
-                     staff_member_id=trainer.id, net=Decimal("123.45")),
+                     staff_member_id=trainer.id, net=Decimal("123.45"),
+                     paid_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+                     paid_amount=Decimal("123.45"), payout_reference="transfer-123"),
         PayrollEntry(organization_id=org_id, payroll_run_id=owner_run.id,
                      staff_member_id=owner.id, net=Decimal("999.99")),
         PayrollEntry(organization_id=org_id, payroll_run_id=draft_run.id,
@@ -57,3 +59,5 @@ async def test_staff_sees_only_own_finalized_pay_statements(client, db, monkeypa
     assert response.json()[0]["net"] == 123.45
     assert response.json()[0]["run_status"] == "paid"
     assert response.json()[0]["payout_method"] == "bank_transfer"
+    assert response.json()[0]["paid_amount"] == 123.45
+    assert response.json()[0]["payout_reference"] == "transfer-123"

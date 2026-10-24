@@ -22,7 +22,7 @@ from app.integrations.email import send_email_safe as send_email
 from app.models.membership import OrganizationMember
 from app.models.payroll import PayAdvance, PayrollEntry, PayrollRun
 from app.models.user import User
-from app.schemas.payroll import AdvanceRequest, EntryAdjust, PayrollRunCreate
+from app.schemas.payroll import AdvanceRequest, EntryAdjust, PayrollRunCreate, PayoutReconcile
 from app.services.audit_service import record_audit
 from app.utils.pdf import render_simple_pdf
 from app.workers import payroll_runner
@@ -196,14 +196,52 @@ async def finalize(session: AsyncSession, *, org_id: str, run_id: str, actor_id:
 
 
 async def mark_paid(session: AsyncSession, *, org_id: str, run_id: str, actor_id: str) -> PayrollRun:
-    run = await _get_run(session, org_id, run_id)
-    if run.status != PayrollStatus.FINALIZED:
-        raise HTTPException(status_code=409, detail="Finalize before marking paid.")
-    run.status = PayrollStatus.PAID
-    run.paid_at = now_utc()
-    session.add(run)
-    await record_audit(session, action="payroll.paid", organization_id=org_id, actor_user_id=actor_id,
-                       entity_type="payroll_run", entity_id=run.id)
+    raise HTTPException(status_code=409, detail="Record and reconcile each staff payout before the run can be marked paid.")
+
+
+async def reconcile_entry(
+    session: AsyncSession, *, org_id: str, run_id: str, entry_id: str,
+    actor_id: str, data: PayoutReconcile,
+) -> PayrollRun:
+    run = (await session.execute(select(PayrollRun).where(
+        PayrollRun.id == run_id, PayrollRun.organization_id == org_id,
+    ).with_for_update())).scalar_one_or_none()
+    if run is None:
+        raise HTTPException(status_code=404, detail="Payroll run not found.")
+    if run.status not in {PayrollStatus.FINALIZED, PayrollStatus.PAID}:
+        raise HTTPException(status_code=409, detail="Finalize payroll before reconciling payouts.")
+    entry = (await session.execute(select(PayrollEntry).where(
+        PayrollEntry.id == entry_id,
+        PayrollEntry.payroll_run_id == run.id,
+        PayrollEntry.organization_id == org_id,
+    ).with_for_update())).scalar_one_or_none()
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Payroll entry not found.")
+    if entry.paid_at is not None:
+        if entry.payout_reference == data.payout_reference and entry.paid_amount == data.paid_amount:
+            return run
+        raise HTTPException(status_code=409, detail="This staff payout has already been reconciled.")
+    if data.paid_amount != entry.net:
+        raise HTTPException(status_code=409, detail=f"Payout amount must match net pay ({entry.net:.2f}).")
+
+    entry.paid_at = now_utc()
+    entry.paid_amount = data.paid_amount
+    entry.payout_reference = data.payout_reference
+    session.add(entry)
+    await session.flush()
+    entries = list((await session.execute(select(PayrollEntry).where(
+        PayrollEntry.payroll_run_id == run.id,
+        PayrollEntry.organization_id == org_id,
+    ).with_for_update())).scalars())
+    if not entries:
+        raise HTTPException(status_code=409, detail="Payroll run has no staff payouts to reconcile.")
+    if all(item.paid_at is not None for item in entries):
+        run.status = PayrollStatus.PAID
+        run.paid_at = now_utc()
+        session.add(run)
+    await record_audit(session, action="payroll.payout_reconciled", organization_id=org_id,
+                       actor_user_id=actor_id, entity_type="payroll_entry", entity_id=entry.id,
+                       new_values={"paid_amount": entry.paid_amount, "payout_reference": entry.payout_reference})
     return run
 
 

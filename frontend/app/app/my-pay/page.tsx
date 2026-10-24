@@ -39,7 +39,7 @@ export default function MyPayPage() {
     <>
       <PageHeader title="My pay" subtitle="Your finalized pay statements" />
       <p className="mb-5 border border-border bg-background px-4 py-3 text-xs leading-5 text-muted-foreground">
-        Payment status is recorded by your gym. “Paid” is not a bank transfer confirmation.
+        Your gym records payouts here. Check the reference against your bank, wallet, or cash receipt.
       </p>
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {statements === null ? <Spinner label="Loading your pay statements…" /> : statements.length === 0 ? (
@@ -49,7 +49,7 @@ export default function MyPayPage() {
           <details key={statement.payroll_run_id} className="group px-4 py-4">
             <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-5 gap-y-2 [&::-webkit-details-marker]:hidden">
               <span className="min-w-40 flex-1 text-sm font-medium">{fmtDate(statement.period_start)} – {fmtDate(statement.period_end)}</span>
-              <Badge tone={statement.run_status === "paid" ? "success" : "warning"}>{statement.run_status === "paid" ? "Marked paid" : "Awaiting payout"}</Badge>
+              <Badge tone={statement.entry_paid_at ? "success" : "warning"}>{statement.entry_paid_at ? "Payout recorded" : "Awaiting payout"}</Badge>
               <span className="min-w-28 text-right text-sm font-semibold tabular-nums">{money(statement.net, currency)}</span>
               <span className="text-xs text-muted-foreground group-open:rotate-180" aria-hidden="true">⌄</span>
             </summary>
@@ -58,7 +58,8 @@ export default function MyPayPage() {
                 <span>{statement.hours_worked} hours</span>
                 <span>{statement.classes_taught} classes</span>
                 <span>{titleCase(statement.payout_method.replaceAll("_", " "))}</span>
-                {statement.paid_at && <span>Recorded {fmtDate(statement.paid_at)}</span>}
+                {statement.entry_paid_at && <span>Recorded {fmtDate(statement.entry_paid_at)}</span>}
+                {statement.payout_reference && <span>Reference: {statement.payout_reference}</span>}
               </div>
               <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                 {LINES.map(({ label, key }) => <div key={key} className="flex justify-between gap-3">

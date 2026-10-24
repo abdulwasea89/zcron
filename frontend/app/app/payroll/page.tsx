@@ -94,7 +94,7 @@ export default function PayrollPage() {
     <>
       <PageHeader
         title="Payroll"
-        subtitle="Draft, review, finalize and pay staff for each period"
+        subtitle="Draft, review, finalize and reconcile each staff payout"
         action={
           <Button onClick={() => setShowForm(true)}>
             <Glyph className="h-4 w-4">
@@ -263,17 +263,6 @@ function runActions(
       onSelect: () => act(run.id, "finalize"),
     });
   }
-  if (run.status === "finalized") {
-    actions.push({
-      label: "Mark paid",
-      icon: (
-        <Glyph className="h-4 w-4">
-          <path d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75a.75.75 0 0 1-.75.75h-3m-2.25 0h.75c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125H3.75m0 0a1.5 1.5 0 0 1-1.5-1.5V15a1.5 1.5 0 0 1 1.5-1.5h1.5" />
-        </Glyph>
-      ),
-      onSelect: () => act(run.id, "pay"),
-    });
-  }
   return actions;
 }
 
@@ -328,6 +317,7 @@ function RunSheet({
   onChanged: () => void;
 }) {
   const editable = run.status === "draft";
+  const reconcilable = run.status === "finalized" || run.status === "paid";
   const lifecycle = runActions(run, () => {}, onAction).filter((a) => a.label !== "View entries");
 
   return (
@@ -372,12 +362,22 @@ function RunSheet({
                   <th className={`${TH} ${CELL}`}>Bonus</th>
                   <th className={`${TH} ${CELL}`}>Deductions</th>
                   <th className={`${TH} ${CELL_LAST} text-right`}>Net</th>
+                  {reconcilable && <th className={`${TH} ${CELL_LAST} text-right`}>Payout record</th>}
                   {editable && <th className={`${TH} ${CELL_LAST} text-right`}>Adjust</th>}
                 </tr>
               </thead>
               <tbody>
                 {run.entries.map((e) => (
-                  <EntryRow key={e.id} runId={run.id} entry={e} staffMap={staffMap} editable={editable} onChanged={onChanged} />
+                  <EntryRow
+                    key={e.id}
+                    runId={run.id}
+                    entry={e}
+                    staffMap={staffMap}
+                    editable={editable}
+                    reconcilable={reconcilable}
+                    canReconcile={run.status === "finalized"}
+                    onChanged={onChanged}
+                  />
                 ))}
               </tbody>
             </table>
@@ -403,12 +403,16 @@ function EntryRow({
   entry,
   staffMap,
   editable,
+  reconcilable,
+  canReconcile,
   onChanged,
 }: {
   runId: string;
   entry: PayrollEntry;
   staffMap: Record<string, string>;
   editable: boolean;
+  reconcilable: boolean;
+  canReconcile: boolean;
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -417,6 +421,8 @@ function EntryRow({
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [payoutReference, setPayoutReference] = useState("");
+  const [paidAmount, setPaidAmount] = useState(String(entry.net));
 
   async function save() {
     setError("");
@@ -436,7 +442,24 @@ function EntryRow({
     }
   }
 
-  const columns = 8 + (editable ? 1 : 0);
+  async function reconcile() {
+    setError("");
+    setLoading(true);
+    try {
+      await api.post(`/payroll/runs/${runId}/entries/${entry.id}/reconcile`, {
+        payout_reference: payoutReference,
+        paid_amount: Number(paidAmount),
+      });
+      setOpen(false);
+      onChanged();
+    } catch (e) {
+      setError((e as ApiError).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const columns = 8 + (editable ? 1 : 0) + (reconcilable ? 1 : 0);
 
   return (
     <>
@@ -453,6 +476,19 @@ function EntryRow({
         <td className={`${TD} ${CELL_LAST} py-2.5 text-right font-semibold tabular-nums text-[var(--foreground)]`}>
           {money(entry.net)}
         </td>
+        {reconcilable && (
+          <td className={`${TD} ${CELL_LAST} py-2.5 text-right`}>
+            {entry.paid_at ? (
+              <span className="text-xs text-success">Recorded · {entry.payout_reference}</span>
+            ) : canReconcile ? (
+              <Button variant="secondary" onClick={() => setOpen((o) => !o)}>
+                {open ? "Close" : "Record payout"}
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground">Pending</span>
+            )}
+          </td>
+        )}
         {editable && (
           <td className={`${TD} ${CELL_LAST} py-2.5 text-right`}>
             <Button variant="ghost" onClick={() => setOpen((o) => !o)}>
@@ -465,14 +501,21 @@ function EntryRow({
         <tr className={TR}>
           <td colSpan={columns} className={`${TD} ${CELL} bg-[var(--background)] p-4`}>
             {error && <div className="mb-3"><Alert>{error}</Alert></div>}
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Input label="Bonus" type="number" step="0.01" value={bonus} onChange={(e) => setBonus(e.target.value)} />
-              <Input label="Deductions" type="number" step="0.01" value={deductions} onChange={(e) => setDeductions(e.target.value)} />
-              <Input label="Note (required)" required value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason for adjustment" />
-            </div>
-            <div className="mt-4">
-              <Button loading={loading} disabled={!note} onClick={save}>Save adjustment</Button>
-            </div>
+            {editable ? <>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Input label="Bonus" type="number" step="0.01" value={bonus} onChange={(e) => setBonus(e.target.value)} />
+                <Input label="Deductions" type="number" step="0.01" value={deductions} onChange={(e) => setDeductions(e.target.value)} />
+                <Input label="Note (required)" required value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason for adjustment" />
+              </div>
+              <div className="mt-4"><Button loading={loading} disabled={!note} onClick={save}>Save adjustment</Button></div>
+            </> : canReconcile && !entry.paid_at ? <>
+              <p className="mb-3 text-xs text-muted-foreground">Enter the bank, wallet, or cash receipt reference. The recorded amount must match finalized net pay.</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input label="Payout reference" required minLength={2} maxLength={120} value={payoutReference} onChange={(e) => setPayoutReference(e.target.value)} placeholder="Transaction or receipt number" />
+                <Input label="Amount paid" type="number" step="0.01" min="0" required value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} />
+              </div>
+              <div className="mt-4"><Button loading={loading} disabled={payoutReference.trim().length < 2 || Number(paidAmount) !== entry.net} onClick={reconcile}>Confirm payout</Button></div>
+            </> : null}
           </td>
         </tr>
       )}

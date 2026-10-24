@@ -335,6 +335,9 @@ export interface PayrollEntry {
   advance_repayment: number;
   net: number;
   payout_method: string;
+  paid_at?: string | null;
+  payout_reference?: string | null;
+  paid_amount?: number | null;
   pay_stub_url: string | null;
   notes: string | null;
 }
@@ -356,6 +359,9 @@ export interface MyPayStatement {
   period_end: string;
   run_status: string;
   paid_at: string | null;
+  entry_paid_at: string | null;
+  payout_reference: string | null;
+  paid_amount: number | null;
   fixed: number;
   hourly_amount: number;
   hours_worked: number;

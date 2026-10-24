@@ -49,6 +49,9 @@ class PayrollEntry(UUIDModel, TimestampModel, table=True):
     net: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(14, 2), nullable=False))
 
     payout_method: PayoutMethod = Field(default=PayoutMethod.BANK_TRANSFER)
+    paid_at: datetime | None = None
+    payout_reference: str | None = None
+    paid_amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(14, 2), nullable=True))
     pay_stub_url: str | None = None
     notes: str | None = None
     trainer_confirmed: bool = False  # for cash payouts (Section 15.6)
