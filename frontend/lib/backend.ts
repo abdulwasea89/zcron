@@ -84,7 +84,8 @@ async function fetchBackend(path: string, opts: CallOpts): Promise<Response> {
   const { method = "GET", body, auth = true, headers = {}, retryOn401 = true } = opts;
 
   const h: Record<string, string> = { ...headers };
-  if (body !== undefined) h["Content-Type"] = "application/json";
+  const isFormData = body instanceof FormData;
+  if (body !== undefined && !isFormData) h["Content-Type"] = "application/json";
 
   let accessToken: string | undefined;
   let orgId: string | undefined;
@@ -99,7 +100,7 @@ async function fetchBackend(path: string, opts: CallOpts): Promise<Response> {
   const res = await fetch(`${BASE}${PREFIX}${path}`, {
     method,
     headers: h,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     cache: "no-store",
   });
 
@@ -108,14 +109,14 @@ async function fetchBackend(path: string, opts: CallOpts): Promise<Response> {
     const refreshResult = await tryRefresh();
     if (refreshResult) {
       const retryH: Record<string, string> = { ...headers };
-      if (body !== undefined) retryH["Content-Type"] = "application/json";
+      if (body !== undefined && !isFormData) retryH["Content-Type"] = "application/json";
       retryH["Authorization"] = `Bearer ${refreshResult.accessToken}`;
       if (refreshResult.orgId) retryH["X-Organization-Id"] = refreshResult.orgId;
 
       const retryRes = await fetch(`${BASE}${PREFIX}${path}`, {
         method,
         headers: retryH,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
         cache: "no-store",
       });
       return retryRes;

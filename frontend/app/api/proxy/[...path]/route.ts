@@ -12,8 +12,12 @@ async function handle(req: NextRequest, path: string[]) {
 
   let body: unknown = undefined;
   if (method !== "GET" && method !== "DELETE") {
-    const text = await req.text();
-    body = text ? JSON.parse(text) : undefined;
+    if (req.headers.get("content-type")?.includes("multipart/form-data")) {
+      body = await req.formData();
+    } else {
+      const text = await req.text();
+      body = text ? JSON.parse(text) : undefined;
+    }
   }
 
   const idempotencyKey = req.headers.get("Idempotency-Key") || undefined;

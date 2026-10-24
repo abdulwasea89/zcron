@@ -507,9 +507,11 @@ async def bulk_import(
 ):
     """Bulk-import members from a CSV (web-only, Section 9.9, 16)."""
 
-    content = await file.read()
+    content = await file.read(2_000_001)
     if not content:
         raise HTTPException(status_code=422, detail="Uploaded file is empty.")
+    if len(content) > 2_000_000:
+        raise HTTPException(status_code=413, detail="CSV files must be 2 MB or smaller.")
     result = await members.bulk_import_csv(session, org_id=ctx.org_id, csv_bytes=content,
                                            actor_id=ctx.user_id)
     return BulkImportResult(**result)

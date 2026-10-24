@@ -220,7 +220,11 @@ async def test_org_name_update_and_validation(client):
 
 # -------------------------------------------------------------- CSV import
 @pytest.mark.asyncio
-async def test_bulk_import_csv(client):
+async def test_bulk_import_csv(client, monkeypatch):
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
     headers, org_id, org_code, plan_id = await _provision_gym(client)
     csv_body = (
         "email,full_name,phone\n"
@@ -246,6 +250,12 @@ async def test_bulk_import_csv(client):
     r = await client.get("/api/v1/members", headers=headers, params={"status": "pending_activation"})
     emails = {m["email"] for m in r.json()}
     assert {"alice@import.com", "bob@import.com"} <= emails
+
+    too_large = await client.post(
+        "/api/v1/members/import", headers=headers,
+        files={"file": ("large.csv", b"x" * 2_000_001, "text/csv")},
+    )
+    assert too_large.status_code == 413
 
 
 # ---------------------------------------------------------- Stripe webhooks

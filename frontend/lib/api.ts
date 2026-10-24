@@ -15,13 +15,14 @@ export class ApiError extends Error {
 
 async function request<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
   const h: Record<string, string> = { ...headers };
-  if (body !== undefined) h["Content-Type"] = "application/json";
+  const isFormData = body instanceof FormData;
+  if (body !== undefined && !isFormData) h["Content-Type"] = "application/json";
   let res: Response;
   try {
     res = await fetch(`/api/proxy${path}`, {
       method,
       headers: Object.keys(h).length > 0 ? h : undefined,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     });
   } catch {
     const message = "Acron could not reach the server. Check your connection and try again.";
