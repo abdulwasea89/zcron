@@ -106,6 +106,41 @@ async def test_external_id_is_idempotent(client):
 
 
 @pytest.mark.asyncio
+async def test_public_web_chat_sends_immediate_acknowledgement(client, monkeypatch):
+    from app.services import organizations_service
+    from app.api.v1.routes import inbox as inbox_routes
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+
+    async def web_chat_enabled(*_args):
+        return {"enabled": True}
+
+    monkeypatch.setattr(inbox_routes, "get_credentials", web_chat_enabled)
+    headers, _org_id, org_code = await _provision_gym(client)
+
+    response = await client.post(f"/api/v1/inbox/public/{org_code}/conversations", json={
+        "name": "Jordan", "email": "jordan@prospect.com", "message": "Do you have a trial?",
+    })
+    assert response.status_code == 201, response.text
+    thread = response.json()["thread"]
+    messages = thread["messages"]
+    assert [message["direction"] for message in messages] == ["inbound", "outbound"]
+    assert "Your message is in the team's inbox" in messages[1]["body"]
+    admin_thread = await client.get(f"/api/v1/inbox/conversations/{thread['id']}", headers=headers)
+    assert admin_thread.status_code == 200 and len(admin_thread.json()["messages"]) == 2
+
+    followup = await client.post(
+        f"/api/v1/inbox/public/conversations/{thread['id']}/messages",
+        headers={"Authorization": f"Bearer {response.json()['token']}"},
+        json={"message": "What times are available?"},
+    )
+    assert followup.status_code == 201, followup.text
+    assert sum("Your message is in the team's inbox" in item["body"]
+               for item in followup.json()["messages"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_ingest_matches_member_by_email(client):
     headers, _org_id, org_code = await _provision_gym(client)
     member_id = await _signup_member(client, org_code, "findme@inbox.com")

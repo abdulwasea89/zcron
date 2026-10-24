@@ -93,6 +93,10 @@ async def public_chat_start(org_code: str, data: PublicChatStart, request: Reque
         raise HTTPException(status_code=404, detail="This workspace has not enabled web chat.")
     handle = data.email.strip().lower()
     thread = await inbox.record_inbound(session, org_id=org.id, channel="web_chat", handle=handle, body=data.message.strip(), contact_name=data.name.strip(), force_new=True)
+    await inbox.record_web_chat_ack(
+        session, org_id=org.id, conversation_id=thread["id"],
+        body=f"Thanks for contacting {org.name}. Your message is in the team's inbox, and someone will follow up as soon as they are available.",
+    )
     token = _chat_token(thread["id"], org.id)
     return {"token": token, "thread": await _public_chat_thread(session, thread["id"])}
 

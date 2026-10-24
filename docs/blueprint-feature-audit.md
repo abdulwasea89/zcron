@@ -46,7 +46,7 @@ By priority (Section 1 only):
 | 1 | Lead capture from WhatsApp, SMS, Instagram, Facebook, LINE, WeChat, web forms, calls, walk-ins | P0 | ❌ | No `Lead`/`Deal`/`Pipeline` model anywhere. `models/inbox.py:9` mentions "a lead messaging before they are a member" — prose, not an entity | none |
 | 2 | Lead profile: goal, budget, preferred times, preferences | P0 | ❌ | — | none |
 | 3 | Pipeline: New → Contacted → Trial booked → Visited → Joined / Lost | P0 | ❌ | No stage enum, no pipeline entity | none |
-| 4 | Instant first reply 24/7 | P0 | ❌ | No auto-reply, no FAQ knowledge base | none |
+| 4 | Instant first reply 24/7 | P0 | ⚠️ | Enabled public web chat sends an immediate, idempotent receipt reply visible to the visitor and team inbox; other channels and FAQ-based answers remain unbuilt | backend + frontend web |
 | 5 | Trial and tour booking | P0 | ❌ | `plan.trial_days` is a SaaS free trial; `visitor.py:4` says "a trial" in prose only. Only class booking exists | none |
 | 6 | Follow-up sequences (day 0, 1, 3, 7) | P0 | ❌ | Member-side onboarding exists (row 31); lead-side does not | none |
 | 7 | Lost-reason tracking and lead scoring | P1 | ❌ | — | none |

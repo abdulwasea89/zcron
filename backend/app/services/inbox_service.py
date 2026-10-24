@@ -214,6 +214,33 @@ async def record_inbound(
     return await _thread_out(session, conv.id)
 
 
+async def record_web_chat_ack(session: AsyncSession, *, org_id: str, conversation_id: str, body: str) -> None:
+    """Acknowledge an enabled public web-chat inquiry once per conversation."""
+    conv = await _get_conversation(session, org_id, conversation_id)
+    key = f"web-chat-ack:{conversation_id}"
+    existing = (await session.execute(select(InboxMessage.id).where(
+        InboxMessage.organization_id == org_id,
+        InboxMessage.idempotency_key == key,
+    ))).first()
+    if existing:
+        return
+    session.add(InboxMessage(
+        organization_id=org_id, conversation_id=conv.id,
+        direction=MessageDirection.OUTBOUND, sender_kind=SenderKind.SYSTEM,
+        body=body, channel=Channel.WEB_CHAT,
+        delivery_status="sent", idempotency_key=key,
+    ))
+    conv.last_message_at = now_utc()
+    session.add(conv)
+    await record_audit(
+        session, action="inbox.auto_acknowledged", organization_id=org_id,
+        entity_type="inbox_conversation", entity_id=conv.id,
+        metadata={"channel": Channel.WEB_CHAT.value},
+    )
+    await session.flush()
+    await events.inbox_changed(org_id, conversation_id=conv.id, action="auto_acknowledged")
+
+
 async def reply(
     session: AsyncSession,
     *,
