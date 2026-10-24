@@ -32,6 +32,7 @@ dependencies = [
     # Durable checkpointing for human-in-the-loop in production. Dev/tests use
     # the in-memory saver, so this is only imported when a Postgres org runs.
     "langgraph-checkpoint-postgres>=3.1",
+    "openpyxl>=3.1",
 ]
 
 [dependency-groups]

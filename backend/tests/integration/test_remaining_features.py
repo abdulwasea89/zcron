@@ -1,12 +1,15 @@
-"""Integration tests for the remaining features: WebSocket sync, Stripe webhooks,
-MFA (TOTP), org-code rotation, and CSV bulk import.
+"""Integration tests for remaining features: WebSocket sync, Stripe webhooks,
+MFA (TOTP), org-code rotation, and member spreadsheet import.
 
 These exercise the wiring added on top of the 13 core domains.
 """
 
 from __future__ import annotations
 
+import io
+
 import pytest
+from openpyxl import Workbook
 
 from app.core import totp
 from app.core.security import now_utc
@@ -218,7 +221,7 @@ async def test_org_name_update_and_validation(client):
     assert r.status_code == 422, r.text
 
 
-# -------------------------------------------------------------- CSV import
+# --------------------------------------------------------- Spreadsheet import
 @pytest.mark.asyncio
 async def test_bulk_import_csv(client, monkeypatch):
     from app.services import organizations_service
@@ -250,6 +253,25 @@ async def test_bulk_import_csv(client, monkeypatch):
     r = await client.get("/api/v1/members", headers=headers, params={"status": "pending_activation"})
     emails = {m["email"] for m in r.json()}
     assert {"alice@import.com", "bob@import.com"} <= emails
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["email", "full_name", "phone"])
+    sheet.append(["excel@import.com", "Excel Member", "+15555550123"])
+    xlsx = io.BytesIO()
+    workbook.save(xlsx)
+    r = await client.post(
+        "/api/v1/members/import", headers=headers,
+        files={"file": ("members.xlsx", xlsx.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["created"] == 1
+
+    invalid_type = await client.post(
+        "/api/v1/members/import", headers=headers,
+        files={"file": ("members.xls", csv_body, "application/vnd.ms-excel")},
+    )
+    assert invalid_type.status_code == 422
 
     too_large = await client.post(
         "/api/v1/members/import", headers=headers,

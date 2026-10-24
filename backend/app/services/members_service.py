@@ -11,10 +11,12 @@ import csv
 import io
 import re
 import secrets
+import zipfile
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from fastapi import HTTPException
+from openpyxl import load_workbook
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -591,6 +593,35 @@ async def resend_invite(
     return member, code, delivered
 
 
+# --------------------------------------------------- member spreadsheet import
+def xlsx_as_csv(xlsx_bytes: bytes) -> bytes:
+    """Read the first worksheet, bounded by file expansion and row/column size."""
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(xlsx_bytes)) as archive:
+            entries = archive.infolist()
+            if len(entries) > 100 or sum(item.file_size for item in entries) > 20_000_000:
+                raise HTTPException(status_code=413, detail="Excel workbook expands beyond the 20 MB import limit.")
+        workbook = load_workbook(io.BytesIO(xlsx_bytes), read_only=True, data_only=True)
+        try:
+            sheet = workbook.active
+            if sheet is None:
+                raise HTTPException(status_code=422, detail="Excel workbook has no active worksheet.")
+            if (sheet.max_row or 0) > 10_001 or (sheet.max_column or 0) > 50:
+                raise HTTPException(status_code=413, detail="Excel imports support up to 10,000 rows and 50 columns.")
+            output = io.StringIO(newline="")
+            writer = csv.writer(output)
+            for row in sheet.iter_rows(values_only=True):
+                writer.writerow(["" if value is None else str(value) for value in row])
+            return output.getvalue().encode("utf-8")
+        finally:
+            workbook.close()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Upload a valid .xlsx workbook.") from exc
+
+
 # ------------------------------------------------------- CSV bulk import
 async def bulk_import_csv(
     session: AsyncSession, *, org_id: str, csv_bytes: bytes, actor_id: str
@@ -623,6 +654,8 @@ async def bulk_import_csv(
     skipped = 0
     errors: list[dict] = []
     for i, row in enumerate(reader, start=2):  # row 1 is the header
+        if i > 10_001:
+            raise HTTPException(status_code=413, detail="Imports support up to 10,000 data rows.")
         email = (row.get(field_map["email"]) or "").strip().lower()
         if not email or "@" not in email:
             errors.append({"row": i, "error": "invalid or missing email"})

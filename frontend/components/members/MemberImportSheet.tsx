@@ -33,12 +33,12 @@ export function MemberImportSheet({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      toast.error("Choose a CSV file.");
+    if (!/\.(csv|xlsx)$/i.test(file.name)) {
+      toast.error("Choose a CSV or .xlsx workbook.");
       return;
     }
     if (file.size > 2_000_000) {
-      toast.error("CSV files must be 2 MB or smaller.");
+      toast.error("Import files must be 2 MB or smaller.");
       return;
     }
 
@@ -63,7 +63,7 @@ export function MemberImportSheet({
       <SheetContent side="right" className="sm:max-w-[520px]">
         <SheetHeader>
           <SheetTitle>Import members</SheetTitle>
-          <SheetDescription>Upload a CSV to add members to this workspace.</SheetDescription>
+          <SheetDescription>Upload a CSV or Excel workbook to add members to this workspace. Excel imports use the first worksheet.</SheetDescription>
         </SheetHeader>
         <SheetBody className="space-y-5">
           <section className="space-y-2 text-sm">
@@ -76,11 +76,11 @@ export function MemberImportSheet({
           </p>
 
           <form id="member-import-form" onSubmit={(event) => void submit(event)} className="space-y-3">
-            <label htmlFor="member-import-file" className="block text-xs font-medium text-foreground">CSV file · up to 2 MB</label>
+            <label htmlFor="member-import-file" className="block text-xs font-medium text-foreground">CSV or Excel workbook · up to 2 MB</label>
             <input
               id="member-import-file"
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               disabled={busy}
               onChange={(event) => { setFile(event.target.files?.[0] ?? null); setResult(null); }}
               className="block w-full text-sm text-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-2 file:text-xs file:text-foreground"
@@ -105,7 +105,7 @@ export function MemberImportSheet({
         </SheetBody>
         <SheetFooter>
           <Button type="button" variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>Close</Button>
-          <Button type="submit" form="member-import-form" disabled={!file || busy} loading={busy}>Import CSV</Button>
+          <Button type="submit" form="member-import-form" disabled={!file || busy} loading={busy}>Import members</Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>
