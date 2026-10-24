@@ -226,9 +226,10 @@ async def record_inbound(
     await detect_freeze_request_from_message(
         session, org_id=org_id, member_id=conv.member_id, body=body,
     )
-    if ch in {Channel.SMS, Channel.WHATSAPP} and body.strip().casefold() in {
+    is_opt_out = ch in {Channel.SMS, Channel.WHATSAPP} and body.strip().casefold() in {
         "stop", "stopall", "unsubscribe", "cancel", "end", "quit",
-    }:
+    }
+    if is_opt_out:
         from app.models.lead import Lead
         import re
 
@@ -260,6 +261,8 @@ async def record_inbound(
                     old_values={"sms": True}, new_values={"sms": False},
                     metadata={"source": "inbound_stop", "channel": ch.value},
                 )
+    elif ch != Channel.WEB_CHAT:
+        await _ack_first_inbound(session, conv)
     await record_audit(
         session, action="inbox.received", organization_id=org_id,
         entity_type="inbox_conversation", entity_id=conv.id,
@@ -294,6 +297,51 @@ async def record_web_chat_ack(session: AsyncSession, *, org_id: str, conversatio
     )
     await session.flush()
     await events.inbox_changed(org_id, conversation_id=conv.id, action="auto_acknowledged")
+
+
+async def _ack_first_inbound(session: AsyncSession, conv: InboxConversation) -> None:
+    if conv.channel in {Channel.WEB_CHAT, Channel.PHONE, Channel.WALK_IN, Channel.OTHER}:
+        return
+    key = f"inbox-auto-ack:{conv.id}"
+    existing = await session.execute(select(InboxMessage.id).where(
+        InboxMessage.organization_id == conv.organization_id,
+        InboxMessage.idempotency_key == key,
+    ))
+    if existing.first():
+        return
+
+    from app.services.inbox_channels_service import get_credentials
+
+    try:
+        credentials = await get_credentials(session, conv.organization_id, conv.channel.value)
+    except HTTPException:
+        return
+    if not credentials:
+        return
+
+    # shortcut: fixed English receipt; add workspace copy/locales when configurable auto-replies exist.
+    message = InboxMessage(
+        organization_id=conv.organization_id, conversation_id=conv.id,
+        direction=MessageDirection.OUTBOUND, sender_kind=SenderKind.SYSTEM,
+        body="Thanks for reaching out. Your message is in the team's inbox, and we'll get back to you as soon as we can.",
+        channel=conv.channel, delivery_status="sending", idempotency_key=key,
+    )
+    session.add(message)
+    await session.flush()
+    try:
+        await _deliver_message(session, conv.organization_id, message, conv.contact_handle)
+    except HTTPException as exc:
+        message.delivery_status = "failed"
+        message.delivery_error = str(exc.detail)[:240]
+    session.add(message)
+    await record_audit(
+        session,
+        action="inbox.auto_acknowledged" if message.delivery_status == "sent" else "inbox.auto_acknowledgement_failed",
+        organization_id=conv.organization_id, entity_type="inbox_conversation", entity_id=conv.id,
+        metadata={"channel": conv.channel.value, "delivery_status": message.delivery_status},
+    )
+    await session.flush()
+    await events.inbox_changed(conv.organization_id, conversation_id=conv.id, action="auto_acknowledged")
 
 
 async def reply(

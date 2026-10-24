@@ -199,6 +199,38 @@ async def test_public_web_chat_sends_immediate_acknowledgement(client, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_connected_channel_acknowledges_once_and_never_replies_to_stop(client, monkeypatch):
+    from app.services import inbox_channels_service, inbox_service
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+
+    async def connected(*_args):
+        return {"account_sid": "test", "auth_token": "test", "from_number": "+15550000000"}
+
+    async def delivered(_session, _org_id, message, _recipient):
+        message.delivery_status = "sent"
+
+    monkeypatch.setattr(inbox_channels_service, "get_credentials", connected)
+    monkeypatch.setattr(inbox_service, "_deliver_message", delivered)
+    headers, _org_id, _code = await _provision_gym(client)
+
+    first = await _ingest(client, headers, channel="sms", handle="+15551234567", external_id="sms-1")
+    assert first.status_code == 201, first.text
+    assert [message["direction"] for message in first.json()["messages"]] == ["inbound", "outbound"]
+    assert "in the team's inbox" in first.json()["messages"][1]["body"]
+
+    second = await _ingest(client, headers, channel="sms", handle="+15551234567", external_id="sms-2")
+    assert second.status_code == 201, second.text
+    assert sum(message["direction"] == "outbound" for message in second.json()["messages"]) == 1
+
+    stop = await _ingest(client, headers, channel="sms", handle="+15557654321", body="STOP", external_id="sms-stop")
+    assert stop.status_code == 201, stop.text
+    assert all(message["direction"] == "inbound" for message in stop.json()["messages"])
+
+
+@pytest.mark.asyncio
 async def test_public_web_chat_does_not_create_lead_for_existing_member(client, monkeypatch):
     from app.services import organizations_service
     from app.api.v1.routes import inbox as inbox_routes
