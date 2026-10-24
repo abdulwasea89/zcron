@@ -13,6 +13,7 @@ type DataRequest = {
   note: string | null; resolution_note: string | null; created_at: string; resolved_at: string | null;
   erasure_redacted_at: string | null;
 };
+type MemberConsent = { member_id: string; email: boolean; email_updated_at: string | null; sms: boolean; sms_updated_at: string | null; in_app: boolean; in_app_updated_at: string | null };
 
 const REQUEST_LABEL: Record<DataRequest["request_type"], string> = {
   access: "Access", export: "Export", correction: "Correction", erasure: "Erasure",
@@ -24,6 +25,8 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
   const [memberId, setMemberId] = useState("");
   const [requestType, setRequestType] = useState<DataRequest["request_type"]>("access");
   const [note, setNote] = useState("");
+  const [consent, setConsent] = useState<MemberConsent>({ member_id: "", email: false, email_updated_at: null, sms: false, sms_updated_at: null, in_app: false, in_app_updated_at: null });
+  const [consentBusy, setConsentBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -45,6 +48,30 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
   }
 
   useEffect(() => { queueMicrotask(() => void refresh()); }, []);
+
+  useEffect(() => {
+    if (!memberId) return;
+    queueMicrotask(() => {
+      void api.get<MemberConsent>(`/privacy/members/${memberId}/consent`)
+        .then(setConsent)
+        .catch((error) => toast.error((error as ApiError).message || "Could not load communication consent."));
+    });
+  }, [memberId]);
+
+  async function saveConsent() {
+    setConsentBusy(true);
+    try {
+      const updated = await api.put<MemberConsent>(`/privacy/members/${memberId}/consent`, {
+        email: consent.email, sms: consent.sms, in_app: consent.in_app,
+      }, { "Idempotency-Key": crypto.randomUUID() });
+      setConsent(updated);
+      toast.success("Communication permissions saved.");
+    } catch (error) {
+      toast.error((error as ApiError).message || "Could not save communication permissions.");
+    } finally {
+      setConsentBusy(false);
+    }
+  }
 
   async function createRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -123,6 +150,25 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
         </label>
         <Button type="submit" disabled={!memberId || busy !== null} loading={busy === "create"}>Record request</Button>
       </form>
+
+      <section className="space-y-3 border-b border-border pb-5">
+        <div>
+          <h3 className="text-sm font-semibold">Member communication consent</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Only enable a channel after the member explicitly opts in. Marketing campaigns skip members without consent.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {([
+            ["email", "Marketing email"], ["sms", "Marketing SMS"], ["in_app", "In-app promotions"],
+          ] as const).map(([key, label]) => (
+            <label key={key} className="flex min-h-10 items-center gap-2 border border-border px-3 text-xs">
+              <input type="checkbox" checked={consent.member_id === memberId && consent[key]} disabled={consent.member_id !== memberId} onChange={(event) => setConsent((current) => ({ ...current, [key]: event.target.checked }))} />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted-foreground">SMS status changes to opted out when the member texts STOP. Bulk SMS campaigns are not enabled.</p>
+        <Button variant="secondary" disabled={!memberId || consent.member_id !== memberId || consentBusy || busy !== null} loading={consentBusy} onClick={() => void saveConsent()}>Save permissions</Button>
+      </section>
 
       <div>
         <h3 className="mb-1 text-sm font-semibold">Request log</h3>

@@ -11,6 +11,7 @@ import uuid
 
 import pytest
 
+from app.models.membership import OrganizationMember
 from tests.helpers import OWNER_PROFILE, latest_code_for
 
 PASSWORD = "Sup3rStr0ng!Pass"
@@ -112,6 +113,27 @@ async def test_ingest_matches_member_by_email(client):
     assert r.status_code == 201, r.text
     assert r.json()["member_id"] == member_id
     assert r.json()["member_name"]  # resolved name/email
+
+
+@pytest.mark.asyncio
+async def test_member_sms_stop_revokes_marketing_consent(client, db, monkeypatch):
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    headers, _org_id, org_code = await _provision_gym(client)
+    member_id = await _signup_member(client, org_code, "sms-member@inbox.com")
+    member = await db.get(OrganizationMember, member_id)
+    member.phone = "+15555550100"
+    member.marketing_sms_consent = True
+    await db.commit()
+
+    response = await _ingest(
+        client, headers, channel="sms", handle=member.phone, body="STOP",
+    )
+    assert response.status_code == 201, response.text
+    await db.refresh(member)
+    assert member.marketing_sms_consent is False
+    assert member.marketing_sms_consent_at is not None
 
 
 # ------------------------------------------------------------------- actions

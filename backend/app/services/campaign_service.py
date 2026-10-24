@@ -8,9 +8,8 @@ haven't visited in 15 days" fall out of data we already row.
 * **Audience:** status filter (defaults to active), optional plan, optional
   minimum absence in days. Resolved into concrete member rows at send time —
   the segment is computed, not stored, so it is always current.
-* **Channels:** in-app notification and/or email. Emails only go to verified
-  addresses (`User.email_verified`, Security Rule #6) and are capped per run so
-  a stray send cannot blast the whole gym.
+* **Channels:** in-app notification and/or email. Each channel requires explicit
+  member marketing consent; email additionally requires a verified address.
 * **Idempotency:** a unique (campaign, member) delivery pair means resuming a
   partially-sent campaign — whether re-run manually or by the scheduled worker —
   never double-sends (Security Rule #2).
@@ -92,6 +91,16 @@ async def _resolve_segment(
         ),
     )
     candidates = list((await session.execute(stmt)).scalars().all())
+    if not candidates:
+        return []
+
+    wants_email = campaign.channel in {CampaignChannel.EMAIL, CampaignChannel.BOTH}
+    wants_in_app = campaign.channel in {CampaignChannel.IN_APP, CampaignChannel.BOTH}
+    candidates = [
+        member for member in candidates
+        if (wants_email and member.marketing_email_consent)
+        or (wants_in_app and member.marketing_in_app_consent)
+    ]
     if not candidates:
         return []
 
@@ -273,11 +282,13 @@ async def _deliver_member(
 
     from app.services.notifications_service import create_notification
 
-    wants_email = campaign.channel in {CampaignChannel.EMAIL, CampaignChannel.BOTH}
-    wants_in_app = campaign.channel in {CampaignChannel.IN_APP, CampaignChannel.BOTH}
+    wants_email = campaign.channel in {CampaignChannel.EMAIL, CampaignChannel.BOTH} and member.marketing_email_consent
+    wants_in_app = campaign.channel in {CampaignChannel.IN_APP, CampaignChannel.BOTH} and member.marketing_in_app_consent
 
     user = await session.get(User, member.user_id)
 
+    in_app_sent = False
+    email_sent = False
     if wants_in_app:
         await create_notification(
             session,
@@ -288,20 +299,19 @@ async def _deliver_member(
             body=campaign.body,
             data={"campaign_id": campaign.id},
         )
+        in_app_sent = True
 
-    if wants_email:
-        if user is None or not user.email_verified:
-            delivery.status = CampaignDeliveryStatus.SUPPRESSED
-            delivery.channel = CampaignChannel.EMAIL
-        else:
-            await send_email(user.email, campaign.subject, campaign.body)
-            delivery.status = CampaignDeliveryStatus.SENT
-            delivery.channel = CampaignChannel.EMAIL
-            delivery.delivered_at = now_utc()
-    else:
+    if wants_email and user is not None and user.email_verified:
+        await send_email(user.email, campaign.subject, campaign.body)
+        email_sent = True
+
+    if in_app_sent or email_sent:
         delivery.status = CampaignDeliveryStatus.SENT
-        delivery.channel = CampaignChannel.IN_APP
+        delivery.channel = CampaignChannel.BOTH if in_app_sent and email_sent else CampaignChannel.IN_APP if in_app_sent else CampaignChannel.EMAIL
         delivery.delivered_at = now_utc()
+    else:
+        delivery.status = CampaignDeliveryStatus.SUPPRESSED
+        delivery.channel = campaign.channel
 
     return delivery
 

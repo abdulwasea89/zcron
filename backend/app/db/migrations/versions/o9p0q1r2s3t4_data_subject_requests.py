@@ -1,4 +1,4 @@
-"""Record staff-managed member privacy requests.
+"""Add member privacy request records.
 
 Revision ID: o9p0q1r2s3t4
 Revises: n8o9p0q1r2s3

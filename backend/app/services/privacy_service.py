@@ -47,6 +47,12 @@ async def erase_member_from_workspace(
     member.stripe_default_payment_method_type = None
     member.recurring_consent_at = None
     member.stripe_recurring_setup_intent_id = None
+    member.marketing_email_consent = False
+    member.marketing_email_consent_at = now_utc()
+    member.marketing_sms_consent = False
+    member.marketing_sms_consent_at = now_utc()
+    member.marketing_in_app_consent = False
+    member.marketing_in_app_consent_at = now_utc()
     session.add(member)
 
     subscriptions = (await session.execute(select(Subscription).where(

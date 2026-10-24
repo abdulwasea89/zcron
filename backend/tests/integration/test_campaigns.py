@@ -22,6 +22,14 @@ PASSWORD = "Sup3rStr0ng!Pass"
 MEMBER_PWD = "M3mberStr0ng!Pwd"
 
 
+@pytest.fixture(autouse=True)
+def disable_external_stripe(monkeypatch):
+    from app.services import organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+
+
 async def _provision_gym(client, *, owner_email="owner@camp.com"):
     await client.post(
         "/api/v1/auth/register",
@@ -65,7 +73,7 @@ async def _provision_gym(client, *, owner_email="owner@camp.com"):
     return headers, org_id, org_code, plan_id
 
 
-async def _signup_member(client, org_code, plan_id, email) -> str:
+async def _signup_member(client, org_code, plan_id, headers, email, *, marketing_consent=True) -> str:
     await client.post(
         "/api/v1/memberships/signup/request-email", json={"org_code": org_code, "email": email}
     )
@@ -84,6 +92,13 @@ async def _signup_member(client, org_code, plan_id, email) -> str:
         headers={"Idempotency-Key": str(uuid.uuid4())},
         json={"org_code": org_code, "email": email, "plan_id": plan_id},
     )
+    if marketing_consent:
+        consent = await client.put(
+            f"/api/v1/privacy/members/{member_id}/consent",
+            headers={**headers, "Idempotency-Key": f"campaign-consent-{member_id}"},
+            json={"email": True, "sms": False, "in_app": True},
+        )
+        assert consent.status_code == 200, consent.text
     return member_id
 
 
@@ -109,8 +124,8 @@ async def _create_campaign(client, headers, **kw):
 @pytest.mark.asyncio
 async def test_campaign_sends_to_active_segment_and_dedups(client, db):
     headers, org_id, org_code, plan_id = await _provision_gym(client)
-    await _signup_member(client, org_code, plan_id, "alice@camp.com")
-    await _signup_member(client, org_code, plan_id, "bob@camp.com")
+    await _signup_member(client, org_code, plan_id, headers, "alice@camp.com")
+    await _signup_member(client, org_code, plan_id, headers, "bob@camp.com")
 
     campaign = await _create_campaign(client, headers, channel="in_app")
     assert campaign["status"] == "draft"
@@ -180,7 +195,7 @@ async def test_campaign_sends_to_active_segment_and_dedups(client, db):
 @pytest.mark.asyncio
 async def test_email_channel_suppresses_unverified_addresses(client, db):
     headers, org_id, org_code, plan_id = await _provision_gym(client)
-    member_id = await _signup_member(client, org_code, plan_id, "anon@camp.com")
+    member_id = await _signup_member(client, org_code, plan_id, headers, "anon@camp.com")
 
     # Signup verified the address; flip it back to simulate an imported member
     # whose email was never confirmed (Security Rule #6 — no email without it).
@@ -204,10 +219,40 @@ async def test_email_channel_suppresses_unverified_addresses(client, db):
 
 
 @pytest.mark.asyncio
+async def test_campaign_excludes_members_without_channel_consent(client, db):
+    headers, org_id, org_code, plan_id = await _provision_gym(client)
+    member_id = await _signup_member(
+        client, org_code, plan_id, headers, "no-consent@camp.com", marketing_consent=False,
+    )
+    updated = await client.put(
+        f"/api/v1/privacy/members/{member_id}/consent",
+        headers={**headers, "Idempotency-Key": "member-email-consent-only"},
+        json={"email": True, "sms": False, "in_app": False},
+    )
+    assert updated.status_code == 200, updated.text
+
+    campaign = await _create_campaign(client, headers, channel="in_app")
+
+    response = await client.post(f"/api/v1/campaigns/{campaign['id']}/send", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["targeted"] == 0
+    assert response.json()["sent"] == 0
+    assert not (await db.execute(select(CampaignDelivery).where(
+        CampaignDelivery.organization_id == org_id,
+    ))).scalars().all()
+
+    email_campaign = await _create_campaign(client, headers, channel="email")
+    response = await client.post(f"/api/v1/campaigns/{email_campaign['id']}/send", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["targeted"] == 1
+    assert response.json()["sent"] == 1
+
+
+@pytest.mark.asyncio
 async def test_lapsed_segment_targets_only_inactive_members(client, db):
     headers, org_id, org_code, plan_id = await _provision_gym(client)
-    m1 = await _signup_member(client, org_code, plan_id, "here@camp.com")
-    m2 = await _signup_member(client, org_code, plan_id, "gone@camp.com")
+    m1 = await _signup_member(client, org_code, plan_id, headers, "here@camp.com")
+    m2 = await _signup_member(client, org_code, plan_id, headers, "gone@camp.com")
 
     # Two visits ~40 days ago -> lapsed candidates; member m1 also visited yesterday.
     for _id in (m1, m2):
@@ -246,7 +291,7 @@ async def test_lapsed_segment_targets_only_inactive_members(client, db):
 @pytest.mark.asyncio
 async def test_scheduled_campaign_fires_when_due(client, db):
     headers, org_id, org_code, plan_id = await _provision_gym(client)
-    await _signup_member(client, org_code, plan_id, "scheduled@camp.com")
+    await _signup_member(client, org_code, plan_id, headers, "scheduled@camp.com")
 
     campaign = await _create_campaign(client, headers, channel="in_app")
     r = await client.post(
@@ -286,8 +331,8 @@ async def test_cancel_draft_and_invalid_transitions(client, db):
 @pytest.mark.asyncio
 async def test_preview_reports_segment_size(client, db):
     headers, _org_id, org_code, plan_id = await _provision_gym(client)
-    await _signup_member(client, org_code, plan_id, "p1@camp.com")
-    await _signup_member(client, org_code, plan_id, "p2@camp.com")
+    await _signup_member(client, org_code, plan_id, headers, "p1@camp.com")
+    await _signup_member(client, org_code, plan_id, headers, "p2@camp.com")
 
     campaign = await _create_campaign(client, headers)
     r = await client.get(f"/api/v1/campaigns/preview/{campaign['id']}", headers=headers)
@@ -301,7 +346,7 @@ async def test_preview_reports_segment_size(client, db):
 @pytest.mark.asyncio
 async def test_admin_listing_and_detail(client, db):
     headers, _org_id, org_code, plan_id = await _provision_gym(client)
-    await _signup_member(client, org_code, plan_id, "list@camp.com")
+    await _signup_member(client, org_code, plan_id, headers, "list@camp.com")
     campaign = await _create_campaign(client, headers)
     await client.post(f"/api/v1/campaigns/{campaign['id']}/send", headers=headers)
 
@@ -323,7 +368,7 @@ async def test_admin_listing_and_detail(client, db):
 @pytest.mark.asyncio
 async def test_capability_and_tenant_isolation(client, db):
     headers, _org_id, org_code, plan_id = await _provision_gym(client)
-    await _signup_member(client, org_code, plan_id, "iso@camp.com")
+    await _signup_member(client, org_code, plan_id, headers, "iso@camp.com")
 
     r = await client.post(
         "/api/v1/staff/invites",

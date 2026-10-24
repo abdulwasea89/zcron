@@ -35,3 +35,19 @@ class DataSubjectRequestOut(BaseModel):
     erasure_redacted_at: datetime | None
     created_at: datetime
     resolved_at: datetime | None
+
+
+class MemberMarketingConsentUpdate(BaseModel):
+    email: bool
+    sms: bool
+    in_app: bool
+
+
+class MemberMarketingConsentOut(BaseModel):
+    member_id: str
+    email: bool
+    email_updated_at: datetime | None
+    sms: bool
+    sms_updated_at: datetime | None
+    in_app: bool
+    in_app_updated_at: datetime | None

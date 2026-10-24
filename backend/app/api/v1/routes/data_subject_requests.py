@@ -16,12 +16,30 @@ from app.models.membership import OrganizationMember
 from app.models.payment import Payment
 from app.models.subscription import Subscription
 from app.models.user import User
-from app.schemas.privacy import DataSubjectRequestCreate, DataSubjectRequestDecision, DataSubjectRequestOut
+from app.schemas.privacy import (
+    DataSubjectRequestCreate,
+    DataSubjectRequestDecision,
+    DataSubjectRequestOut,
+    MemberMarketingConsentOut,
+    MemberMarketingConsentUpdate,
+)
 from app.services import idempotency_service
 from app.services.audit_service import record_audit
 from app.services.privacy_service import erase_member_from_workspace, has_shared_identity
 
 router = APIRouter()
+
+
+def _consent_out(member: OrganizationMember) -> MemberMarketingConsentOut:
+    return MemberMarketingConsentOut(
+        member_id=member.id,
+        email=member.marketing_email_consent,
+        email_updated_at=member.marketing_email_consent_at,
+        sms=member.marketing_sms_consent,
+        sms_updated_at=member.marketing_sms_consent_at,
+        in_app=member.marketing_in_app_consent,
+        in_app_updated_at=member.marketing_in_app_consent_at,
+    )
 
 
 def _out(request: DataSubjectRequest) -> DataSubjectRequestOut:
@@ -158,6 +176,66 @@ async def decide_data_request(
     return result
 
 
+@router.get("/members/{member_id}/consent", response_model=MemberMarketingConsentOut)
+async def get_member_marketing_consent(
+    member_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    member = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.id == member_id, OrganizationMember.organization_id == ctx.org_id,
+        OrganizationMember.role == "member",
+    ))).scalar_one_or_none()
+    if member is None:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    return _consent_out(member)
+
+
+@router.put("/members/{member_id}/consent", response_model=MemberMarketingConsentOut)
+async def update_member_marketing_consent(
+    member_id: str,
+    data: MemberMarketingConsentUpdate,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    member = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.id == member_id, OrganizationMember.organization_id == ctx.org_id,
+        OrganizationMember.role == "member",
+    ).with_for_update())).scalar_one_or_none()
+    if member is None:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    claim = await idempotency_service.claim(
+        session, key=idempotency_key or "", endpoint=f"privacy.member_consent:{member_id}",
+        body=data.model_dump(), organization_id=ctx.org_id, user_id=ctx.user_id,
+    )
+    if not claim.claimed:
+        return MemberMarketingConsentOut.model_validate_json(claim.cached_response or "{}")
+    old = {"email": member.marketing_email_consent, "sms": member.marketing_sms_consent,
+           "in_app": member.marketing_in_app_consent}
+    now = now_utc()
+    if member.marketing_email_consent != data.email:
+        member.marketing_email_consent_at = now
+    if member.marketing_sms_consent != data.sms:
+        member.marketing_sms_consent_at = now
+    if member.marketing_in_app_consent != data.in_app:
+        member.marketing_in_app_consent_at = now
+    member.marketing_email_consent = data.email
+    member.marketing_sms_consent = data.sms
+    member.marketing_in_app_consent = data.in_app
+    session.add(member)
+    new = {"email": data.email, "sms": data.sms, "in_app": data.in_app}
+    if old != new:
+        await record_audit(
+            session, action="privacy.member_marketing_consent_updated", organization_id=ctx.org_id,
+            actor_user_id=ctx.user_id, entity_type="member", entity_id=member.id,
+            old_values=old, new_values=new,
+        )
+    result = _consent_out(member)
+    await idempotency_service.complete(session, claim.record, code=200, body=result.model_dump_json())
+    return result
+
+
 @router.get("/members/{member_id}/export")
 async def export_member_data(
     member_id: str,
@@ -199,7 +277,15 @@ async def export_member_data(
                        "emergency_contact": member.emergency_contact, "goals": member.goals,
                        "health_notes": member.health_notes, "id_document_type": member.id_document_type,
                        "id_document_last4": member.id_document_last4, "photo_url": member.photo_url,
-                       "recurring_consent_at": member.recurring_consent_at},
+                       "recurring_consent_at": member.recurring_consent_at,
+                       "marketing_consent": {
+                           "email": member.marketing_email_consent,
+                           "email_updated_at": member.marketing_email_consent_at,
+                           "sms": member.marketing_sms_consent,
+                           "sms_updated_at": member.marketing_sms_consent_at,
+                           "in_app": member.marketing_in_app_consent,
+                           "in_app_updated_at": member.marketing_in_app_consent_at,
+                       }},
         "attendance": [{"checked_in_at": item.checked_in_at, "method": item.method.value,
                         "source": item.source.value, "note": item.note} for item in attendance],
         "payments": [{"created_at": item.created_at, "amount": item.amount, "currency": item.currency,

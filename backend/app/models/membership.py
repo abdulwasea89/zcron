@@ -61,6 +61,15 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
     recurring_consent_at: datetime | None = None
     stripe_recurring_setup_intent_id: str | None = None
 
+    # Separate member marketing permissions; service and billing messages use
+    # their own legal basis and are not controlled by these flags.
+    marketing_email_consent: bool = False
+    marketing_email_consent_at: datetime | None = None
+    marketing_sms_consent: bool = False
+    marketing_sms_consent_at: datetime | None = None
+    marketing_in_app_consent: bool = False
+    marketing_in_app_consent_at: datetime | None = None
+
     # Lifecycle
     joined_at: datetime | None = None
     banned: bool = False

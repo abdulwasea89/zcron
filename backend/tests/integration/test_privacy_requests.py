@@ -15,6 +15,17 @@ async def test_owner_can_record_review_export_and_resolve_member_data_request(cl
     await _signup_and_pay(client, org_code, plan_id, email)
     member_id = await _member_id(client, headers, email)
 
+    consent = await client.get(f"/api/v1/privacy/members/{member_id}/consent", headers=headers)
+    assert consent.status_code == 200, consent.text
+    assert consent.json()["email"] is False
+    updated_consent = await client.put(
+        f"/api/v1/privacy/members/{member_id}/consent",
+        headers={**headers, "Idempotency-Key": "privacy-consent-1"},
+        json={"email": True, "sms": True, "in_app": True},
+    )
+    assert updated_consent.status_code == 200, updated_consent.text
+    assert updated_consent.json()["email_updated_at"]
+
     response = await client.post(
         "/api/v1/privacy/data-requests",
         headers={**headers, "Idempotency-Key": "privacy-request-1"},
