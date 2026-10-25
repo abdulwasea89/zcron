@@ -50,7 +50,7 @@ export function PaymentTrendChart({ data }: { data: PaymentTrendPoint[] }) {
               <XAxis dataKey="axisLabel" tickLine={false} axisLine={false} tickMargin={10} interval={0} />
               <YAxis hide allowDecimals={false} domain={[0, "auto"]} />
               <Tooltip cursor={false} content={<PaymentTooltip />} />
-              <Area type="monotone" dataKey="count" stroke="var(--color-count)" strokeWidth={2} fill={`url(#${gradientId})`} fillOpacity={1} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+              <Area type="monotone" dataKey="count" stroke="var(--color-count)" strokeWidth={2} fill={`url(#${gradientId})`} fillOpacity={1} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} isAnimationActive={false} />
             </AreaChart>
           </ChartContainer>
         </div>

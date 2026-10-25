@@ -128,18 +128,22 @@ function paymentTrend(payments: PaymentOut[], timeZone: string): PaymentTrendPoi
 }
 
 export default async function DashboardPage() {
-  const [metrics, checklist, saas, org, payments, profile, tasks, currentUser] = await Promise.all([
+  const currentUser = await safe(backend<{ role: string; user_id: string; member_id: string | null }>("/auth/me"));
+  const canManageWorkspace = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const [metrics, checklist, saas, org, payments, profile, tasks] = await Promise.all([
     safe(backend<HeadlineMetrics>("/analytics/headline")),
     safe(backend<SetupChecklist>("/organizations/me/checklist")),
     safe(backend<SaasStatusOut>("/saas-billing/status")),
     safe(backend<OrganizationOut>("/organizations/me")),
-    safe(backend<PaymentOut[]>("/payments")),
+    canManageWorkspace
+      ? safe(backend<PaymentOut[]>(
+          `/payments?since=${encodeURIComponent(new Date(new Date().getTime() - 15 * 86400000).toISOString())}`,
+        ))
+      : Promise.resolve(null),
     safe(backend<ProfileOut>("/auth/me/profile")),
     safe(backend<TaskOut[]>("/staff/tasks")),
-    safe(backend<{ role: string; member_id: string | null }>("/auth/me")),
   ]);
 
-  const canManageWorkspace = currentUser?.role === "owner" || currentUser?.role === "manager";
   const canViewBusinessMetrics = canManageWorkspace;
   const isTrainer = currentUser?.role === "trainer";
   const isFrontDesk = currentUser?.role === "front_desk";
@@ -560,8 +564,9 @@ export default async function DashboardPage() {
           </div>
           <div className="min-w-0 bg-background px-5 py-4">
             <dt className="text-muted-foreground">Members</dt>
-            <dd className="mt-1 font-semibold">{saas ? saas.current_member_count + " / " + (saas.member_cap ?? "Unlimited") : "—"}</dd>
-            {memberCapPct !== null && <div className="mt-2 max-w-32"><ProgressBar value={memberCapPct} /></div>}
+            <dd className="mt-1 font-semibold">{saas ? saas.current_member_count + " / " + (saas.member_cap ?? "Unlimited") : "—"}
+              {memberCapPct !== null && <div className="mt-2 max-w-32"><ProgressBar value={memberCapPct} /></div>}
+            </dd>
           </div>
           <div className="min-w-0 bg-background px-5 py-4">
             <dt className="text-muted-foreground">Renews</dt>

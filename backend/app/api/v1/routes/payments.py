@@ -6,6 +6,8 @@ Idempotency-Key (Security Rule #2).
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -61,10 +63,14 @@ async def my_payments(
 @router.get("", response_model=list[PaymentOut])
 async def list_payments(
     member_id: str | None = None,
+    since: datetime | None = None,
     ctx: TenantContext = Depends(require_capability(Capability.VIEW_REVENUE_ANALYTICS)),
     session: AsyncSession = Depends(get_session),
 ):
-    return [_to_out(p) for p in await payments.list_payments(session, org_id=ctx.org_id, member_id=member_id)]
+    rows = await payments.list_payments(
+        session, org_id=ctx.org_id, member_id=member_id, since=since
+    )
+    return [_to_out(payment) for payment in rows]
 
 
 @router.post("/refund", response_model=RefundOut)

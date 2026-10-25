@@ -9,9 +9,12 @@ directly.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from math import isfinite
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -28,11 +31,20 @@ from app.services.audit_service import record_audit
 
 
 async def list_payments(
-    session: AsyncSession, *, org_id: str, member_id: str | None = None
+    session: AsyncSession, *, org_id: str, member_id: str | None = None,
+    since: datetime | None = None,
 ) -> list[Payment]:
     stmt = select(Payment).where(Payment.organization_id == org_id)
     if member_id is not None:
         stmt = stmt.where(Payment.member_id == member_id)
+    if since is not None:
+        since = since.astimezone(timezone.utc).replace(tzinfo=None) if since.tzinfo else since
+        stmt = stmt.where(
+            or_(
+                Payment.paid_at >= since,
+                Payment.paid_at.is_(None) & (Payment.created_at >= since),
+            )
+        )
     return list((await session.execute(stmt.order_by(Payment.created_at.desc()))).scalars())
 
 

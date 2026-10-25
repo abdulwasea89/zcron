@@ -1,4 +1,5 @@
-"""Request-scoped context for an assistant run.
+"""
+Request-scoped context for an assistant run.
 
 Tenant identity — ``org_id``, ``user_id``, ``role`` — and the request's DB
 session live here, never in a tool signature. Tools read them through
@@ -9,6 +10,7 @@ Why a ``ContextVar`` rather than LangGraph runtime context: this works with a
 graph compiled once, for every tool, without threading a runtime argument
 through each tool. It is the same request-scoped pattern FastAPI uses for
 dependencies, and it is set immediately around the graph run by ``service``.
+
 """
 
 from __future__ import annotations

@@ -42,7 +42,8 @@ async function currentOrganizationId() {
 function scopedKey(request, organizationId) {
   const url = new URL(request.url);
   url.searchParams.set("__acron_offline_org", organizationId);
-  return new Request(url.href, request);
+  if (request.headers.get("RSC") === "1") url.searchParams.set("__acron_rsc", "1");
+  return new Request(url.href, { method: "GET" });
 }
 
 async function cachedNetworkFirst(request, cacheName, key, isUseful) {
