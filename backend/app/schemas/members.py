@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_serializer, field_validator
 
 from app.schemas.payments import PaymentOut
 
@@ -28,12 +29,27 @@ class MemberDirectoryItem(BaseModel):
     commission_rate: Decimal | None = None
     # Display names of the trainers currently assigned to this member.
     assigned_trainers: list[str] = []
+    tags: list[str] = []
 
     @field_serializer(
         "fixed_monthly_salary", "hourly_rate", "per_class_rate", "commission_rate", when_used="json"
     )
     def _serialize_compensation(self, value: Decimal | None) -> float | None:
         return float(value) if value is not None else None
+
+
+class MemberTagsUpdate(BaseModel):
+    tags: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)]] = Field(max_length=20)
+
+    @field_validator("tags")
+    @classmethod
+    def clean_tags(cls, values: list[str]) -> list[str]:
+        if any(any(ord(char) < 32 for char in value) for value in values):
+            raise ValueError("Tags cannot contain control characters.")
+        normalized = sorted({value.casefold() for value in values})
+        if any(len(value) > 32 for value in normalized):
+            raise ValueError("Tags must be at most 32 characters after normalization.")
+        return normalized
 
 
 class MemberProfileUpdate(BaseModel):

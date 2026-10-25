@@ -52,6 +52,7 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
     id_document_last4: str | None = None
     profile_complete: bool = False
     family_owner_member_id: str | None = Field(default=None, foreign_key="organization_members.id", index=True)
+    tags: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
 
     # Stripe Connect member billing credentials are scoped to this gym's account.
     # Store Stripe references only; never card or bank details.

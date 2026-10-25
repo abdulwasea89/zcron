@@ -31,6 +31,7 @@ from app.schemas.members import (
     MemberInviteOut,
     MemberProfileOut,
     MemberProfileUpdate,
+    MemberTagsUpdate,
     MemberStatusChange,
     MemberSubscriptionOut,
     RoleChange,
@@ -112,6 +113,7 @@ def _item(m, u, trainers: list[str] | None = None, *, include_compensation: bool
         per_class_rate=m.per_class_rate if include_compensation else None,
         commission_rate=m.commission_rate if include_compensation else None,
         assigned_trainers=trainers or [],
+        tags=m.tags,
     )
 
 
@@ -324,6 +326,25 @@ async def member_detail(
         family_owner=family_owner,
         family_members=family_members,
     )
+
+
+@router.put("/{member_id}/tags", response_model=MemberTagsUpdate, dependencies=[Depends(require_writable_org)])
+async def update_member_tags(
+    member_id: str,
+    data: MemberTagsUpdate,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    member = await members._get_member(session, ctx.org_id, member_id)
+    if member.tags != data.tags:
+        member.tags = data.tags
+        session.add(member)
+        await record_audit(
+            session, action="member.tags_updated", organization_id=ctx.org_id,
+            actor_user_id=ctx.user_id, entity_type="member", entity_id=member.id,
+            metadata={"tag_count": len(data.tags)},
+        )
+    return MemberTagsUpdate(tags=member.tags)
 
 
 @router.post("/{member_id}/family", response_model=Message, dependencies=[Depends(require_writable_org)])

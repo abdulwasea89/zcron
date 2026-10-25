@@ -129,6 +129,7 @@ export interface MemberDirectoryItem {
   per_class_rate: number | null;
   commission_rate: number | null;
   assigned_trainers: string[];
+  tags?: string[];
 }
 
 export interface MemberSubscriptionOut {

@@ -105,6 +105,7 @@ export default function MembersPage() {
   const [joinedFilter, setJoinedFilter] = useState(NONE);
   const [profileFilter, setProfileFilter] = useState(NONE);
   const [contactFilter, setContactFilter] = useState(NONE);
+  const [tagFilter, setTagFilter] = useState(NONE);
 
   // Member profile opens as a sheet over the directory. The id lives in the URL
   // (`?member=`) so the old /app/members/{id} deep links still resolve.
@@ -317,6 +318,7 @@ export default function MembersPage() {
     joinedFilter,
     profileFilter,
     contactFilter,
+    tagFilter,
   ].filter((value) => value !== NONE).length;
   const filtered = ((tab === "approvals" ? pending : members ?? [])).filter((m) => {
     const q = query.trim().toLowerCase();
@@ -325,6 +327,7 @@ export default function MembersPage() {
       m.display_name || m.full_name || "",
       m.phone || "",
       ...m.assigned_trainers,
+      ...(m.tags ?? []),
     ].some((value) => value.toLowerCase().includes(q));
     const matchesStatus = statusFilter === NONE || m.member_status === statusFilter;
     const matchesRole = roleFilter === NONE || m.role === roleFilter;
@@ -340,7 +343,7 @@ export default function MembersPage() {
       (profileFilter === "complete" ? m.profile_complete : !m.profile_complete);
     const matchesContact = contactFilter === NONE ||
       (contactFilter === "phone" ? Boolean(m.phone?.trim()) : !m.phone?.trim());
-    return matchesSearch && matchesStatus && matchesRole && matchesTrainer && matchesJoined && matchesProfile && matchesContact;
+    return (tagFilter === NONE || (m.tags ?? []).some((tag) => `tag:${tag}` === tagFilter)) && matchesSearch && matchesStatus && matchesRole && matchesTrainer && matchesJoined && matchesProfile && matchesContact;
   });
 
   function clearFilters() {
@@ -351,6 +354,7 @@ export default function MembersPage() {
     setJoinedFilter(NONE);
     setProfileFilter(NONE);
     setContactFilter(NONE);
+    setTagFilter(NONE);
   }
 
   return (
@@ -675,6 +679,10 @@ export default function MembersPage() {
               ].map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
             </FieldSelect>
 
+            <FieldSelect label="Member tag" value={tagFilter} onChange={setTagFilter}>
+              <SelectItem value={NONE}>All tags</SelectItem>
+              {[...new Set((members ?? []).flatMap((member) => member.tags ?? []))].sort().map((tag) => <SelectItem key={tag} value={`tag:${tag}`}>{tag}</SelectItem>)}
+            </FieldSelect>
             <FieldSelect label="Role" value={roleFilter} onChange={setRoleFilter}>
               <SelectItem value={NONE}>All roles</SelectItem>
               {[
@@ -852,7 +860,7 @@ export default function MembersPage() {
         )}
       </div>
 
-      <MemberDetailSheet memberId={openMemberId} onClose={closeMember} />
+      <MemberDetailSheet memberId={openMemberId} onClose={() => { closeMember(); void load(); }} />
     </>
   );
 }

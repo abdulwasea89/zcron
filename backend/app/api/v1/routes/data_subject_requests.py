@@ -281,7 +281,7 @@ async def export_member_data(
         },
         "membership": {"id": member.id, "role": member.role.value, "status": member.member_status.value,
                        "display_name": member.display_name, "phone": member.phone, "joined_at": member.joined_at,
-                       "emergency_contact": member.emergency_contact, "goals": member.goals,
+                       "emergency_contact": member.emergency_contact, "goals": member.goals, "tags": member.tags,
                        "health_notes": member.health_notes, "id_document_type": member.id_document_type,
                        "id_document_last4": member.id_document_last4, "photo_url": member.photo_url,
                        "recurring_consent_at": member.recurring_consent_at,

@@ -38,6 +38,7 @@ async def erase_member_from_workspace(
     member.photo_url = None
     member.emergency_contact = None
     member.goals = None
+    member.tags = []
     member.health_notes = None
     member.id_document_type = None
     member.id_document_last4 = None

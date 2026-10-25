@@ -87,6 +87,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "marketing_in_app_consent_at": "DATETIME",
             "daily_brief_email": "BOOLEAN NOT NULL DEFAULT 0",
             "dashboard_hidden_attention": "JSON NOT NULL DEFAULT '[]'",
+            "tags": "JSON NOT NULL DEFAULT '[]'",
         },
         "leads": {
             "sms_followup_consent": "BOOLEAN NOT NULL DEFAULT 0",

@@ -27,6 +27,7 @@ import {
 import { TABLE, THEAD_ROW, TH, TR, TD, CELL, CELL_FIRST, CELL_LAST } from "@/components/Table";
 import { api, ApiError } from "@/lib/api";
 import { MemberProfileCard } from "@/components/members/MemberProfileCard";
+import { MemberTagsCard } from "@/components/members/MemberTagsCard";
 import { FamilyPlanCard } from "@/components/members/FamilyPlanCard";
 import { money, statusTone, titleCase } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -402,6 +403,7 @@ export function MemberDetailSheet({
           <SheetBody className="space-y-4">
             {data && m && <>
               <MemberProfileCard key={m.member_id} memberId={m.member_id} profile={data.profile} canManage={canManage} onSaved={() => load(m.member_id)} />
+              <MemberTagsCard key={`tags:${m.member_id}`} memberId={m.member_id} tags={m.tags ?? []} canManage={canManage} onSaved={() => load(m.member_id)} />
               <FamilyPlanCard detail={data} canManage={canManage} onSaved={() => load(m.member_id)} />
               {m.role === "member" && <Card>
                 <CardHeader title="Trainers" subtitle="Staff assigned to this member" action={canManage ? <Button variant="secondary" onClick={() => void openAssign()}>Assign trainer</Button> : undefined} />
