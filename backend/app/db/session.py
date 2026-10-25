@@ -68,6 +68,74 @@ async def init_db() -> None:
             await conn.run_sync(_upgrade_sqlite_inbox_delivery_schema)
             await conn.run_sync(_upgrade_sqlite_payment_method_schema)
             await conn.run_sync(_upgrade_sqlite_recurring_billing_schema)
+            await conn.run_sync(_upgrade_sqlite_late_migration_columns)
+
+
+def _upgrade_sqlite_late_migration_columns(connection) -> None:
+    """Apply additive columns from newer Alembic migrations to local SQLite DBs."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    additions = {
+        "organization_members": {
+            "marketing_email_consent": "BOOLEAN NOT NULL DEFAULT 0",
+            "marketing_email_consent_at": "DATETIME",
+            "marketing_sms_consent": "BOOLEAN NOT NULL DEFAULT 0",
+            "marketing_sms_consent_at": "DATETIME",
+            "marketing_in_app_consent": "BOOLEAN NOT NULL DEFAULT 0",
+            "marketing_in_app_consent_at": "DATETIME",
+            "daily_brief_email": "BOOLEAN NOT NULL DEFAULT 0",
+        },
+        "leads": {
+            "sms_followup_consent": "BOOLEAN NOT NULL DEFAULT 0",
+            "sms_followup_consent_at": "DATETIME",
+            "first_contacted_at": "DATETIME",
+            "first_contacted_by_user_id": "VARCHAR",
+            "first_contact_logged": "BOOLEAN NOT NULL DEFAULT 0",
+        },
+        "campaign_deliveries": {
+            "provider_message_id": "VARCHAR",
+            "delivery_status": "VARCHAR",
+        },
+        "data_subject_requests": {
+            "member_name": "VARCHAR NOT NULL DEFAULT ''",
+            "member_email": "VARCHAR NOT NULL DEFAULT ''",
+            "erasure_redacted_at": "DATETIME",
+        },
+        "payroll_entries": {
+            "paid_at": "DATETIME",
+            "payout_reference": "VARCHAR",
+            "paid_amount": "NUMERIC(14, 2)",
+        },
+        "receipt_uploads": {
+            "image_data": "BLOB",
+            "image_media_type": "VARCHAR(32)",
+        },
+        "referral_programs": {
+            "reward_amount_minor": "INTEGER NOT NULL DEFAULT 0",
+            "reward_currency": "VARCHAR NOT NULL DEFAULT 'USD'",
+        },
+        "referral_rewards": {
+            "amount_minor": "INTEGER NOT NULL DEFAULT 0",
+            "currency": "VARCHAR NOT NULL DEFAULT 'USD'",
+        },
+    }
+    for table, columns in additions.items():
+        if table not in tables:
+            continue
+        existing = {column["name"] for column in inspector.get_columns(table)}
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.exec_driver_sql(
+                    f'ALTER TABLE "{table}" ADD COLUMN "{name}" {definition}'
+                )
+                existing.add(name)
+    if "campaign_deliveries" in tables:
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_campaign_deliveries_provider_message_id "
+            "ON campaign_deliveries (provider_message_id)"
+        )
 
 
 def _upgrade_sqlite_owner_onboarding_schema(connection) -> None:
