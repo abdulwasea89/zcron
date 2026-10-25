@@ -623,6 +623,26 @@ def xlsx_as_csv(xlsx_bytes: bytes) -> bytes:
 
 
 # ------------------------------------------------------- CSV bulk import
+def _import_header_map(fieldnames: list[str | None]) -> dict[str, str]:
+    aliases = {
+        "email": ("email", "email address", "member email", "e-mail"),
+        "full_name": ("full_name", "full name", "member name", "name"),
+        "phone": ("phone", "phone number", "mobile", "mobile number", "telephone", "cell phone"),
+    }
+    normalized: dict[str, str] = {}
+    for name in fieldnames:
+        if name:
+            normalized.setdefault(re.sub(r"[^a-z0-9]", "", name.casefold()), name)
+    columns = {}
+    for canonical, choices in aliases.items():
+        for alias in choices:
+            source = normalized.get(re.sub(r"[^a-z0-9]", "", alias))
+            if source is not None:
+                columns[canonical] = source
+                break
+    return columns
+
+
 async def bulk_import_csv(
     session: AsyncSession, *, org_id: str, csv_bytes: bytes, actor_id: str
 ) -> dict:
@@ -645,8 +665,7 @@ async def bulk_import_csv(
     reader = csv.DictReader(io.StringIO(text))
     if reader.fieldnames is None:
         raise HTTPException(status_code=422, detail="CSV is empty or missing a header row.")
-    # Normalise headers to lowercase for tolerant matching.
-    field_map = {(name or "").strip().lower(): name for name in reader.fieldnames}
+    field_map = _import_header_map(reader.fieldnames)
     if "email" not in field_map:
         raise HTTPException(status_code=422, detail="CSV must have an 'email' column.")
 
