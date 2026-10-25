@@ -32,7 +32,7 @@ async function safe<T>(p: Promise<T>): Promise<T | null> {
 }
 
 type Tone = "neutral" | "success" | "danger" | "warning" | "info";
-type RetentionSummary = { scored: number; high: number; medium: number; revenue_at_risk: number };
+type RetentionSummary = { scored: number; high: number; medium: number; revenue_at_risk: number; revenue_at_risk_by_currency?: Record<string, number> };
 type RetentionRiskAction = { member_id: string; name: string | null; phone: string | null; band: string };
 type LeadResponseSummary = { uncontacted: number };
 
@@ -169,6 +169,10 @@ export default async function DashboardPage() {
   const retentionRisks = retentionSummary && retentionSummary.high + retentionSummary.medium > 0
     ? await safe(backend<RetentionRiskAction[]>("/retention/at-risk?min_score=40&limit=3"))
     : null;
+  const riskByCurrency = Object.entries(retentionSummary?.revenue_at_risk_by_currency ?? {});
+  const revenueAtRiskLabel = riskByCurrency.length
+    ? riskByCurrency.map(([code, amount]) => money(amount, code)).join(" · ")
+    : money(retentionSummary?.revenue_at_risk ?? 0, currency);
 
   const today = new Date().toLocaleDateString("en-US", {
     timeZone: org?.timezone || "UTC",
@@ -262,7 +266,7 @@ export default async function DashboardPage() {
       attention.push({
         key: "revenue-at-risk",
         label: "Estimated revenue at risk",
-        value: money(retentionSummary.revenue_at_risk, currency),
+        value: revenueAtRiskLabel,
         href: "/app/retention",
         tone: "danger",
         priority: 8,
@@ -271,7 +275,7 @@ export default async function DashboardPage() {
       attention.push({
         key: "at-risk-members",
         label: "Follow up on at-risk members",
-        value: `${retentionSummary.high + retentionSummary.medium} members · ${money(retentionSummary.revenue_at_risk, currency)} at risk`,
+        value: `${retentionSummary.high + retentionSummary.medium} members · ${revenueAtRiskLabel} at risk`,
         href: "/app/retention",
         tone: "danger",
         priority: 1,

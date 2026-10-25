@@ -150,16 +150,27 @@ async def test_churn_score_with_reasons_and_band(client, db):
 async def test_retention_summary_counts_revenue_at_risk(client, db):
     _h, org_id, org_code, plan_id = await _provision_gym(client)
     member_id = await _signup_member(client, org_code, plan_id, "rev@ret.com")
+    other_member_id = await _signup_member(client, org_code, plan_id, "rev-pkr@ret.com")
     await _set_tenure(db, member_id, days_ago=100)
+    await _set_tenure(db, other_member_id, days_ago=100)
     await _add_visits(db, org_id, member_id, _BASELINE_ONLY)
+    await _add_visits(db, org_id, other_member_id, _BASELINE_ONLY)
     member = await db.get(OrganizationMember, member_id)
     member.member_status = MemberStatus.EXPIRED
-    db.add(member)
+    other_member = await db.get(OrganizationMember, other_member_id)
+    other_member.member_status = MemberStatus.EXPIRED
+    other_subscription = (await db.execute(select(Subscription).where(
+        Subscription.organization_id == org_id,
+        Subscription.member_id == other_member_id,
+    ))).scalars().first()
+    other_subscription.currency = "PKR"
+    db.add_all([member, other_member, other_subscription])
     await db.commit()
 
     summary = await retention.retention_summary(db, org_id=org_id)
     assert summary["high"] >= 1
     assert summary["revenue_at_risk"] == 149.0
+    assert summary["revenue_at_risk_by_currency"] == {"PKR": 149.0, "USD": 149.0}
 
 
 @pytest.mark.asyncio

@@ -33,6 +33,7 @@ from app.models.attendance import Attendance
 from app.models.audit_log import AuditLog
 from app.models.lead import Lead
 from app.models.membership import OrganizationMember
+from app.models.organization import Organization
 from app.models.onboarding import OnboardingJourney
 from app.models.payment import Payment
 from app.models.subscription import Subscription
@@ -387,7 +388,9 @@ async def retention_summary(session: AsyncSession, *, org_id: str) -> dict:
     drops = [r for r in risks if r.trend.is_drop]
     at_risk_ids = [r.member_id for r in risks if r.band in ("high", "medium")]
 
-    revenue_at_risk = 0.0
+    organization = await session.get(Organization, org_id)
+    default_currency = (organization.default_currency if organization else "USD").upper()
+    revenue_at_risk_by_currency: dict[str, float] = {}
     if at_risk_ids:
         subs = (
             await session.execute(
@@ -404,7 +407,15 @@ async def retention_summary(session: AsyncSession, *, org_id: str) -> dict:
             if s.member_id in seen:
                 continue
             seen.add(s.member_id)
-            revenue_at_risk += s.price_snapshot or 0.0
+            currency = (s.currency or default_currency).upper()
+            revenue_at_risk_by_currency[currency] = (
+                revenue_at_risk_by_currency.get(currency, 0.0) + (s.price_snapshot or 0.0)
+            )
+
+    revenue_at_risk_by_currency = {
+        currency: round(amount, 2)
+        for currency, amount in sorted(revenue_at_risk_by_currency.items())
+    }
 
     return {
         "scored": len(risks),
@@ -413,7 +424,9 @@ async def retention_summary(session: AsyncSession, *, org_id: str) -> dict:
         "low": sum(1 for r in risks if r.band == "low"),
         "attendance_drops": len(drops),
         "silent": sum(1 for r in drops if r.trend.severity == "silent"),
-        "revenue_at_risk": round(revenue_at_risk, 2),
+        # Keep the legacy scalar in the workspace currency; never add unlike currencies.
+        "revenue_at_risk": revenue_at_risk_by_currency.get(default_currency, 0.0),
+        "revenue_at_risk_by_currency": revenue_at_risk_by_currency,
     }
 
 

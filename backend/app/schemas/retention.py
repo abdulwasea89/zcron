@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AttendanceTrendOut(BaseModel):
@@ -47,6 +47,7 @@ class RetentionSummaryOut(BaseModel):
     attendance_drops: int
     silent: int
     revenue_at_risk: float
+    revenue_at_risk_by_currency: dict[str, float] = Field(default_factory=dict)
 
 
 class RetentionWinOut(BaseModel):
