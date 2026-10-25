@@ -16,3 +16,4 @@ class InboxChannelConnectionOut(BaseModel):
     connected: bool
     connected_at: datetime | None = None
     webhook_url: str | None = None
+    voice_webhook_url: str | None = None

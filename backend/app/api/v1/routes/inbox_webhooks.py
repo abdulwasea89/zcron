@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from html import escape
 import hmac
 import json
 import re
@@ -23,9 +24,12 @@ from app.models.campaign import CampaignDelivery
 from app.models.organization import Organization
 from app.models.inbox import InboxConversation, InboxMessage
 from app.models.lead import Lead
+from app.models.membership import OrganizationMember
+from app.core.constants import Role
 from app.realtime import events
 from app.services import inbox_channels_service as channels
 from app.services.inbox_service import record_inbound
+from app.services import idempotency_service, leads_service
 
 router = APIRouter()
 
@@ -189,6 +193,69 @@ async def twilio_status(org_id: str, request: Request, session: AsyncSession = D
             _apply_campaign_sms_status(campaign_delivery, status, fields.get("ErrorCode"))
             session.add(campaign_delivery)
     return {"ok": True}
+
+
+@router.post("/webhooks/{org_id}/twilio/voice")
+async def twilio_voice(org_id: str, request: Request, session: AsyncSession = Depends(get_session)):
+    fields = dict(parse_qsl((await request.body()).decode("utf-8", errors="replace"), keep_blank_values=True))
+    credentials = await channels.get_credentials(session, org_id, "sms")
+    if not _verify_twilio(_public_url(request), request.headers.get("x-twilio-signature", ""), fields, (credentials or {}).get("auth_token", "")):
+        raise HTTPException(status_code=403, detail="Invalid provider signature.")
+    await _check_org(session, org_id)
+    forward_to = (credentials or {}).get("forward_to_number")
+    if not forward_to:
+        raise HTTPException(status_code=503, detail="Call forwarding is not configured for this workspace.")
+    action_url = f"{settings.inbox_public_webhook_base_url.rstrip('/')}/api/v1/inbox/webhooks/{org_id}/twilio/voice/status"
+    twiml = (
+        "<Response><Dial answerOnBridge=\"true\" timeout=\"20\" "
+        f"action=\"{escape(action_url, quote=True)}\" method=\"POST\">"
+        f"<Number>{escape(forward_to)}</Number></Dial></Response>"
+    )
+    return Response(content=twiml, media_type="application/xml")
+
+
+@router.post("/webhooks/{org_id}/twilio/voice/status")
+async def twilio_voice_status(org_id: str, request: Request, session: AsyncSession = Depends(get_session)):
+    fields = dict(parse_qsl((await request.body()).decode("utf-8", errors="replace"), keep_blank_values=True))
+    credentials = await channels.get_credentials(session, org_id, "sms")
+    if not _verify_twilio(_public_url(request), request.headers.get("x-twilio-signature", ""), fields, (credentials or {}).get("auth_token", "")):
+        raise HTTPException(status_code=403, detail="Invalid provider signature.")
+    await _check_org(session, org_id)
+    status = fields.get("DialCallStatus", "").lower()
+    caller = fields.get("Caller", "").strip()
+    call_sid = fields.get("CallSid", "").strip()
+    if status not in {"busy", "no-answer", "failed", "canceled"} or not caller.startswith("+") or not call_sid:
+        return Response(content="<Response/>", media_type="application/xml")
+
+    # shortcut: only known lead callers create a callback task; add member callback cases when call logging supports members.
+    lead = (await session.execute(select(Lead).where(
+        Lead.organization_id == org_id,
+        Lead.phone == caller,
+        Lead.stage.not_in(("joined", "lost")),
+    ).order_by(Lead.created_at.desc()).limit(1))).scalar_one_or_none()
+    if lead is not None:
+        owner_id = (await session.execute(select(OrganizationMember.user_id).where(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.role == Role.OWNER,
+        ).limit(1))).scalar_one_or_none()
+        if owner_id:
+            claim = await idempotency_service.claim(
+                session, key=call_sid, endpoint=f"inbox.twilio_missed_call:{lead.id}",
+                body={"call_sid": call_sid, "lead_id": lead.id},
+                organization_id=org_id, user_id=owner_id,
+            )
+            if claim.claimed:
+                result = await leads_service.log_missed_call(
+                    session, org_id=org_id, lead_id=lead.id, actor_id=owner_id,
+                    idempotency_key=call_sid,
+                )
+                from app.schemas.leads import LeadMissedCallOut
+
+                output = LeadMissedCallOut(**result)
+                await idempotency_service.complete(
+                    session, claim.record, code=200, body=output.model_dump_json(),
+                )
+    return Response(content="<Response/>", media_type="application/xml")
 
 
 @router.get("/webhooks/{org_id}/meta/{channel}")

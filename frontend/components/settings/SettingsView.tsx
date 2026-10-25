@@ -714,14 +714,15 @@ interface InboxConnection {
   connected: boolean;
   connected_at: string | null;
   webhook_url: string | null;
+  voice_webhook_url: string | null;
 }
 
 const INBOX_PROVIDERS = [
   { id: "email", title: "Email", detail: "Send with SMTP or Resend. Add Resend inbound signing secret to receive member emails.", fields: [
     ["host", "SMTP host (optional with Resend)", "text"], ["port", "Port", "number"], ["username", "SMTP username", "text"], ["password", "SMTP password", "password"], ["from_email", "Sender email", "email"], ["resend_api_key", "Resend API key (optional)", "password"], ["inbound_webhook_secret", "Resend inbound webhook secret (optional)", "password"],
   ] },
-  { id: "sms", title: "SMS · Twilio", detail: "Send and receive SMS with a Twilio number.", fields: [
-    ["account_sid", "Account SID", "text"], ["auth_token", "Auth Token", "password"], ["from_number", "Twilio phone number", "text"],
+  { id: "sms", title: "SMS · Twilio", detail: "Send and receive SMS, and optionally forward gym calls and follow up on missed lead calls.", fields: [
+    ["account_sid", "Account SID", "text"], ["auth_token", "Auth Token", "password"], ["from_number", "Twilio phone number", "text"], ["forward_to_number", "Gym call-forward number (optional, international format)", "tel"],
   ] },
   { id: "whatsapp", title: "WhatsApp · Twilio", detail: "Connect an approved WhatsApp sender in Twilio.", fields: [
     ["account_sid", "Account SID", "text"], ["auth_token", "Auth Token", "password"], ["from_number", "WhatsApp sender", "text"],
@@ -828,6 +829,10 @@ function InboxChannelsSection() {
         {connection?.connected && connection.webhook_url && provider.id !== "telegram" && <div className="mt-3 rounded-md bg-foreground/[0.035] p-3">
           <p className="text-xs font-medium text-foreground">{provider.id === "web_chat" ? "Member chat link" : "Provider webhook URL"}</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{connection.webhook_url}</p>
           <div className="mt-2 flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void copyWebhook(connection.webhook_url!)}>Copy {provider.id === "web_chat" ? "link" : "URL"}</Button><span className="text-[11px] text-muted-foreground">{provider.id === "web_chat" ? "Share this page with members and prospects." : "Add this URL in your provider’s webhook settings. Keep it private."}</span></div>
+        </div>}
+        {connection?.connected && provider.id === "sms" && connection.voice_webhook_url && <div className="mt-3 rounded-md bg-foreground/[0.035] p-3">
+          <p className="text-xs font-medium text-foreground">Twilio Voice webhook URL</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{connection.voice_webhook_url}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void copyWebhook(connection.voice_webhook_url!)}>Copy URL</Button><span className="text-[11px] text-muted-foreground">Set this as the Twilio phone number’s incoming voice URL. Calls ring the configured gym number for 20 seconds; missed calls create a staff task, and SMS is sent only with lead consent.</span></div>
         </div>}
         {isEditing && <div className="mt-4 border-t border-[var(--border)] pt-4">
           <div className="grid gap-3 sm:grid-cols-2">

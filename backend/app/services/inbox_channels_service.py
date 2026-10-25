@@ -144,7 +144,7 @@ def _validate(channel: str, source: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="This inbox channel cannot be connected yet.")
     allowed = {
         "email": {"host", "port", "username", "password", "from_email", "use_tls", "resend_api_key", "inbound_webhook_secret"},
-        "sms": {"account_sid", "auth_token", "from_number"},
+        "sms": {"account_sid", "auth_token", "from_number", "forward_to_number"},
         "whatsapp": {"account_sid", "auth_token", "from_number"},
         "telegram": {"bot_token"},
         "line": {"access_token", "channel_secret"},
@@ -183,6 +183,14 @@ def _validate(channel: str, source: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail="Enter the Twilio Account SID, Auth Token, and sender number.")
         if channel == "whatsapp" and not creds["from_number"].startswith("whatsapp:"):
             creds["from_number"] = f"whatsapp:{creds['from_number']}"
+        if channel == "sms":
+            forward_to = str(creds.get("forward_to_number", "")).strip()
+            if forward_to and (not forward_to.startswith("+") or not forward_to[1:].isdigit() or not 7 <= len(forward_to[1:]) <= 15):
+                raise HTTPException(status_code=422, detail="Enter the gym call-forward number in international format, such as +14155550123.")
+            if forward_to:
+                creds["forward_to_number"] = forward_to
+            else:
+                creds.pop("forward_to_number", None)
     elif channel == "telegram":
         creds["bot_token"] = str(creds.get("bot_token", "")).strip()
         if not creds["bot_token"]:
@@ -255,6 +263,11 @@ async def list_connections(session: AsyncSession, org_id: str) -> list[dict]:
                 if channel != "email" or (channel in by_channel and decrypt_credentials(by_channel[channel]).get("inbound_webhook_secret"))
                 else None
             ),
+            "voice_webhook_url": (
+                f"{settings.inbox_public_webhook_base_url.rstrip('/')}/api/v1/inbox/webhooks/{org_id}/twilio/voice"
+                if channel == "sms" and channel in by_channel and decrypt_credentials(by_channel[channel]).get("forward_to_number")
+                and settings.inbox_public_webhook_base_url else None
+            ),
         }
         for channel in sorted(CHANNELS)
     ]
@@ -308,7 +321,14 @@ async def connect(
         row.connected_at = now_utc()
     session.add(row)
     await session.flush()
-    return {"channel": channel, "connected": True, "connected_at": row.connected_at, "webhook_url": url}
+    voice_url = (
+        f"{settings.inbox_public_webhook_base_url.rstrip('/')}/api/v1/inbox/webhooks/{org_id}/twilio/voice"
+        if channel == "sms" and creds.get("forward_to_number") and settings.inbox_public_webhook_base_url else None
+    )
+    return {
+        "channel": channel, "connected": True, "connected_at": row.connected_at,
+        "webhook_url": url, "voice_webhook_url": voice_url,
+    }
 
 
 async def disconnect(session: AsyncSession, *, org_id: str, channel: str) -> None:

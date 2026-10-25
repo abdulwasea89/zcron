@@ -372,6 +372,9 @@ async def test_assign_and_status(client):
     headers, _org_id, _code = await _provision_gym(client)
     conv = (await _ingest(client, headers)).json()
     me = (await client.get("/api/v1/auth/me", headers=headers)).json()
+    directory = await client.get("/api/v1/staff/directory", headers=headers)
+    assert directory.status_code == 200, directory.text
+    assert any(row["user_id"] == me["user_id"] and row["role"] == "owner" for row in directory.json())
 
     r = await client.post(f"/api/v1/inbox/conversations/{conv['id']}/assign",
                           headers=headers, json={"user_id": me["user_id"]})
@@ -388,6 +391,58 @@ async def test_assign_and_status(client):
     assert r.json() == []
     r = await client.get("/api/v1/inbox/conversations", headers=headers, params={"status": "resolved"})
     assert len(r.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_twilio_voice_missed_call_creates_one_followup(client, monkeypatch):
+    from app.api.v1.routes import inbox_webhooks
+    from app.services import inbox_channels_service, organizations_service
+    from cryptography.fernet import Fernet
+
+    async def verify_twilio(_credentials):
+        return None
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+    monkeypatch.setattr(inbox_channels_service, "_verify_twilio", verify_twilio)
+    monkeypatch.setattr(inbox_channels_service.settings, "inbox_encryption_key", Fernet.generate_key().decode())
+    monkeypatch.setattr(inbox_webhooks, "_verify_twilio", lambda *_args: True)
+    monkeypatch.setattr(inbox_webhooks.settings, "inbox_public_webhook_base_url", "https://api.example.test")
+    headers, org_id, _code = await _provision_gym(client)
+    connected = await client.put(
+        "/api/v1/inbox/channels/sms", headers=headers,
+        json={"credentials": {
+            "account_sid": "AC123", "auth_token": "token", "from_number": "+14155550100",
+            "forward_to_number": "+14155550123",
+        }},
+    )
+    assert connected.status_code == 200, connected.text
+    assert connected.json()["voice_webhook_url"].endswith(f"/{org_id}/twilio/voice")
+    lead = await client.post(
+        "/api/v1/leads", headers={**headers, "Idempotency-Key": str(uuid.uuid4())},
+        json={"name": "Missed caller", "phone": "+14155550999", "source": "staff_entered"},
+    )
+    assert lead.status_code == 201, lead.text
+
+    voice = await client.post(
+        f"/api/v1/inbox/webhooks/{org_id}/twilio/voice",
+        data={"From": "+14155550999", "To": "+14155550100", "CallSid": "CA-voice-test"},
+    )
+    assert voice.status_code == 200 and "+14155550123" in voice.text
+
+    calls = []
+
+    async def log_missed_call(*_args, **kwargs):
+        calls.append(kwargs)
+        return {"task_id": "task-1", "conversation_id": None, "sms_status": "skipped_no_consent"}
+
+    monkeypatch.setattr(inbox_webhooks.leads_service, "log_missed_call", log_missed_call)
+    callback = f"/api/v1/inbox/webhooks/{org_id}/twilio/voice/status"
+    payload = {"CallSid": "CA-voice-test", "Caller": "+14155550999", "DialCallStatus": "no-answer"}
+    first = await client.post(callback, data=payload)
+    replay = await client.post(callback, data=payload)
+    assert first.status_code == replay.status_code == 200
+    assert len(calls) == 1
 
 
 @pytest.mark.asyncio
