@@ -21,40 +21,53 @@ export function DashboardTaskList({
   const [taskCreatedFor, setTaskCreatedFor] = useState<Set<string>>(new Set());
   const [hiddenAttention, setHiddenAttention] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
+  const [savingAttention, setSavingAttention] = useState(false);
 
-  // shortcut: browser-local state, add server storage if dismissal sync across devices is needed.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const frame = window.requestAnimationFrame(() => {
       try {
         const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
         setTaskCreatedFor(new Set(Array.isArray(saved.taskCreatedFor) ? saved.taskCreatedFor : []));
-        setHiddenAttention(new Set(Array.isArray(saved.hiddenAttention) ? saved.hiddenAttention : []));
       } catch { /* Ignore invalid or blocked browser storage. */ }
     });
-    return () => window.cancelAnimationFrame(frame);
+    let active = true;
+    api.get<{ keys: string[] }>("/analytics/dashboard/hidden-attention")
+      .then((data) => { if (active) setHiddenAttention(new Set(data.keys)); })
+      .catch(() => { if (active) toast.error("Could not load hidden priorities. All alerts remain visible."); });
+    return () => { active = false; window.cancelAnimationFrame(frame); };
   }, [storageKey]);
 
-  function remember(action: "taskCreatedFor" | "hiddenAttention", key: string) {
-    const setter = action === "taskCreatedFor" ? setTaskCreatedFor : setHiddenAttention;
-    const current = action === "taskCreatedFor" ? taskCreatedFor : hiddenAttention;
-    setter(new Set(current).add(key));
+  function rememberTask(key: string) {
+    setTaskCreatedFor((current) => new Set(current).add(key));
     try {
       const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
-      const values = Array.isArray(saved[action]) ? saved[action] as string[] : [];
+      const values = Array.isArray(saved.taskCreatedFor) ? saved.taskCreatedFor as string[] : [];
       window.localStorage.setItem(storageKey, JSON.stringify({
-        ...saved,
-        [action]: [...new Set([...values, key])].slice(-200),
+        taskCreatedFor: [...new Set([...values, key])].slice(-200),
       }));
-    } catch { /* Keep this view usable when browser storage is unavailable. */ }
+    } catch { /* Keep task creation usable when browser storage is unavailable. */ }
   }
 
-  function restoreDismissed() {
-    setHiddenAttention(new Set());
+  async function hideAttention(key: string) {
+    setSavingAttention(true);
     try {
-      const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
-      window.localStorage.setItem(storageKey, JSON.stringify({ ...saved, hiddenAttention: [] }));
-    } catch { /* Restore in-memory state even if storage is blocked. */ }
+      const data = await api.post<{ keys: string[] }>("/analytics/dashboard/hidden-attention", { key });
+      setHiddenAttention(new Set(data.keys));
+      toast.success("Hidden for your account until this alert changes. The underlying work remains open.");
+    } catch (error) {
+      toast.error((error as ApiError).message || "Could not hide this priority.");
+    } finally { setSavingAttention(false); }
+  }
+
+  async function restoreDismissed() {
+    setSavingAttention(true);
+    try {
+      await api.del("/analytics/dashboard/hidden-attention");
+      setHiddenAttention(new Set());
+    } catch (error) {
+      toast.error((error as ApiError).message || "Could not restore hidden priorities.");
+    } finally { setSavingAttention(false); }
   }
 
   async function complete(task: TaskOut) {
@@ -85,7 +98,7 @@ export function DashboardTaskList({
         overdue: false,
         dueToday: true,
       }, ...current]);
-      remember("taskCreatedFor", item.key);
+      rememberTask(item.key);
       toast.success("Follow-up task added to the team queue.");
     } catch (error) {
       toast.error((error as ApiError).message || "Could not create follow-up task.");
@@ -137,10 +150,11 @@ export function DashboardTaskList({
                 >{addingTaskFor === item.key ? "Adding…" : "Add task"}</button>}
                 {!item.task && <button
                   type="button"
-                  onClick={() => remember("hiddenAttention", item.key)}
+                  disabled={savingAttention}
+                  onClick={() => void hideAttention(item.key)}
                   className="text-muted-foreground no-underline hover:text-foreground hover:underline"
-                  aria-label={`Dismiss ${item.label} until this alert changes`}
-                >Dismiss</button>}
+                  aria-label={`Hide ${item.label} for your account until this alert changes`}
+                >Hide for today</button>}
                 {item.task && <button
                   type="button"
                   aria-label={`Mark ${item.task.title} complete`}
@@ -162,7 +176,7 @@ export function DashboardTaskList({
       )}
       <div className="flex gap-3 border-t border-border pt-2 text-[11px]">
         {items.length > 6 && <button type="button" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)} className="font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">{showAll ? "Show fewer" : `Show all ${items.length}`}</button>}
-        {hiddenAttention.size > 0 && <button type="button" onClick={restoreDismissed} className="font-medium text-muted-foreground hover:text-foreground hover:underline">Restore dismissed</button>}
+        {hiddenAttention.size > 0 && <button type="button" disabled={savingAttention} onClick={() => void restoreDismissed()} className="font-medium text-muted-foreground hover:text-foreground hover:underline">Restore hidden</button>}
         <Link href="/app/tasks" className="font-medium text-brand no-underline hover:underline">All tasks ↗</Link>
         {attention.length > 0 && <Link href="/app/approvals" className="font-medium text-brand no-underline hover:underline">Review queue ↗</Link>}
       </div>

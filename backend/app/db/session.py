@@ -86,6 +86,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "marketing_in_app_consent": "BOOLEAN NOT NULL DEFAULT 0",
             "marketing_in_app_consent_at": "DATETIME",
             "daily_brief_email": "BOOLEAN NOT NULL DEFAULT 0",
+            "dashboard_hidden_attention": "JSON NOT NULL DEFAULT '[]'",
         },
         "leads": {
             "sms_followup_consent": "BOOLEAN NOT NULL DEFAULT 0",
@@ -93,6 +94,8 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "first_contacted_at": "DATETIME",
             "first_contacted_by_user_id": "VARCHAR",
             "first_contact_logged": "BOOLEAN NOT NULL DEFAULT 0",
+            "first_contact_delivery_status": "VARCHAR NOT NULL DEFAULT 'unknown'",
+            "first_contact_external_id": "VARCHAR",
         },
         "campaign_deliveries": {
             "provider_message_id": "VARCHAR",

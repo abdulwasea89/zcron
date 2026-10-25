@@ -17,6 +17,7 @@ def test_sqlite_late_migration_upgrade_is_additive_and_repeatable():
             "marketing_email_consent", "marketing_email_consent_at",
             "marketing_sms_consent", "marketing_sms_consent_at",
             "marketing_in_app_consent", "marketing_in_app_consent_at",
+            "dashboard_hidden_attention",
         }
         assert expected <= first_columns
         assert second_columns == first_columns

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Column, Numeric
+from sqlalchemy import Column, JSON, Numeric
 
 from sqlmodel import Field, UniqueConstraint
 
@@ -70,6 +70,7 @@ class OrganizationMember(UUIDModel, TimestampModel, table=True):
     marketing_in_app_consent: bool = False
     marketing_in_app_consent_at: datetime | None = None
     daily_brief_email: bool = False
+    dashboard_hidden_attention: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
 
     # Lifecycle
     joined_at: datetime | None = None
