@@ -436,6 +436,9 @@ async def test_class_waitlist_promotes_on_cancellation_and_staff_can_mark_no_sho
     )
     assert no_show.status_code == 200, no_show.text
     assert no_show.json()["status"] == "no_show"
+    tasks = await client.get("/api/v1/staff/tasks", headers=headers)
+    assert tasks.status_code == 200, tasks.text
+    assert any("missed class" in task["title"] for task in tasks.json())
 
 
 # ------------------------------------------------------------- offline (#23)

@@ -8,6 +8,8 @@ flips ``trainer_checked_in``, which is the gate for per-class payroll
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -17,6 +19,7 @@ from app.core.security import now_utc
 from app.models.class_session import ClassBooking, ClassSession
 from app.models.lead import LeadBooking
 from app.models.membership import OrganizationMember
+from app.models.staff import Task
 from app.models.user import User
 from app.realtime import events
 from app.schemas.classes import ClassSessionCreate
@@ -375,17 +378,43 @@ async def mark_no_show(
     session: AsyncSession, *, org_id: str, class_id: str, booking_id: str, actor_id: str
 ) -> ClassBooking:
     cs = await _get_owned_session(session, org_id, class_id)
-    booking = await session.get(ClassBooking, booking_id)
+    booking = await session.get(ClassBooking, booking_id, with_for_update=True)
     if booking is None or booking.organization_id != org_id or booking.class_session_id != cs.id:
         raise HTTPException(status_code=404, detail="Booking not found.")
     if booking.status != BookingStatus.BOOKED:
         raise HTTPException(status_code=409, detail="Only booked members can be marked as a no-show.")
     if (cs.ends_at or cs.starts_at) > now_utc():
         raise HTTPException(status_code=409, detail="A class can be marked no-show after it has ended.")
+    member = await session.get(OrganizationMember, booking.member_id)
+    if member is None or member.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    member_name = member.display_name
+    if not member_name:
+        member_user = await session.get(User, member.user_id)
+        member_name = member_user.full_name if member_user else "member"
+    trainer = await session.get(OrganizationMember, cs.trainer_member_id) if cs.trainer_member_id else None
+    actor = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.organization_id == org_id,
+        OrganizationMember.user_id == actor_id,
+    ))).scalar_one_or_none()
+    task = Task(
+        organization_id=org_id,
+        title=f"Follow up with {member_name} after a missed class",
+        description=f"{member_name} missed {cs.title}. Check in and offer help with booking another class.",
+        assignee_member_id=(
+            trainer.id if trainer and trainer.organization_id == org_id
+            else actor.id if actor else None
+        ),
+        created_by=actor_id,
+        deadline=now_utc() + timedelta(days=1),
+    )
+    session.add(task)
+    await session.flush()
     booking.status = BookingStatus.NO_SHOW
     session.add(booking)
     await record_audit(session, action="class.no_show", organization_id=org_id,
-                       actor_user_id=actor_id, entity_type="class_booking", entity_id=booking.id)
+                       actor_user_id=actor_id, entity_type="class_booking", entity_id=booking.id,
+                       metadata={"follow_up_task_id": task.id})
     return booking
 
 

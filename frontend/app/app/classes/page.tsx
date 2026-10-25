@@ -204,6 +204,7 @@ export default function ClassesPage() {
     setBookingsError("");
     try {
       await api.post(`/classes/${session.id}/bookings/${booking.booking_id}/${status}`);
+      if (status === "no-show") toast.success("No-show recorded and a follow-up task created.");
       await loadBookings(session);
     } catch (e) {
       setBookingsError((e as ApiError).message);
