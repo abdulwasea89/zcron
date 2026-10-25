@@ -23,6 +23,12 @@ class StaffInviteOut(BaseModel):
     used: bool
 
 
+class StaffDirectoryOut(BaseModel):
+    user_id: str
+    name: str
+    role: Role
+
+
 class InviteEmailUpdate(BaseModel):
     email: str
 

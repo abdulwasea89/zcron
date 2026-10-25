@@ -24,6 +24,7 @@ import type { InboxConversation, InboxStats, InboxThread } from "@/lib/types";
    delivery state across configured messaging providers. */
 
 type Filter = "open" | "unassigned" | "mine" | "resolved";
+type InboxStaff = { user_id: string; name: string; role: string };
 
 const CHANNELS: Record<string, { label: string; d: string }> = {
   whatsapp: { label: "WhatsApp", d: "M8 10.5h8M8 14h5M21 12a9 9 0 11-4.2-7.6" },
@@ -88,6 +89,7 @@ export default function InboxPage() {
   const [listLoading, setListLoading] = useState(true);
   const [listFailed, setListFailed] = useState(false);
   const [stats, setStats] = useState<InboxStats | null>(null);
+  const [team, setTeam] = useState<InboxStaff[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [thread, setThread] = useState<InboxThread | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -146,6 +148,11 @@ export default function InboxPage() {
   useEffect(() => {
     queueMicrotask(() => void loadStats());
   }, [loadStats]);
+
+  useEffect(() => {
+    if (!me) return;
+    api.get<InboxStaff[]>("/staff/directory").then(setTeam).catch(() => {});
+  }, [me]);
 
   // Refetch when the filter or search changes; debounce typing (immediate for an
   // empty query / filter switch).
@@ -478,15 +485,17 @@ export default function InboxPage() {
                   <p className="mt-1 text-xs text-muted-foreground">{thread.contact_handle}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {myId && thread.assigned_to === myId ? (
-                    <Button variant="secondary" disabled={busy === thread.id} onClick={() => act(thread.id, "assign", { user_id: null })}>
-                      Unassign
-                    </Button>
-                  ) : (
-                    <Button variant="secondary" disabled={busy === thread.id || !myId} onClick={() => act(thread.id, "assign", { user_id: myId })}>
-                      Assign to me
-                    </Button>
-                  )}
+                  <select
+                    aria-label="Assign conversation to staff"
+                    value={thread.assigned_to ?? ""}
+                    disabled={busy === thread.id}
+                    onChange={(event) => void act(thread.id, "assign", { user_id: event.target.value || null })}
+                    className="h-9 max-w-48 cursor-pointer rounded-md border border-foreground/20 bg-card px-2 text-xs text-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+                  >
+                    <option value="">Unassigned</option>
+                    {thread.assigned_to && !team.some((member) => member.user_id === thread.assigned_to) && <option value={thread.assigned_to}>{thread.assigned_name ?? "Current assignee"}</option>}
+                    {team.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}{member.user_id === myId ? " (me)" : ` · ${titleCase(member.role)}`}</option>)}
+                  </select>
                   <select
                     aria-label="Conversation status"
                     value={thread.status}

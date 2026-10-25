@@ -28,6 +28,7 @@ from app.schemas.staff import (
     ShiftScheduleOut,
     StaffInviteCreate,
     StaffInviteOut,
+    StaffDirectoryOut,
     StaffInviteRedeem,
     TaskCreateIn,
     TaskOut,
@@ -42,6 +43,30 @@ from app.services import trainer_sessions_service as trainer_sessions
 from app.services.audit_service import record_audit
 
 router = APIRouter()
+
+
+@router.get("/directory", response_model=list[StaffDirectoryOut])
+async def inbox_staff_directory(
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_INBOX)),
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (await session.execute(
+        select(OrganizationMember, User)
+        .join(User, User.id == OrganizationMember.user_id)
+        .where(
+            OrganizationMember.organization_id == ctx.org_id,
+            OrganizationMember.role != Role.MEMBER,
+            OrganizationMember.banned.is_(False),
+            User.is_active.is_(True),
+        )
+        .order_by(User.full_name, User.email)
+    )).all()
+    return [
+        StaffDirectoryOut(
+            user_id=member.user_id, name=user.full_name or user.email, role=member.role,
+        )
+        for member, user in rows
+    ]
 
 
 @router.get("/availability", response_model=list[TrainerAvailabilityOut])
