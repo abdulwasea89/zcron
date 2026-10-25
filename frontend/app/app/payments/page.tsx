@@ -92,11 +92,33 @@ export default function PaymentsPage() {
   const activePaymentFilterCount = [statusFilter, kindFilter, refundFilter].filter((v) => v !== NONE).length;
   function clearPaymentFilters() { setStatusFilter(NONE); setKindFilter(NONE); setRefundFilter(NONE); }
 
+  function exportFilteredPayments() {
+    const columns = ["payment_id", "member_id", "plan_id", "kind", "method", "provider_method", "status", "amount", "tax_amount", "refunded_amount", "currency", "promo_code", "created_at", "paid_at"];
+    const csvCell = (value: unknown) => {
+      const text = String(value ?? "");
+      const safe = /^[\s]*[=+@-]/.test(text) ? `'${text}` : text;
+      return `"${safe.replaceAll('"', '""')}"`;
+    };
+    const rows = filtered.map((p) => [
+      p.id, p.member_id, p.plan_id, p.kind, p.method, p.stripe_payment_method_type,
+      p.status, p.amount, p.tax_amount, p.refunded_amount, p.currency, p.promo_code,
+      p.created_at, p.paid_at,
+    ]);
+    const csv = [columns, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `gym-payments-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <PageHeader
         title="Payments"
         subtitle="All money events for this gym — refunds are web-only"
+        action={<Button variant="secondary" disabled={filtered.length === 0} onClick={exportFilteredPayments}>Export filtered CSV</Button>}
       />
 
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
