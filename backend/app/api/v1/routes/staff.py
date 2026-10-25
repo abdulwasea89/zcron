@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import timezone
+import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -37,10 +38,14 @@ from app.schemas.staff import (
     TrainerSessionOut,
     TrainerAvailabilityCreate,
     TrainerAvailabilityOut,
+    TrainerPackageCreate,
+    TrainerPackageOut,
 )
 from app.services import staff_service as staff
 from app.services import trainer_sessions_service as trainer_sessions
+from app.services import trainer_packages_service as trainer_packages
 from app.services.audit_service import record_audit
+from app.services import idempotency_service
 
 router = APIRouter()
 
@@ -157,15 +162,55 @@ async def list_trainer_sessions(
     )
 
 
+@router.get("/trainer-packages", response_model=list[TrainerPackageOut])
+async def list_trainer_packages(
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_ASSIGNED_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    trainer_id = await _actor_member_id(session, ctx) if ctx.role == Role.TRAINER else None
+    return await trainer_packages.list_packages(session, org_id=ctx.org_id, trainer_member_id=trainer_id)
+
+
+@router.post("/trainer-packages", response_model=TrainerPackageOut, status_code=201,
+             dependencies=[Depends(require_writable_org)])
+async def grant_trainer_package(
+    data: TrainerPackageCreate,
+    idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+    ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TRAINERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    claim = await idempotency_service.claim(
+        session, key=idempotency_key, endpoint=f"trainer.package_grant:{ctx.org_id}:{ctx.user_id}",
+        body=data.model_dump(mode="json"), organization_id=ctx.org_id, user_id=ctx.user_id,
+    )
+    if not claim.claimed:
+        return TrainerPackageOut.model_validate_json(claim.cached_response or "{}")
+    package = await trainer_packages.create_package(session, org_id=ctx.org_id,
+                                                    actor_id=ctx.user_id, data=data)
+    rows = await trainer_packages.list_packages(session, org_id=ctx.org_id)
+    output = TrainerPackageOut.model_validate(next(item for item in rows if item["id"] == package.id))
+    await idempotency_service.complete(session, claim.record, code=201, body=output.model_dump_json())
+    return output
+
+
 @router.post("/trainer-sessions", response_model=TrainerSessionOut, status_code=201,
              dependencies=[Depends(require_writable_org)])
 async def create_trainer_session(
     data: TrainerSessionCreate,
+    idempotency_key: str = Header(default="", alias="Idempotency-Key"),
     ctx: TenantContext = Depends(require_capability(Capability.VIEW_ASSIGNED_MEMBERS)),
     session: AsyncSession = Depends(get_session),
 ):
     if ctx.role != Role.TRAINER:
         raise HTTPException(status_code=403, detail="Only trainers can log their own sessions.")
+    claim = None
+    if data.package_id:
+        claim = await idempotency_service.claim(
+            session, key=idempotency_key, endpoint=f"trainer.package_session:{ctx.org_id}:{ctx.user_id}",
+            body=data.model_dump(mode="json"), organization_id=ctx.org_id, user_id=ctx.user_id,
+        )
+        if not claim.claimed:
+            return TrainerSessionOut.model_validate(json.loads(claim.cached_response or "{}"))
     trainer_id = await _actor_member_id(session, ctx)
     log = await trainer_sessions.create_log(
         session, org_id=ctx.org_id, trainer_member_id=trainer_id,
@@ -173,12 +218,36 @@ async def create_trainer_session(
     )
     client = await session.get(OrganizationMember, log.client_member_id)
     user = await session.get(User, client.user_id)
-    return TrainerSessionOut(
+    output = TrainerSessionOut(
         id=log.id, client_member_id=client.id,
         client_name=client.display_name or user.full_name or user.email,
         performed_at=log.performed_at, duration_minutes=log.duration_minutes,
         focus=log.focus, notes=log.notes,
+        package_id=log.package_id,
     )
+    if claim:
+        await idempotency_service.complete(session, claim.record, code=201, body=output.model_dump_json())
+    return output
+
+
+@router.post("/trainer-packages/{package_id}/cancel", response_model=Message,
+             dependencies=[Depends(require_writable_org)])
+async def cancel_trainer_package(
+    package_id: str,
+    idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+    ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TRAINERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    claim = await idempotency_service.claim(
+        session, key=idempotency_key, endpoint=f"trainer.package_cancel:{ctx.org_id}:{ctx.user_id}",
+        body={"package_id": package_id}, organization_id=ctx.org_id, user_id=ctx.user_id,
+    )
+    if not claim.claimed:
+        return Message.model_validate_json(claim.cached_response or "{}")
+    await trainer_packages.cancel_package(session, org_id=ctx.org_id, package_id=package_id, actor_id=ctx.user_id)
+    output = Message(message="Unused training credits cancelled. Payment records are unchanged.")
+    await idempotency_service.complete(session, claim.record, code=200, body=output.model_dump_json())
+    return output
 
 
 @router.get("/schedule", response_model=list[ShiftScheduleOut])

@@ -83,6 +83,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "related_member_id": "VARCHAR",
             "case_outcome": "VARCHAR",
         },
+        "trainer_session_logs": {"package_id": "VARCHAR"},
         "class_bookings": {
             "reminder_created_at": "DATETIME",
             "reminder_email_accepted": "BOOLEAN NOT NULL DEFAULT 0",

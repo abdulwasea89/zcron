@@ -208,6 +208,7 @@ export interface TrainerSessionLog {
   duration_minutes: number;
   focus: string;
   notes: string;
+  package_id?: string | null;
 }
 
 export interface CashMemberItem {

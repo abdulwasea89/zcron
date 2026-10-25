@@ -15,6 +15,8 @@ from app.models.staff import Task
 from app.models.session import AuthSession
 from app.models.subscription import Subscription
 from app.models.user import User
+from app.models.trainer_package import TrainerPackage
+from app.models.trainer_session import TrainerSessionLog
 from app.services.audit_service import record_audit
 
 
@@ -68,6 +70,21 @@ async def erase_member_from_workspace(
         task.done = True
         task.case_outcome = "cancelled"
         session.add(task)
+
+    packages = (await session.execute(select(TrainerPackage).where(
+        TrainerPackage.organization_id == org_id, TrainerPackage.member_id == member.id,
+    ).with_for_update())).scalars().all()
+    for package in packages:
+        package.name = "Erased member training credits"
+        package.cancelled_at = package.cancelled_at or now_utc()
+        session.add(package)
+    training_logs = (await session.execute(select(TrainerSessionLog).where(
+        TrainerSessionLog.organization_id == org_id, TrainerSessionLog.client_member_id == member.id,
+    ))).scalars().all()
+    for log in training_logs:
+        log.focus = "Erased member training session"
+        log.notes = ""
+        session.add(log)
 
     subscriptions = (await session.execute(select(Subscription).where(
         Subscription.organization_id == org_id, Subscription.member_id == member.id,

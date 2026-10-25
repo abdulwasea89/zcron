@@ -110,6 +110,7 @@ class TrainerAvailabilityOut(BaseModel):
 
 class TrainerSessionCreate(BaseModel):
     client_member_id: str
+    package_id: str | None = None
     performed_at: datetime
     duration_minutes: int = Field(ge=1, le=300)
     focus: str = Field(min_length=2, max_length=160)
@@ -132,6 +133,42 @@ class TrainerSessionOut(BaseModel):
     duration_minutes: int
     focus: str
     notes: str
+    package_id: str | None = None
+
+
+class TrainerPackageCreate(BaseModel):
+    member_id: str = Field(min_length=1, max_length=128)
+    trainer_member_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=2, max_length=100)
+    total_sessions: int = Field(ge=1, le=100)
+    expires_at: datetime | None = None
+
+    @field_validator("name")
+    @classmethod
+    def nonblank_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Package name must contain at least two characters.")
+        return value
+
+    @field_validator("expires_at")
+    @classmethod
+    def normalize_expiry(cls, value: datetime | None) -> datetime | None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None) if value and value.tzinfo else value
+
+
+class TrainerPackageOut(BaseModel):
+    id: str
+    member_id: str
+    member_name: str
+    trainer_member_id: str
+    trainer_name: str
+    name: str
+    total_sessions: int
+    used_sessions: int
+    remaining_sessions: int
+    expires_at: datetime | None
+    status: str
 
 
 class CompensationUpdate(BaseModel):

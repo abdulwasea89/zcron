@@ -19,6 +19,8 @@ from app.models.payment import Payment
 from app.models.subscription import Subscription
 from app.models.staff import Task
 from app.models.user import User
+from app.models.trainer_package import TrainerPackage
+from app.models.trainer_session import TrainerSessionLog
 from app.schemas.privacy import (
     DataSubjectRequestCreate,
     DataSubjectRequestDecision,
@@ -281,6 +283,12 @@ async def export_member_data(
     retention_cases = (await session.execute(select(Task).where(
         Task.organization_id == ctx.org_id, Task.related_member_id == member.id, Task.category == "retention",
     ).order_by(Task.created_at.desc()).limit(5000))).scalars().all()
+    training_packages = (await session.execute(select(TrainerPackage).where(
+        TrainerPackage.organization_id == ctx.org_id, TrainerPackage.member_id == member.id,
+    ).order_by(TrainerPackage.created_at.desc()).limit(5000))).scalars().all()
+    training_logs = (await session.execute(select(TrainerSessionLog).where(
+        TrainerSessionLog.organization_id == ctx.org_id, TrainerSessionLog.client_member_id == member.id,
+    ).order_by(TrainerSessionLog.performed_at.desc()).limit(5000))).scalars().all()
     return {
         "account": {
             "email": user.email, "full_name": user.full_name, "phone": user.phone,
@@ -315,5 +323,12 @@ async def export_member_data(
                            "current_period_end": item.current_period_end} for item in subscriptions],
         "retention_cases": [{"created_at": item.created_at, "next_action": item.description,
                              "completed": item.done, "outcome": item.case_outcome} for item in retention_cases],
-        "export_limitations": "This workspace export includes up to 5,000 attendance/payment rows and 1,000 subscriptions. Processor records and backups are not included.",
+        "training_packages": [{"name": item.name, "sessions": item.total_sessions,
+                               "used_sessions": item.used_sessions, "granted_at": item.granted_at,
+                               "expires_at": item.expires_at, "cancelled_at": item.cancelled_at}
+                              for item in training_packages],
+        "training_sessions": [{"performed_at": item.performed_at, "duration_minutes": item.duration_minutes,
+                               "focus": item.focus, "notes": item.notes, "package_id": item.package_id}
+                              for item in training_logs],
+        "export_limitations": "This workspace export includes up to 5,000 rows per attendance, payment, retention case, training package and training session category, and 1,000 subscriptions. Processor records and backups are not included.",
     }

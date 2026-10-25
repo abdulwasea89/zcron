@@ -43,6 +43,7 @@ async def list_logs(
         "duration_minutes": log.duration_minutes,
         "focus": log.focus,
         "notes": log.notes,
+        "package_id": log.package_id,
     } for log, member, user in rows]
 
 
@@ -52,11 +53,11 @@ async def create_log(
 ) -> TrainerSessionLog:
     trainer = await session.get(OrganizationMember, trainer_member_id)
     client = await session.get(OrganizationMember, data.client_member_id)
-    if trainer is None or trainer.organization_id != org_id or trainer.role != Role.TRAINER:
+    if trainer is None or trainer.organization_id != org_id or trainer.role != Role.TRAINER or trainer.banned:
         raise HTTPException(status_code=403, detail="Trainer account is not available.")
     if client is None or client.organization_id != org_id or client.role != Role.MEMBER:
         raise HTTPException(status_code=404, detail="Member not found in this gym.")
-    if client.member_status != MemberStatus.ACTIVE:
+    if client.member_status != MemberStatus.ACTIVE or client.banned:
         raise HTTPException(status_code=409, detail="Only active assigned members can have a training log.")
     assignment = (await session.execute(select(MemberTrainer.id).where(
         MemberTrainer.organization_id == org_id,
@@ -69,10 +70,16 @@ async def create_log(
     performed_at = data.performed_at.astimezone(timezone.utc).replace(tzinfo=None) if data.performed_at.tzinfo else data.performed_at
     if performed_at > now_utc():
         raise HTTPException(status_code=422, detail="Training sessions cannot be logged in the future.")
+    if data.package_id:
+        from app.services.trainer_packages_service import consume_package
+
+        await consume_package(session, org_id=org_id, package_id=data.package_id,
+                              trainer_member_id=trainer_member_id, member_id=client.id, actor_id=actor_id)
     log = TrainerSessionLog(
         organization_id=org_id,
         trainer_member_id=trainer_member_id,
         client_member_id=client.id,
+        package_id=data.package_id,
         performed_at=performed_at,
         duration_minutes=data.duration_minutes,
         focus=data.focus.strip(),
