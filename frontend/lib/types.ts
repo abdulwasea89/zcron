@@ -238,6 +238,7 @@ export interface RevenueAnalytics {
   active_members: number;
   churn_count: number;
   currency: string;
+  operating_expenses_by_currency: Record<string, string>;
 }
 
 export interface SaasStatusOut {

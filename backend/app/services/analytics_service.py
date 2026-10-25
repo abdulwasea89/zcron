@@ -21,6 +21,7 @@ from app.models.company_contract import CompanyContract
 from app.models.invoice import Invoice
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
+from app.models.operating_expense import OperatingExpense
 from app.models.payment import Payment
 from app.models.receipt import ReceiptUpload
 from app.services.attendance_service import day_bounds
@@ -243,6 +244,17 @@ async def revenue_analytics(session: AsyncSession, *, org_id: str) -> dict:
         if status in {MemberStatus.CANCELLED, MemberStatus.EXPIRED}:
             churn += int(count)
 
+    expense_totals = (
+        await session.execute(
+            select(OperatingExpense.currency, func.sum(OperatingExpense.amount))
+            .where(
+                OperatingExpense.organization_id == org_id,
+                OperatingExpense.voided_at.is_(None),
+            )
+            .group_by(OperatingExpense.currency)
+        )
+    ).all()
+
     return {
         "total_revenue": round(total, 2),
         "revenue_by_method": by_method,
@@ -250,4 +262,7 @@ async def revenue_analytics(session: AsyncSession, *, org_id: str) -> dict:
         "active_members": active,
         "churn_count": churn,
         "currency": org.default_currency if org else "USD",
+        "operating_expenses_by_currency": {
+            currency: format(amount, ".2f") for currency, amount in expense_totals
+        },
     }

@@ -241,6 +241,20 @@ export default function AnalyticsPage() {
             ))}
           </div>
 
+          <Card>
+            <CardHeader title="Operating expenses" subtitle="Recorded, non-voided expenses to date. Totals are shown separately by currency." />
+            <div className="flex flex-wrap gap-3 p-5">
+              {Object.entries(data.operating_expenses_by_currency).length === 0 ? (
+                <p className="text-[13px] text-muted-foreground">No operating expenses recorded.</p>
+              ) : Object.entries(data.operating_expenses_by_currency).map(([currency, amount]) => (
+                <div key={currency} className="min-w-40 rounded-lg border border-border px-4 py-3">
+                  <div className="text-xs text-muted-foreground">{currency}</div>
+                  <div className="mt-1 text-lg font-semibold tabular-nums">{money(Number(amount), currency)}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
           {/* Revenue */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2 lg:row-start-1">

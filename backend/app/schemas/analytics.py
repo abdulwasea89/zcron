@@ -10,7 +10,7 @@ keys.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HeadlineMetrics(BaseModel):
@@ -44,3 +44,4 @@ class RevenueAnalytics(BaseModel):
     active_members: int
     churn_count: int
     currency: str
+    operating_expenses_by_currency: dict[str, str] = Field(default_factory=dict)
