@@ -84,6 +84,8 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
         },
         "payments": {"payer_contributions": "JSON NOT NULL DEFAULT '[]'"},
         "organization_members": {
+            "marketing_whatsapp_consent": "BOOLEAN NOT NULL DEFAULT 0",
+            "marketing_whatsapp_consent_at": "DATETIME",
             "marketing_email_consent": "BOOLEAN NOT NULL DEFAULT 0",
             "marketing_email_consent_at": "DATETIME",
             "marketing_sms_consent": "BOOLEAN NOT NULL DEFAULT 0",
@@ -106,6 +108,11 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
         "campaign_deliveries": {
             "provider_message_id": "VARCHAR",
             "delivery_status": "VARCHAR",
+        },
+        "campaigns": {
+            "whatsapp_template_sid": "VARCHAR",
+            "whatsapp_variables": "JSON NOT NULL DEFAULT '{}'",
+            "member_tag": "VARCHAR",
         },
         "data_subject_requests": {
             "member_name": "VARCHAR NOT NULL DEFAULT ''",

@@ -52,6 +52,8 @@ async def erase_member_from_workspace(
     member.marketing_email_consent_at = now_utc()
     member.marketing_sms_consent = False
     member.marketing_sms_consent_at = now_utc()
+    member.marketing_whatsapp_consent = False
+    member.marketing_whatsapp_consent_at = now_utc()
     member.marketing_in_app_consent = False
     member.marketing_in_app_consent_at = now_utc()
     session.add(member)

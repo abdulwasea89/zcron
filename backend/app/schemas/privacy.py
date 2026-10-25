@@ -41,6 +41,7 @@ class MemberMarketingConsentUpdate(BaseModel):
     email: bool
     sms: bool
     in_app: bool
+    whatsapp: bool | None = None
 
 
 class MemberMarketingConsentOut(BaseModel):
@@ -51,3 +52,5 @@ class MemberMarketingConsentOut(BaseModel):
     sms_updated_at: datetime | None
     in_app: bool
     in_app_updated_at: datetime | None
+    whatsapp: bool = False
+    whatsapp_updated_at: datetime | None = None

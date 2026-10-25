@@ -8,6 +8,7 @@ the inbox must never label a locally stored reply as delivered.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import uuid
 
 import httpx
@@ -24,7 +25,7 @@ class DeliveryReceipt:
     provider_message_id: str | None
 
 
-async def deliver(channel: Channel, recipient: str, body: str, credentials: dict | None = None, *, status_callback: str | None = None) -> DeliveryReceipt:
+async def deliver(channel: Channel, recipient: str, body: str, credentials: dict | None = None, *, status_callback: str | None = None, content_sid: str | None = None, content_variables: dict[str, str] | None = None) -> DeliveryReceipt:
     """Send one reply using the configured transport for ``channel``."""
 
     if channel == Channel.WEB_CHAT:
@@ -76,6 +77,10 @@ async def deliver(channel: Channel, recipient: str, body: str, credentials: dict
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 data = {"To": to, "From": from_number, "Body": body}
+                if channel == Channel.WHATSAPP and content_sid:
+                    data.pop("Body")
+                    data["ContentSid"] = content_sid
+                    data["ContentVariables"] = json.dumps(content_variables or {})
                 if status_callback:
                     data["StatusCallback"] = status_callback
                 response = await client.post(
@@ -85,7 +90,10 @@ async def deliver(channel: Channel, recipient: str, body: str, credentials: dict
                 )
             response.raise_for_status()
             payload = response.json()
-            return DeliveryReceipt(str(payload["sid"]))
+            message_sid = payload.get("sid")
+            if not isinstance(message_sid, str) or not message_sid.strip() or payload.get("status") in {"failed", "undelivered"}:
+                raise InboxDeliveryError("Twilio did not accept the message.")
+            return DeliveryReceipt(message_sid)
         except (httpx.HTTPError, KeyError, ValueError) as exc:
             raise InboxDeliveryError("Twilio did not accept the message.") from exc
 

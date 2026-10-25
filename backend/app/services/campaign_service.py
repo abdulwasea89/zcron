@@ -88,6 +88,7 @@ async def _resolve_segment(
     stmt = select(OrganizationMember).where(
         OrganizationMember.organization_id == org_id,
         OrganizationMember.role == Role.MEMBER,
+        OrganizationMember.banned.is_(False),
         OrganizationMember.member_status.in_(  # type: ignore[attr-defined]
             list(_status_set(campaign.member_status))
         ),
@@ -97,17 +98,21 @@ async def _resolve_segment(
         return []
 
     wants_sms = campaign.channel == CampaignChannel.SMS
+    wants_whatsapp = campaign.channel == CampaignChannel.WHATSAPP
     wants_email = campaign.channel in {CampaignChannel.EMAIL, CampaignChannel.BOTH}
     wants_in_app = campaign.channel in {CampaignChannel.IN_APP, CampaignChannel.BOTH}
     candidates = [
         member for member in candidates
         if (wants_sms and member.marketing_sms_consent and member.phone and member.phone.strip())
+        or (wants_whatsapp and member.marketing_whatsapp_consent and member.phone and member.phone.strip())
         or (wants_email and member.marketing_email_consent)
         or (wants_in_app and member.marketing_in_app_consent)
     ]
     if not candidates:
         return []
 
+    if campaign.member_tag:
+        candidates = [member for member in candidates if campaign.member_tag in member.tags]
     ids = [m.id for m in candidates]
     if campaign.plan_id is not None:
         plan_ids = {
@@ -165,6 +170,8 @@ async def create_campaign(
     min_days_since_last_visit: int | None = None,
     scheduled_at: datetime | None = None,
     send_limit: int = DEFAULT_SEND_LIMIT,
+    whatsapp_template_sid: str | None = None, whatsapp_variables: dict[str, str] | None = None,
+    member_tag: str | None = None,
 ) -> Campaign:
     if not title.strip():
         raise HTTPException(status_code=422, detail="title is required.")
@@ -174,11 +181,14 @@ async def create_campaign(
         raise HTTPException(status_code=422, detail="min_days_since_last_visit must be >= 1.")
     if send_limit < 1:
         raise HTTPException(status_code=422, detail="send_limit must be >= 1.")
-    if channel == CampaignChannel.SMS and send_limit > DEFAULT_SEND_LIMIT:
-        raise HTTPException(status_code=422, detail="SMS campaigns are limited to 200 recipients per send.")
+    if channel in {CampaignChannel.SMS, CampaignChannel.WHATSAPP} and send_limit > DEFAULT_SEND_LIMIT:
+        raise HTTPException(status_code=422, detail="SMS and WhatsApp campaigns are limited to 200 recipients per send.")
 
+    if channel == CampaignChannel.WHATSAPP and not whatsapp_template_sid:
+        raise HTTPException(status_code=422, detail="WhatsApp campaigns require an approved Content SID.")
     campaign = Campaign(
         organization_id=org_id,
+        whatsapp_template_sid=whatsapp_template_sid, whatsapp_variables=whatsapp_variables or {}, member_tag=member_tag,
         title=title.strip(),
         subject=subject.strip(),
         body=body.strip(),
@@ -217,8 +227,8 @@ async def preview(session: AsyncSession, *, org_id: str, campaign_id: str, limit
             {
                 "member_id": m.id,
                 "name": await _name(m, user),
-                "email": user.email if user and campaign.channel != CampaignChannel.SMS else None,
-                "phone": m.phone if campaign.channel == CampaignChannel.SMS else None,
+                "email": user.email if user and campaign.channel not in {CampaignChannel.SMS, CampaignChannel.WHATSAPP} else None,
+                "phone": m.phone if campaign.channel in {CampaignChannel.SMS, CampaignChannel.WHATSAPP} else None,
                 "status": m.member_status.value
                 if hasattr(m.member_status, "value")
                 else str(m.member_status),
@@ -292,7 +302,12 @@ async def _deliver_member(
     wants_email = campaign.channel in {CampaignChannel.EMAIL, CampaignChannel.BOTH} and member.marketing_email_consent
     wants_in_app = campaign.channel in {CampaignChannel.IN_APP, CampaignChannel.BOTH} and member.marketing_in_app_consent
     wants_sms = campaign.channel == CampaignChannel.SMS and member.marketing_sms_consent and bool(member.phone and member.phone.strip())
+    wants_whatsapp = campaign.channel == CampaignChannel.WHATSAPP and member.marketing_whatsapp_consent and bool(member.phone and member.phone.strip())
 
+    if member.banned or (campaign.member_tag and campaign.member_tag not in member.tags):
+        delivery.status = CampaignDeliveryStatus.SUPPRESSED
+        delivery.delivery_status = "suppressed"
+        return delivery
     user = await session.get(User, member.user_id)
 
     in_app_sent = False
@@ -311,36 +326,43 @@ async def _deliver_member(
         in_app_sent = True
 
     if wants_email and user is not None and user.email_verified:
-        await send_email(user.email, campaign.subject, campaign.body)
-        email_sent = True
+        email_sent = bool(await send_email(user.email, campaign.subject, campaign.body))
+        if not email_sent:
+            delivery.error = "Email provider did not accept this message."
 
-    if wants_sms:
+    if wants_sms or wants_whatsapp:
         from app.services.inbox_channels_service import get_credentials
         from app.services.inbox_channels_service import webhook_url
 
-        credentials = await get_credentials(session, org_id, "sms")
-        callback = webhook_url(org_id, "sms")
+        if wants_whatsapp and not campaign.whatsapp_template_sid:
+            raise HTTPException(status_code=422, detail="An approved WhatsApp template is required.")
+        transport = "whatsapp" if wants_whatsapp else "sms"
+        credentials = await get_credentials(session, org_id, transport)
+        callback = webhook_url(org_id, transport)
         receipt = await deliver_inbox_message(
-            Channel.SMS, member.phone.strip(), campaign.body, credentials,
+            Channel.WHATSAPP if wants_whatsapp else Channel.SMS, member.phone.strip(), campaign.body, credentials,
+            **({"content_sid": campaign.whatsapp_template_sid, "content_variables": campaign.whatsapp_variables} if wants_whatsapp else {}),
             status_callback=f"{callback}/status" if callback else None,
         )
         sms_sent = bool(receipt.provider_message_id)
+        if not sms_sent:
+            delivery.error = "Messaging provider did not accept this message."
         delivery.provider_message_id = receipt.provider_message_id
         delivery.delivery_status = "queued" if sms_sent else "failed"
 
     if in_app_sent or email_sent or sms_sent:
         delivery.status = CampaignDeliveryStatus.SENT
         if sms_sent:
-            delivery.channel = CampaignChannel.SMS
+            delivery.channel = CampaignChannel.WHATSAPP if wants_whatsapp else CampaignChannel.SMS
         elif in_app_sent and email_sent:
             delivery.channel = CampaignChannel.BOTH
         else:
             delivery.channel = CampaignChannel.IN_APP if in_app_sent else CampaignChannel.EMAIL
         delivery.delivered_at = now_utc()
     else:
-        delivery.status = CampaignDeliveryStatus.SUPPRESSED
+        delivery.status = CampaignDeliveryStatus.FAILED if delivery.error else CampaignDeliveryStatus.SUPPRESSED
         delivery.channel = campaign.channel
-        delivery.delivery_status = "suppressed"
+        delivery.delivery_status = "failed" if delivery.error else "suppressed"
 
     return delivery
 
@@ -351,6 +373,7 @@ async def run_campaign(
     """Send a campaign to its resolved segment. Resumable and idempotent."""
 
     campaign = await _get_campaign(session, org_id, campaign_id)
+    await session.refresh(campaign, with_for_update=True)
     if campaign.status not in {
         CampaignStatus.DRAFT,
         CampaignStatus.SCHEDULED,
@@ -393,6 +416,10 @@ async def run_campaign(
             )
             session.add(delivery)
         try:
+            await session.refresh(member, attribute_names=[
+                "marketing_email_consent", "marketing_sms_consent", "marketing_whatsapp_consent",
+                "marketing_in_app_consent", "phone", "banned", "tags",
+            ])
             await _deliver_member(
                 session, org_id=org_id, campaign=campaign, member=member, delivery=delivery
             )

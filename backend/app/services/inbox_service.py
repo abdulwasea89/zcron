@@ -248,17 +248,19 @@ async def record_inbound(
                 actor_user_id=None, entity_type="lead", entity_id=lead.id,
                 metadata={"source": "inbound_stop", "channel": ch.value},
             )
-        if ch == Channel.SMS and conv.member_id:
+        if ch in {Channel.SMS, Channel.WHATSAPP} and conv.member_id:
             member = await session.get(OrganizationMember, conv.member_id)
-            if member and member.organization_id == org_id and member.marketing_sms_consent:
-                member.marketing_sms_consent = False
-                member.marketing_sms_consent_at = now_utc()
+            consent_field = "marketing_whatsapp_consent" if ch == Channel.WHATSAPP else "marketing_sms_consent"
+            consent_key = "whatsapp" if ch == Channel.WHATSAPP else "sms"
+            if member and member.organization_id == org_id and getattr(member, consent_field):
+                setattr(member, consent_field, False)
+                setattr(member, f"{consent_field}_at", now_utc())
                 session.add(member)
                 await record_audit(
                     session, action="privacy.member_marketing_consent_updated",
                     organization_id=org_id, actor_user_id=None,
                     entity_type="member", entity_id=member.id,
-                    old_values={"sms": True}, new_values={"sms": False},
+                    old_values={consent_key: True}, new_values={consent_key: False},
                     metadata={"source": "inbound_stop", "channel": ch.value},
                 )
     elif ch != Channel.WEB_CHAT:

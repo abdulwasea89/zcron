@@ -25,6 +25,12 @@ MEMBER_PWD = "M3mberStr0ng!Pwd"
 @pytest.fixture(autouse=True)
 def disable_external_stripe(monkeypatch):
     from app.services import organizations_service
+    from app.services import campaign_service
+
+    async def accepted_email(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(campaign_service, "send_email", accepted_email)
 
     monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
     monkeypatch.setattr(organizations_service.connect_stripe, "live", False)

@@ -414,6 +414,7 @@ class CampaignChannel(str, Enum):
     EMAIL = "email"  # email only
     BOTH = "both"  # in-app notification + email
     SMS = "sms"  # consented SMS only
+    WHATSAPP = "whatsapp"  # approved template + separate WhatsApp consent
 
 
 class CampaignStatus(str, Enum):

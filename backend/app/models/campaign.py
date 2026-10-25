@@ -21,6 +21,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlmodel import Field, UniqueConstraint
+from sqlalchemy import Column, JSON
 
 from app.core.constants import (
     CampaignChannel,
@@ -38,6 +39,9 @@ class Campaign(UUIDModel, TimestampModel, table=True):
     title: str
     subject: str                        # email subject / notification title
     body: str
+    whatsapp_template_sid: str | None = None
+    whatsapp_variables: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    member_tag: str | None = None
 
     channel: CampaignChannel = Field(default=CampaignChannel.IN_APP, index=True)
     status: CampaignStatus = Field(default=CampaignStatus.DRAFT, index=True)

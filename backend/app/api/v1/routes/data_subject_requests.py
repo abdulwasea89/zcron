@@ -39,6 +39,8 @@ def _consent_out(member: OrganizationMember) -> MemberMarketingConsentOut:
         email_updated_at=member.marketing_email_consent_at,
         sms=member.marketing_sms_consent,
         sms_updated_at=member.marketing_sms_consent_at,
+        whatsapp=member.marketing_whatsapp_consent,
+        whatsapp_updated_at=member.marketing_whatsapp_consent_at,
         in_app=member.marketing_in_app_consent,
         in_app_updated_at=member.marketing_in_app_consent_at,
     )
@@ -214,8 +216,12 @@ async def update_member_marketing_consent(
     if not claim.claimed:
         return MemberMarketingConsentOut.model_validate_json(claim.cached_response or "{}")
     old = {"email": member.marketing_email_consent, "sms": member.marketing_sms_consent,
-           "in_app": member.marketing_in_app_consent}
+           "in_app": member.marketing_in_app_consent, "whatsapp": member.marketing_whatsapp_consent}
     now = now_utc()
+    if data.whatsapp is not None:
+        if member.marketing_whatsapp_consent != data.whatsapp:
+            member.marketing_whatsapp_consent_at = now
+        member.marketing_whatsapp_consent = data.whatsapp
     if member.marketing_email_consent != data.email:
         member.marketing_email_consent_at = now
     if member.marketing_sms_consent != data.sms:
@@ -226,7 +232,7 @@ async def update_member_marketing_consent(
     member.marketing_sms_consent = data.sms
     member.marketing_in_app_consent = data.in_app
     session.add(member)
-    new = {"email": data.email, "sms": data.sms, "in_app": data.in_app}
+    new = {"email": data.email, "sms": data.sms, "in_app": data.in_app, "whatsapp": member.marketing_whatsapp_consent}
     if old != new:
         await record_audit(
             session, action="privacy.member_marketing_consent_updated", organization_id=ctx.org_id,
@@ -289,6 +295,8 @@ async def export_member_data(
                            "email": member.marketing_email_consent,
                            "email_updated_at": member.marketing_email_consent_at,
                            "sms": member.marketing_sms_consent,
+                           "whatsapp": member.marketing_whatsapp_consent,
+                           "whatsapp_updated_at": member.marketing_whatsapp_consent_at,
                            "sms_updated_at": member.marketing_sms_consent_at,
                            "in_app": member.marketing_in_app_consent,
                            "in_app_updated_at": member.marketing_in_app_consent_at,

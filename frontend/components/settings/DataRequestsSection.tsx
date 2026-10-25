@@ -13,7 +13,7 @@ type DataRequest = {
   note: string | null; resolution_note: string | null; created_at: string; resolved_at: string | null;
   erasure_redacted_at: string | null;
 };
-type MemberConsent = { member_id: string; email: boolean; email_updated_at: string | null; sms: boolean; sms_updated_at: string | null; in_app: boolean; in_app_updated_at: string | null };
+type MemberConsent = { whatsapp: boolean; whatsapp_updated_at: string | null; member_id: string; email: boolean; email_updated_at: string | null; sms: boolean; sms_updated_at: string | null; in_app: boolean; in_app_updated_at: string | null };
 
 const REQUEST_LABEL: Record<DataRequest["request_type"], string> = {
   access: "Access", export: "Export", correction: "Correction", erasure: "Erasure",
@@ -25,7 +25,7 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
   const [memberId, setMemberId] = useState("");
   const [requestType, setRequestType] = useState<DataRequest["request_type"]>("access");
   const [note, setNote] = useState("");
-  const [consent, setConsent] = useState<MemberConsent>({ member_id: "", email: false, email_updated_at: null, sms: false, sms_updated_at: null, in_app: false, in_app_updated_at: null });
+  const [consent, setConsent] = useState<MemberConsent>({ whatsapp: false, whatsapp_updated_at: null, member_id: "", email: false, email_updated_at: null, sms: false, sms_updated_at: null, in_app: false, in_app_updated_at: null });
   const [consentBusy, setConsentBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
     setConsentBusy(true);
     try {
       const updated = await api.put<MemberConsent>(`/privacy/members/${memberId}/consent`, {
-        email: consent.email, sms: consent.sms, in_app: consent.in_app,
+        email: consent.email, sms: consent.sms, whatsapp: consent.whatsapp, in_app: consent.in_app,
       }, { "Idempotency-Key": crypto.randomUUID() });
       setConsent(updated);
       toast.success("Communication permissions saved.");
@@ -158,7 +158,7 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
         </div>
         <div className="grid gap-2 sm:grid-cols-3">
           {([
-            ["email", "Marketing email"], ["sms", "Marketing SMS"], ["in_app", "In-app promotions"],
+            ["email", "Marketing email"], ["sms", "Marketing SMS"], ["whatsapp", "Marketing WhatsApp"], ["in_app", "In-app promotions"],
           ] as const).map(([key, label]) => (
             <label key={key} className="flex min-h-10 items-center gap-2 border border-border px-3 text-xs">
               <input type="checkbox" checked={consent.member_id === memberId && consent[key]} disabled={consent.member_id !== memberId} onChange={(event) => setConsent((current) => ({ ...current, [key]: event.target.checked }))} />
@@ -166,7 +166,7 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
             </label>
           ))}
         </div>
-        <p className="text-[11px] text-muted-foreground">SMS campaigns require a connected Twilio account and explicit member consent. STOP replies revoke SMS consent.</p>
+        <p className="text-[11px] text-muted-foreground">SMS and WhatsApp campaigns require their connected Twilio sender and separate opt-in permissions. STOP replies revoke consent for the channel used.</p>
         <Button variant="secondary" disabled={!memberId || consent.member_id !== memberId || consentBusy || busy !== null} loading={consentBusy} onClick={() => void saveConsent()}>Save permissions</Button>
       </section>
 

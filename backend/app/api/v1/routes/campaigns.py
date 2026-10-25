@@ -48,6 +48,9 @@ async def create_campaign(
         min_days_since_last_visit=data.min_days_since_last_visit,
         scheduled_at=data.scheduled_at,
         send_limit=data.send_limit,
+        whatsapp_template_sid=data.whatsapp_template_sid,
+        whatsapp_variables=data.whatsapp_variables,
+        member_tag=data.member_tag,
     )
     return CampaignOut.model_validate(campaign)
 
