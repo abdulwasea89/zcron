@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlmodel import Field
+from sqlalchemy import Column, JSON
 
 from app.core.constants import PaymentKind, PaymentMethod, PaymentStatus
 from app.models.base import TimestampModel, UUIDModel
@@ -47,6 +48,7 @@ class Payment(UUIDModel, TimestampModel, table=True):
     # Cash / offline
     logged_by: str | None = Field(default=None, foreign_key="users.id")
     note: str | None = None
+    payer_contributions: list[dict] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
 
     # Refunds
     refunded_amount: float = 0.0

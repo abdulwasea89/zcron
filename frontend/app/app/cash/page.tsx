@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api";
 import { enqueueOfflineMutation } from "@/lib/offline-mutations";
+import { FamilyPaymentShares, type FamilyShare } from "@/components/members/FamilyPaymentShares";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { money, roleLabel, titleCase } from "@/lib/format";
 import type { CashMemberItem, CashPaymentOut, PlanOut, ReconciliationOut } from "@/lib/types";
@@ -432,6 +433,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [planId, setPlanId] = useState("");
+  const [payerShares, setPayerShares] = useState<FamilyShare[]>([]);
   const [amount, setAmount] = useState("");
   const [promoCode, setPromoCode] = useState("");
   const [quote, setQuote] = useState<{ plan_price: number; joining_fee: number; discount_amount: number; tax_amount: number; total: number; currency: string } | null>(null);
@@ -492,7 +494,10 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [query]);
 
+  function selectMemberId(id: string) { setMemberId(id); setPayerShares([]); }
+
   function selectPlan(id: string) {
+    setPayerShares([]);
     setQuote(null);
     setAmount("");
     setPlanId(id);
@@ -510,13 +515,13 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
     try {
       const payload = {
         member_id: memberId, plan_id: planId, amount: amt, method, note: note.trim() || null,
-        promo_code: promoCode.trim() || null,
+        promo_code: promoCode.trim() || null, payer_shares: payerShares,
       };
       const out = await api.post<CashPaymentOut>("/cash/log", payload, { "Idempotency-Key": idempotencyKey });
       setResult(out);
       onSaved();
       setReceipt({ member: selected, plan: selectedPlan, method });
-      setSelected(null); setMemberId(""); setQuery(""); setResults([]);
+      setSelected(null); selectMemberId(""); setQuery(""); setResults([]);
       setPlanId(""); setAmount(""); setNote(""); setPromoCode("");
     } catch (e) {
       const networkOrServerFailure = !(e instanceof ApiError) || e.status >= 500;
@@ -527,14 +532,14 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
             path: "/cash/log",
             body: {
               member_id: memberId, plan_id: planId, amount: amt, method, note: note.trim() || null,
-              promo_code: promoCode.trim() || null,
+              promo_code: promoCode.trim() || null, payer_shares: payerShares,
             },
             // Same key as the attempted request: a response lost after commit
             // replays the original result instead of recording a second payment.
             idempotencyKey,
           });
           setQueuedMessage("Connection failed. The payment is saved on this device and is not recorded yet. It will sync when the connection returns; check the payment history before retrying.");
-          setSelected(null); setMemberId(""); setQuery(""); setResults([]);
+          setSelected(null); selectMemberId(""); setQuery(""); setResults([]);
           setPlanId(""); setAmount(""); setNote(""); setPromoCode(""); setQuote(null);
         } catch {
           setError("Connection failed and this payment could not be saved for sync. Keep the payment details and check the ledger before trying again.");
@@ -578,8 +583,8 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
               query={query}
               onQueryChange={setQuery}
               error={searchError}
-              onChange={(m) => { setSelected(m); setMemberId(m.member_id); setQuote(null); setAmount(""); }}
-              onClear={() => { setSelected(null); setMemberId(""); setQuery(""); setResults([]); setQuote(null); setAmount(""); }}
+              onChange={(m) => { setSelected(m); selectMemberId(m.member_id); setQuote(null); setAmount(""); }}
+              onClear={() => { setSelected(null); selectMemberId(""); setQuery(""); setResults([]); setQuote(null); setAmount(""); }}
             />
           </div>
 
@@ -641,6 +646,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
             </div>
           </div>
 
+          {memberId && selectedPlan?.audience === "family" && quote && <FamilyPaymentShares key={`${memberId}:${planId}`} memberId={memberId} total={quote.total} value={payerShares} onChange={setPayerShares} />}
           {/* Step 4: Note */}
           <Input
             label="Internal note (optional)"

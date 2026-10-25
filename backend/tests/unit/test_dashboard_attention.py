@@ -38,22 +38,27 @@ async def test_members_cannot_access_staff_dashboard_preferences():
     assert error.value.status_code == 403
 
 
-def test_dashboard_preference_migration_preserves_existing_members(monkeypatch):
+@pytest.mark.parametrize("revision,table,column", [
+    ("y1z2a3b4c5d6_dashboard_attention_preferences", "organization_members", "dashboard_hidden_attention"),
+    ("z2a3b4c5d6e7_member_tags", "organization_members", "tags"),
+    ("a3b4c5d6e7f8_family_payment_shares", "payments", "payer_contributions"),
+])
+def test_json_migrations_preserve_existing_rows(monkeypatch, revision, table, column):
     from importlib import import_module
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     from sqlalchemy import create_engine
 
-    migration = import_module("app.db.migrations.versions.y1z2a3b4c5d6_dashboard_attention_preferences")
+    migration = import_module(f"app.db.migrations.versions.{revision}")
     engine = create_engine("sqlite://")
     try:
         with engine.begin() as connection:
-            connection.exec_driver_sql("CREATE TABLE organization_members (id VARCHAR PRIMARY KEY)")
-            connection.exec_driver_sql("INSERT INTO organization_members (id) VALUES ('existing')")
+            connection.exec_driver_sql(f"CREATE TABLE {table} (id VARCHAR PRIMARY KEY)")
+            connection.exec_driver_sql(f"INSERT INTO {table} (id) VALUES ('existing')")
             monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(connection)))
             migration.upgrade()
-            assert connection.exec_driver_sql("SELECT dashboard_hidden_attention FROM organization_members").scalar_one() == "[]"
+            assert connection.exec_driver_sql(f"SELECT {column} FROM {table}").scalar_one() == "[]"
             migration.downgrade()
-            assert connection.exec_driver_sql("SELECT id FROM organization_members").scalar_one() == "existing"
+            assert connection.exec_driver_sql(f"SELECT id FROM {table}").scalar_one() == "existing"
     finally:
         engine.dispose()

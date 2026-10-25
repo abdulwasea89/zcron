@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from sqlalchemy import or_
 
 from app.api.deps import get_session, require_capability, require_writable_org
 from app.core.permissions import Capability
@@ -58,6 +59,7 @@ async def cash_history(
         id=payment.id, member_name=member_name, plan_name=plan_name,
         amount=payment.amount, currency=payment.currency, method=payment.method.value,
         status=payment.status.value, paid_at=payment.paid_at,
+        payer_shares=payment.payer_contributions,
     ) for payment, member_name, plan_name in rows]
 
 
@@ -112,6 +114,28 @@ async def log_cash_payment(
         session, claim.record, code=201, body=output.model_dump_json()
     )
     return output
+
+
+@router.get("/members/{member_id}/family-payers", response_model=list[CashMemberOut])
+async def family_payers(
+    member_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.LOG_CASH_PAYMENT)),
+    session: AsyncSession = Depends(get_session),
+):
+    member = await session.get(OrganizationMember, member_id)
+    if member is None or member.organization_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    if member.family_owner_member_id:
+        return []
+    rows = (await session.execute(
+        select(OrganizationMember, User).join(User, User.id == OrganizationMember.user_id).where(
+            OrganizationMember.organization_id == ctx.org_id,
+            OrganizationMember.role == Role.MEMBER,
+            OrganizationMember.banned.is_(False),
+            or_(OrganizationMember.id == member.id, OrganizationMember.family_owner_member_id == member.id),
+        ).order_by(OrganizationMember.created_at)
+    )).all()
+    return [_cash_member(payer, user) for payer, user in rows]
 
 
 @router.post("/quote", response_model=PriceQuoteOut)

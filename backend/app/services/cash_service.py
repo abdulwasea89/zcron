@@ -66,6 +66,15 @@ async def log_cash_payment(
     if round(data.amount, 2) != quote.total:
         raise HTTPException(status_code=422, detail=f"Amount must match the current quote: {plan.currency} {quote.total:.2f}.")
 
+    if data.payer_shares:
+        if plan.audience != "family" or member.family_owner_member_id:
+            raise HTTPException(status_code=422, detail="Split payments require the family plan holder.")
+        for share in data.payer_shares:
+            payer = await session.get(OrganizationMember, share.member_id)
+            if (payer is None or payer.organization_id != org_id or payer.role != Role.MEMBER
+                    or payer.banned or (payer.id != member.id and payer.family_owner_member_id != member.id)):
+                raise HTTPException(status_code=422, detail="Every payer must belong to this family in this gym.")
+
     payment = Payment(
         organization_id=org_id,
         member_id=member.id,
@@ -83,6 +92,7 @@ async def log_cash_payment(
         logged_by=staff_user_id,
         note=data.note,
         paid_at=now_utc(),
+        payer_contributions=[{"member_id": share.member_id, "amount": str(share.amount)} for share in data.payer_shares],
     )
     session.add(payment)
     await session.flush()
@@ -189,6 +199,14 @@ async def render_receipt(session: AsyncSession, *, org_id: str, payment_id: str)
             logged_by = staff.full_name or staff.email
 
     paid_at = (payment.paid_at or payment.created_at)
+    payer_notes = []
+    for share in payment.payer_contributions:
+        payer = await session.get(OrganizationMember, share["member_id"])
+        if payer and payer.organization_id == org_id:
+            payer_user = await session.get(User, payer.user_id)
+            payer_name = payer.display_name or (payer_user.full_name or payer_user.email if payer_user else "Family member")
+            payer_notes.append(f"{payer_name}: {payment.currency} {share['amount']}")
+    receipt_note = "\n".join(filter(None, [payment.note, "Family payer shares: " + "; ".join(payer_notes) if payer_notes else None]))
     pdf = render_receipt_pdf(
         gym_name=org.name if org else "Gym",
         gym_address=org.address if org else None,
@@ -202,7 +220,7 @@ async def render_receipt(session: AsyncSession, *, org_id: str, payment_id: str)
         method=payment.method.value.replace("_", " ").title(),
         logged_by=logged_by,
         valid_until=valid_until,
-        note=payment.note,
+        note=receipt_note or None,
         plan_price=payment.plan_price_amount,
         joining_fee=payment.joining_fee_amount,
         discount=payment.discount_amount,
