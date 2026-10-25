@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlmodel import Field
+from sqlalchemy import Index, text
 
 from app.core.constants import ShiftStatus
 from app.models.base import TimestampModel, UUIDModel, utcnow
@@ -42,6 +43,11 @@ class Task(UUIDModel, TimestampModel, table=True):
     """Simple task: title + assignee + deadline (Section 16.2)."""
 
     __tablename__ = "tasks"
+    __table_args__ = (Index(
+        "uq_tasks_open_retention", "organization_id", "related_member_id", unique=True,
+        sqlite_where=text("category = 'retention' AND done = 0"),
+        postgresql_where=text("category = 'retention' AND NOT done"),
+    ),)
 
     organization_id: str = Field(index=True, foreign_key="organizations.id")
     title: str
@@ -50,6 +56,9 @@ class Task(UUIDModel, TimestampModel, table=True):
     created_by: str | None = Field(default=None, foreign_key="users.id")
     deadline: datetime | None = None
     done: bool = False
+    category: str = "general"
+    related_member_id: str | None = Field(default=None, foreign_key="organization_members.id", index=True)
+    case_outcome: str | None = None
 
 
 class StaffInvite(UUIDModel, TimestampModel, table=True):

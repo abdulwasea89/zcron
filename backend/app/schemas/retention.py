@@ -2,9 +2,29 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+class RetentionCaseUpdate(BaseModel):
+    next_action: str = Field(min_length=1, max_length=1000)
+    assignee_member_id: str | None = None
+    due_at: datetime | None = None
+    outcome: Literal["payment_received", "returned", "plan_changed", "paused", "declined", "unreachable", "completed", "cancelled"] | None = None
+
+    @field_validator("next_action")
+    @classmethod
+    def trim_action(cls, value):
+        if not value.strip():
+            raise ValueError("Describe the next action.")
+        return value.strip()
+
+    @field_validator("due_at")
+    @classmethod
+    def utc_due(cls, value):
+        return value.astimezone(timezone.utc).replace(tzinfo=None) if value and value.tzinfo else value
 
 
 class AttendanceTrendOut(BaseModel):

@@ -183,6 +183,8 @@ async def complete_recurring_renewal(session: AsyncSession, payment: Payment) ->
     session.add(member)
     from app.services.family_service import sync_family_status
     await sync_family_status(session, org.id, member.id, MemberStatus.ACTIVE)
+    from app.services.retention_cases_service import close_on_payment
+    await close_on_payment(session, org_id=org.id, member_id=member.id)
     if recovered:
         from app.services.audit_service import record_audit
 

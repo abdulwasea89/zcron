@@ -78,6 +78,11 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
     inspector = inspect(connection)
     tables = set(inspector.get_table_names())
     additions = {
+        "tasks": {
+            "category": "VARCHAR NOT NULL DEFAULT 'general'",
+            "related_member_id": "VARCHAR",
+            "case_outcome": "VARCHAR",
+        },
         "class_bookings": {
             "reminder_created_at": "DATETIME",
             "reminder_email_accepted": "BOOLEAN NOT NULL DEFAULT 0",
@@ -153,6 +158,11 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
         connection.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_campaign_deliveries_provider_message_id "
             "ON campaign_deliveries (provider_message_id)"
+        )
+    if "tasks" in tables:
+        connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_open_retention "
+            "ON tasks (organization_id, related_member_id) WHERE category = 'retention' AND done = 0"
         )
 
 

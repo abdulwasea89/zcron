@@ -42,7 +42,6 @@ from app.integrations.email import send_email_safe as send_email
 from app.models.attendance import Attendance
 from app.models.inactivity_ladder import InactivityLadderProgress, InactivityLadderRung
 from app.models.membership import OrganizationMember
-from app.models.staff import Task
 from app.models.user import User
 from app.services.audit_service import record_audit
 
@@ -254,13 +253,11 @@ async def fire_ladder(
             )
             channels.append("push")
         if rung.staff_action:
-            task = Task(
-                organization_id=org_id,
-                title=f"[Inactivity] {name} — day {rung.day}: {rung.name}",
-                description=f"{rung.staff_action}. [mid:{member.id}]",
-            )
-            session.add(task)
-            await session.flush()
+            from app.schemas.retention import RetentionCaseUpdate
+            from app.services.retention_cases_service import save_case
+
+            await save_case(session, org_id=org_id, member_id=member.id,
+                            data=RetentionCaseUpdate(next_action=rung.staff_action), actor_id=None)
             channels.append("task")
 
         progress = InactivityLadderProgress(

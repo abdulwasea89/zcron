@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { RetentionCasesPanel } from "@/components/RetentionCasesPanel";
 import { PageHeader } from "@/components/PageHeader";
 import { InactivityLadderPanel } from "@/components/InactivityLadderPanel";
 import { RetentionWinBackPanel } from "@/components/RetentionWinBackPanel";
@@ -112,13 +113,14 @@ function Metric({ label, count, tone }: { label: string; count: number; tone?: "
 
 export default function AttendanceRetentionPage() {
   const router = useRouter();
+  const [caseMemberId, setCaseMemberId] = useState("");
   const [rows, setRows] = useState<MemberRisk[]>([]);
   const [riskRows, setRiskRows] = useState<MemberRisk[]>([]);
   const [summary, setSummary] = useState<RetentionSummary | null>(null);
   const [wins, setWins] = useState<RetentionWin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [view, setView] = useState<"drops" | "risk" | "ladder" | "winback" | "feedback" | "challenges">("drops");
+  const [view, setView] = useState<"drops" | "risk" | "ladder" | "winback" | "feedback" | "challenges" | "cases">("drops");
   const [filter, setFilter] = useState<SeverityFilter>("all");
   const [riskFilter, setRiskFilter] = useState<RiskBandFilter>("all");
   const [query, setQuery] = useState("");
@@ -221,13 +223,14 @@ export default function AttendanceRetentionPage() {
       <div className="mb-5 flex gap-2 border-b border-[var(--border)]" role="tablist" aria-label="Retention views">
         <button type="button" role="tab" aria-selected={view === "drops"} onClick={() => setView("drops")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "drops" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Attendance trends <span className="ml-1 text-xs tabular-nums">{rows.length}</span></button>
         <button type="button" role="tab" aria-selected={view === "risk"} onClick={() => setView("risk")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "risk" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Churn risk <span className="ml-1 text-xs tabular-nums">{summary ? summary.high + summary.medium : "—"}</span></button>
+        <button type="button" role="tab" aria-selected={view === "cases"} onClick={() => { setCaseMemberId(""); setView("cases"); }} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "cases" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Cases</button>
         <button type="button" role="tab" aria-selected={view === "ladder"} onClick={() => setView("ladder")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "ladder" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Inactivity ladder</button>
         <button type="button" role="tab" aria-selected={view === "winback"} onClick={() => setView("winback")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "winback" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Win-back & celebrations</button>
         <button type="button" role="tab" aria-selected={view === "feedback"} onClick={() => setView("feedback")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "feedback" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Member feedback</button>
         <button type="button" role="tab" aria-selected={view === "challenges"} onClick={() => setView("challenges")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "challenges" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Challenges</button>
       </div>
 
-      {view === "feedback" ? <NpsFeedbackPanel /> : view === "challenges" ? <ChallengesAdminPanel /> : view === "winback" ? <RetentionWinBackPanel /> : view === "ladder" ? <InactivityLadderPanel /> : <>
+      {view === "cases" ? <RetentionCasesPanel key={caseMemberId || "cases"} focusMemberId={caseMemberId} /> : view === "feedback" ? <NpsFeedbackPanel /> : view === "challenges" ? <ChallengesAdminPanel /> : view === "winback" ? <RetentionWinBackPanel /> : view === "ladder" ? <InactivityLadderPanel /> : <>
       {view === "drops" ? <>
         <section aria-label="Attendance drop overview" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Metric label="Members with a drop" count={rows.length} />
@@ -283,7 +286,7 @@ export default function AttendanceRetentionPage() {
               return <li key={row.member_id} className="grid gap-4 px-4 py-4 sm:px-5 md:grid-cols-[minmax(150px,1fr)_minmax(180px,0.8fr)_minmax(240px,1.7fr)_minmax(120px,0.7fr)] md:items-center">
                 <div className="min-w-0"><button type="button" onClick={() => router.push(href)} className="block max-w-full truncate text-left text-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">{row.name || "Member"}</button><span className="mt-1 block text-xs capitalize text-muted-foreground">{row.status.replaceAll("_", " ")}</span></div>
                 <div><div className="flex items-center gap-2"><span className="text-lg font-semibold tabular-nums text-foreground">{row.score}<span className="text-xs font-normal text-muted-foreground"> / 100</span></span><Badge tone={riskTone(row.band)}>{row.band} risk</Badge></div><div className="mt-2 h-1.5 overflow-hidden bg-foreground/[0.07]" role="img" aria-label={`Risk score ${row.score} out of 100`}><div className={`h-full ${row.band === "high" ? "bg-danger" : row.band === "medium" ? "bg-warning" : "bg-success"}`} style={{ width: `${row.score}%` }} /></div></div>
-                <div className="space-y-1.5">{row.reasons.length ? row.reasons.map((reason) => <div key={reason.code} className="flex items-start justify-between gap-3 text-xs"><span className="leading-5 text-foreground">{reason.label}</span><span className="shrink-0 tabular-nums text-muted-foreground">+{reason.weight}</span></div>) : <p className="text-xs text-muted-foreground">No elevated risk signals</p>}<div className="flex flex-wrap gap-1"><Button variant="ghost" className="-ml-2 px-2 text-xs" onClick={() => router.push(href)}>Open member</Button>{row.phone && <a href={`tel:${row.phone}`} aria-label={`Call ${row.name || "member"}`} className="inline-flex min-h-9 items-center px-2 text-xs font-medium text-brand underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">Call</a>}{row.band !== "low" && <Button variant="ghost" className="px-2 text-xs" disabled={creatingTaskFor !== null || taskCreatedFor.has(row.member_id)} onClick={() => void createFollowUpTask(row)}>{taskCreatedFor.has(row.member_id) ? "Task added" : creatingTaskFor === row.member_id ? "Adding…" : "Create follow-up task"}</Button>}</div></div>
+                <div className="space-y-1.5">{row.reasons.length ? row.reasons.map((reason) => <div key={reason.code} className="flex items-start justify-between gap-3 text-xs"><span className="leading-5 text-foreground">{reason.label}</span><span className="shrink-0 tabular-nums text-muted-foreground">+{reason.weight}</span></div>) : <p className="text-xs text-muted-foreground">No elevated risk signals</p>}<div className="flex flex-wrap gap-1"><Button variant="ghost" className="px-2 text-xs" onClick={() => { setCaseMemberId(row.member_id); setView("cases"); }}>Manage case</Button><Button variant="ghost" className="-ml-2 px-2 text-xs" onClick={() => router.push(href)}>Open member</Button>{row.phone && <a href={`tel:${row.phone}`} aria-label={`Call ${row.name || "member"}`} className="inline-flex min-h-9 items-center px-2 text-xs font-medium text-brand underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">Call</a>}{row.band !== "low" && <Button variant="ghost" className="px-2 text-xs" disabled={creatingTaskFor !== null || taskCreatedFor.has(row.member_id)} onClick={() => void createFollowUpTask(row)}>{taskCreatedFor.has(row.member_id) ? "Task added" : creatingTaskFor === row.member_id ? "Adding…" : "Create follow-up task"}</Button>}</div></div>
                 <div><span className="text-[10px] uppercase tracking-wider text-muted-foreground md:hidden">Last visit</span><p className="mt-0.5 text-sm text-foreground">{days == null ? "No recorded visit" : days === 0 ? "Today" : `${days} days ago`}</p></div>
               </li>;
             })}</ul>

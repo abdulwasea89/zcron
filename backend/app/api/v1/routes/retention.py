@@ -11,13 +11,33 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, require_capability
+from app.api.deps import get_session, require_capability, require_writable_org
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
-from app.schemas.retention import MemberRiskOut, RetentionSummaryOut, RetentionWinOut
+from app.schemas.retention import MemberRiskOut, RetentionSummaryOut, RetentionWinOut, RetentionCaseUpdate
 from app.services import retention_service as retention
+from app.services import retention_cases_service as cases
 
 router = APIRouter()
+
+
+@router.get("/cases")
+async def retention_cases(
+    include_closed: bool = False,
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_RETENTION)),
+    session: AsyncSession = Depends(get_session),
+):
+    return await cases.list_cases(session, org_id=ctx.org_id, include_closed=include_closed)
+
+
+@router.put("/cases/{member_id}", dependencies=[Depends(require_writable_org)])
+async def save_retention_case(
+    member_id: str, data: RetentionCaseUpdate,
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_RETENTION)),
+    session: AsyncSession = Depends(get_session),
+):
+    task = await cases.save_case(session, org_id=ctx.org_id, member_id=member_id, data=data, actor_id=ctx.user_id)
+    return {"id": task.id, "done": task.done, "outcome": task.case_outcome}
 
 
 @router.get("/summary", response_model=RetentionSummaryOut)

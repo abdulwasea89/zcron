@@ -25,6 +25,7 @@ class StaffInviteOut(BaseModel):
 
 class StaffDirectoryOut(BaseModel):
     user_id: str
+    member_id: str
     name: str
     role: Role
 

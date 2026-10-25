@@ -11,6 +11,7 @@ from sqlmodel import select
 from app.core.constants import MemberStatus, SubscriptionStatus
 from app.core.security import hash_password, now_utc
 from app.models.membership import OrganizationMember
+from app.models.staff import Task
 from app.models.session import AuthSession
 from app.models.subscription import Subscription
 from app.models.user import User
@@ -57,6 +58,16 @@ async def erase_member_from_workspace(
     member.marketing_in_app_consent = False
     member.marketing_in_app_consent_at = now_utc()
     session.add(member)
+
+    cases = (await session.execute(select(Task).where(
+        Task.organization_id == org_id, Task.related_member_id == member.id, Task.category == "retention",
+    ))).scalars().all()
+    for task in cases:
+        task.title = "Retention case — erased member"
+        task.description = None
+        task.done = True
+        task.case_outcome = "cancelled"
+        session.add(task)
 
     subscriptions = (await session.execute(select(Subscription).where(
         Subscription.organization_id == org_id, Subscription.member_id == member.id,

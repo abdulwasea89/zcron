@@ -270,7 +270,7 @@ async def check_out(session: AsyncSession, *, org_id: str, user_id: str) -> Shif
 
 # ------------------------------------------------------------------ tasks
 def _ensure_task_access(task: Task, *, actor_role: Role, actor_member_id: str) -> None:
-    if actor_role == Role.TRAINER and task.assignee_member_id != actor_member_id:
+    if actor_role in {Role.TRAINER, Role.FRONT_DESK} and task.assignee_member_id != actor_member_id:
         raise HTTPException(status_code=404, detail="Task not found.")
 
 
@@ -284,6 +284,7 @@ async def create_task(
         if assignee not in (None, actor_member_id):
             raise HTTPException(status_code=403, detail="Trainers can only assign tasks to themselves.")
         assignee = actor_member_id
+    assignee_member = await _validate_task_assignee(session, org_id, assignee)
     task = Task(
         organization_id=org_id, title=data.title, description=data.description,
         assignee_member_id=assignee,
@@ -300,7 +301,6 @@ async def create_task(
         from app.core.constants import NotificationKind
         from app.services.notifications_service import create_notification
 
-        assignee_member = await session.get(OrganizationMember, assignee)
         if assignee_member is not None:
             await create_notification(
                 session, org_id=org_id, recipient_user_id=assignee_member.user_id,
@@ -313,6 +313,15 @@ async def create_task(
     return task
 
 
+async def _validate_task_assignee(session: AsyncSession, org_id: str, member_id: str | None):
+    if member_id is None:
+        return None
+    member = await session.get(OrganizationMember, member_id)
+    if member is None or member.organization_id != org_id or member.role == Role.MEMBER or member.banned:
+        raise HTTPException(status_code=422, detail="Choose an active staff member in this gym.")
+    return member
+
+
 async def list_tasks(
     session: AsyncSession, *, org_id: str, assignee_member_id: str | None = None
 ) -> list[Task]:
@@ -323,14 +332,22 @@ async def list_tasks(
 
 
 async def complete_task(
-    session: AsyncSession, *, org_id: str, task_id: str, actor_role: Role, actor_member_id: str
+    session: AsyncSession, *, org_id: str, task_id: str, actor_role: Role, actor_member_id: str,
+    actor_user_id: str | None = None,
 ) -> Task:
-    task = await session.get(Task, task_id)
+    task = await session.get(Task, task_id, with_for_update=True)
     if task is None or task.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Task not found.")
     _ensure_task_access(task, actor_role=actor_role, actor_member_id=actor_member_id)
+    if task.done:
+        return task
     task.done = True
+    if task.category == "retention" and task.case_outcome is None:
+        task.case_outcome = "completed"
     session.add(task)
+    await record_audit(session, action="retention.case_closed" if task.category == "retention" else "task.completed",
+                       organization_id=org_id, actor_user_id=actor_user_id, entity_type="task", entity_id=task.id,
+                       metadata={"member_id": task.related_member_id, "outcome": task.case_outcome})
     await events.task_changed(org_id, task_id=task.id, action="completed")
     return task
 
@@ -349,7 +366,8 @@ async def update_task(
         task.title = data.title
     if data.description is not None:
         task.description = data.description
-    if data.assignee_member_id is not None and actor_role != Role.TRAINER:
+    if "assignee_member_id" in data.model_fields_set and actor_role != Role.TRAINER:
+        await _validate_task_assignee(session, org_id, data.assignee_member_id)
         task.assignee_member_id = data.assignee_member_id
     if data.deadline is not None:
         task.deadline = data.deadline
@@ -367,6 +385,8 @@ async def delete_task(
     if task is None or task.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Task not found.")
     _ensure_task_access(task, actor_role=actor_role, actor_member_id=actor_member_id)
+    if task.category == "retention":
+        raise HTTPException(status_code=409, detail="Close retention cases from Member retention to preserve their history.")
     await session.delete(task)
     await record_audit(session, action="task.deleted", organization_id=org_id,
                        entity_type="task", entity_id=task_id)

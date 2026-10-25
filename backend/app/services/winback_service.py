@@ -193,6 +193,10 @@ async def mark_recovered(
 ) -> bool:
     """Resolve a member's latest open win-back when they reactivate."""
 
+    from app.services.retention_cases_service import close_on_payment
+
+    await close_on_payment(session, org_id=org_id, member_id=member_id)
+
     attempt = (
         await session.execute(
             select(WinBackAttempt)

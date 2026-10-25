@@ -63,7 +63,7 @@ async def inbox_staff_directory(
     )).all()
     return [
         StaffDirectoryOut(
-            user_id=member.user_id, name=user.full_name or user.email, role=member.role,
+            user_id=member.user_id, member_id=member.id, name=user.full_name or user.email, role=member.role,
         )
         for member, user in rows
     ]
@@ -404,11 +404,11 @@ async def create_task(
 
 @router.get("/tasks", response_model=list[TaskOut])
 async def list_tasks(
-    ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TASKS)),
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_TASKS)),
     session: AsyncSession = Depends(get_session),
 ):
     assignee_member_id = (
-        await _actor_member_id(session, ctx) if ctx.role == Role.TRAINER else None
+        await _actor_member_id(session, ctx) if ctx.role in {Role.TRAINER, Role.FRONT_DESK} else None
     )
     return [
         TaskOut(id=t.id, title=t.title, description=t.description, assignee_member_id=t.assignee_member_id,
@@ -422,13 +422,14 @@ async def list_tasks(
 @router.post("/tasks/{task_id}/complete", response_model=TaskOut)
 async def complete_task(
     task_id: str,
-    ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TASKS)),
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_TASKS)),
     session: AsyncSession = Depends(get_session),
 ):
     actor_member_id = await _actor_member_id(session, ctx)
     task = await staff.complete_task(
         session, org_id=ctx.org_id, task_id=task_id, actor_role=ctx.role,
         actor_member_id=actor_member_id,
+        actor_user_id=ctx.user_id,
     )
     return TaskOut(id=task.id, title=task.title, description=task.description, assignee_member_id=task.assignee_member_id,
                    deadline=task.deadline, done=task.done)

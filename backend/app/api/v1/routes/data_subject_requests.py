@@ -17,6 +17,7 @@ from app.models.data_subject_request import DataSubjectRequest
 from app.models.membership import OrganizationMember
 from app.models.payment import Payment
 from app.models.subscription import Subscription
+from app.models.staff import Task
 from app.models.user import User
 from app.schemas.privacy import (
     DataSubjectRequestCreate,
@@ -277,6 +278,9 @@ async def export_member_data(
     subscriptions = (await session.execute(select(Subscription).where(
         Subscription.organization_id == ctx.org_id, Subscription.member_id == member.id,
     ).order_by(Subscription.created_at.desc()).limit(1000))).scalars().all()
+    retention_cases = (await session.execute(select(Task).where(
+        Task.organization_id == ctx.org_id, Task.related_member_id == member.id, Task.category == "retention",
+    ).order_by(Task.created_at.desc()).limit(5000))).scalars().all()
     return {
         "account": {
             "email": user.email, "full_name": user.full_name, "phone": user.phone,
@@ -309,5 +313,7 @@ async def export_member_data(
         "subscriptions": [{"created_at": item.created_at, "status": item.status.value,
                            "started_at": item.started_at,
                            "current_period_end": item.current_period_end} for item in subscriptions],
+        "retention_cases": [{"created_at": item.created_at, "next_action": item.description,
+                             "completed": item.done, "outcome": item.case_outcome} for item in retention_cases],
         "export_limitations": "This workspace export includes up to 5,000 attendance/payment rows and 1,000 subscriptions. Processor records and backups are not included.",
     }

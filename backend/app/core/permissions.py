@@ -22,6 +22,7 @@ class Capability(str, Enum):
     RUN_PAYROLL = "run_payroll"
     TOGGLE_GYM_STATUS = "toggle_gym_status"
     ASSIGN_TASKS = "assign_tasks"
+    VIEW_TASKS = "view_tasks"
     LOG_CASH_PAYMENT = "log_cash_payment"
     UPLOAD_RECEIPT = "upload_receipt"
     BOOK_CLASSES = "book_classes"
@@ -69,6 +70,7 @@ _MATRIX: dict[Capability, set[Role]] = {
     Capability.RUN_PAYROLL: {Role.OWNER},
     Capability.TOGGLE_GYM_STATUS: {Role.OWNER, Role.MANAGER, Role.FRONT_DESK},
     Capability.ASSIGN_TASKS: {Role.OWNER, Role.MANAGER, Role.TRAINER},  # trainer=self
+    Capability.VIEW_TASKS: {Role.OWNER, Role.MANAGER, Role.TRAINER, Role.FRONT_DESK},
     Capability.LOG_CASH_PAYMENT: {Role.OWNER, Role.MANAGER, Role.FRONT_DESK},
     Capability.TAKE_ATTENDANCE: {Role.OWNER, Role.MANAGER, Role.FRONT_DESK},
     Capability.UPLOAD_RECEIPT: {Role.MEMBER},
