@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { useRealtimeEvent } from "@/components/Realtime";
 import { PageHeader } from "@/components/PageHeader";
@@ -229,6 +230,7 @@ export default function PaymentsPage() {
                       <Badge tone={statusTone(p.status)}>{titleCase(p.status)}</Badge>
                     </td>
                     <td className={`${TD} ${CELL_LAST} py-2.5 text-right`}>
+                      <button type="button" className="mr-3 text-xs font-medium text-brand hover:underline" onClick={() => { void navigator.clipboard.writeText(p.id).then(() => toast.success("Payment ID copied.")).catch(() => toast.error("Could not copy payment ID.")); }}>Copy ID</button>
                       <a href={`/api/download/finance/payments/${encodeURIComponent(p.id)}/evidence.zip`} className="mr-3 text-xs font-medium text-brand hover:underline" aria-label={`Download evidence for payment ${p.id}`}>Evidence</a>
                       {refundable(p) && (
                         <Button variant="ghost" onClick={() => setRefundFor(p)}>

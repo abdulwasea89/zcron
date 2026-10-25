@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, require_capability
+from app.api.deps import get_session, require_capability, require_writable_org
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
 from app.schemas.campaign import (
@@ -23,10 +23,43 @@ from app.schemas.campaign import (
     CampaignPreviewOut,
     CampaignRunOut,
     CampaignScheduleIn,
+    CampaignPaymentIn,
 )
 from app.services import campaign_service as campaigns
+from app.services import campaign_performance_service as metrics
 
 router = APIRouter()
+
+
+@router.get("/{campaign_id}/performance")
+async def campaign_performance(
+    campaign_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.RUN_CAMPAIGNS)),
+    session: AsyncSession = Depends(get_session),
+):
+    return await metrics.performance(session, org_id=ctx.org_id, campaign_id=campaign_id)
+
+
+@router.post("/{campaign_id}/payments", dependencies=[Depends(require_writable_org)])
+async def attribute_campaign_payment(
+    campaign_id: str, data: CampaignPaymentIn,
+    ctx: TenantContext = Depends(require_capability(Capability.RUN_CAMPAIGNS)),
+    session: AsyncSession = Depends(get_session),
+):
+    await metrics.attribute_payment(session, org_id=ctx.org_id, campaign_id=campaign_id,
+                                    payment_id=data.payment_id, actor_id=ctx.user_id)
+    return {"message": "Payment attributed to campaign."}
+
+
+@router.delete("/{campaign_id}/payments/{payment_id}", dependencies=[Depends(require_writable_org)])
+async def remove_campaign_payment(
+    campaign_id: str, payment_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.RUN_CAMPAIGNS)),
+    session: AsyncSession = Depends(get_session),
+):
+    await metrics.remove_attribution(session, org_id=ctx.org_id, campaign_id=campaign_id,
+                                     payment_id=payment_id, actor_id=ctx.user_id)
+    return {"message": "Payment attribution removed."}
 
 
 @router.post("", response_model=CampaignOut, status_code=201)
@@ -51,6 +84,7 @@ async def create_campaign(
         whatsapp_template_sid=data.whatsapp_template_sid,
         whatsapp_variables=data.whatsapp_variables,
         member_tag=data.member_tag,
+        estimated_unit_cost=data.estimated_unit_cost, cost_currency=data.cost_currency,
     )
     return CampaignOut.model_validate(campaign)
 

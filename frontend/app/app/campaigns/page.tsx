@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { CampaignPerformance } from "@/components/CampaignPerformance";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, Badge, Button, Input, Select, Spinner } from "@/components/ui";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ApiError, api } from "@/lib/api";
 
-type Campaign = { whatsapp_template_sid: string | null; whatsapp_variables: Record<string, string>; member_tag: string | null; id: string; title: string; subject: string; body: string; channel: string; status: string; member_status: string | null; plan_id: string | null; min_days_since_last_visit: number | null; scheduled_at: string | null; sent_at: string | null; send_limit: number; sent_count: number; deliveries: number };
+type Campaign = { estimated_unit_cost: string | null; cost_currency: string; whatsapp_template_sid: string | null; whatsapp_variables: Record<string, string>; member_tag: string | null; id: string; title: string; subject: string; body: string; channel: string; status: string; member_status: string | null; plan_id: string | null; min_days_since_last_visit: number | null; scheduled_at: string | null; sent_at: string | null; send_limit: number; sent_count: number; deliveries: number };
 type CampaignOut = Omit<Campaign, "deliveries">;
 type Preview = { count: number; sample: { member_id: string; name: string; email: string | null; phone: string | null; status: string }[] };
 type Detail = Campaign & { deliveries: { member_id: string; member_name: string; status: string; channel: string; delivered_at: string | null; delivery_status: string | null; error: string | null }[] };
@@ -36,6 +37,8 @@ export default function CampaignsPage() {
   const [templateSid, setTemplateSid] = useState("");
   const [templateVariables, setTemplateVariables] = useState("{}");
   const [memberTag, setMemberTag] = useState("");
+  const [unitCost, setUnitCost] = useState("");
+  const [costCurrency, setCostCurrency] = useState("USD");
 
   const loadRows = useCallback(async () => {
     const items = await api.get<Campaign[]>("/campaigns?limit=200");
@@ -79,8 +82,9 @@ export default function CampaignsPage() {
         whatsapp_template_sid: channel === "whatsapp" ? templateSid.trim() : null,
         whatsapp_variables: channel === "whatsapp" ? JSON.parse(templateVariables) : {},
         member_tag: memberTag.trim() || null,
+        estimated_unit_cost: unitCost || null, cost_currency: costCurrency.trim().toUpperCase(),
       });
-      setComposer(false); setTitle(""); setSubject(""); setBody(""); setStatus(""); setInactiveDays(""); setScheduleAt("");
+      setComposer(false); setTitle(""); setSubject(""); setBody(""); setStatus(""); setInactiveDays(""); setScheduleAt(""); setUnitCost(""); setMemberTag(""); setTemplateSid(""); setTemplateVariables("{}");
       await loadRows(); setSelectedId(created.id); toast.success(created.scheduled_at ? "Campaign scheduled." : "Campaign draft saved.");
     } catch (cause) { toast.error(cause instanceof Error ? cause.message : "Could not create campaign."); }
     finally { setBusy(false); }
@@ -123,6 +127,8 @@ export default function CampaignsPage() {
           <Input label='Template variables (JSON, for example {"1":"Gym offer"})' required value={templateVariables} onChange={(event) => setTemplateVariables(event.target.value)} />
           <p className="text-xs text-muted-foreground sm:col-span-2">Twilio sends the approved template and these variables. WhatsApp permission must be recorded separately in Settings → Data requests. The message below is an internal campaign description.</p>
         </>}
+        <Input label="Estimated cost per accepted recipient (optional)" type="number" min="0" step="0.000001" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} />
+        <Input label="Provider billing currency" required pattern="[A-Z]{3}" maxLength={3} value={costCurrency} onChange={(event) => setCostCurrency(event.target.value.toUpperCase())} />
         <Input label="Member tag (optional)" maxLength={32} value={memberTag} onChange={(event) => setMemberTag(event.target.value)} placeholder="morning" />
         <Select label="Member status" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Active, grace, or frozen</option><option value="active">Active</option><option value="grace">Grace</option><option value="frozen">Frozen</option><option value="active,grace">Active or grace</option></Select>
         <Input label="Inactive for at least (days)" type="number" min={1} max={3650} value={inactiveDays} onChange={(e) => setInactiveDays(e.target.value)} />
@@ -139,7 +145,7 @@ export default function CampaignsPage() {
       </section>
       <section className="min-w-0 border border-[var(--border)] bg-card">{!detail ? <p className="p-6 text-sm text-muted-foreground">Choose a campaign to review its audience and delivery history.</p> : <>
         <header className="border-b border-[var(--border)] px-4 py-3"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold text-foreground">{detail.title}</h2><Badge tone={detail.status === "sent" ? "success" : detail.status === "cancelled" ? "neutral" : "warning"}>{labels[detail.status] ?? detail.status}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{channelLabel[detail.channel] ?? detail.channel} · up to {detail.send_limit} recipients</p></header>
-        <div className="space-y-5 p-4">{detail.whatsapp_template_sid && <p className="break-all text-xs text-muted-foreground">Approved template: {detail.whatsapp_template_sid} · Variables: {JSON.stringify(detail.whatsapp_variables)}</p>}{detail.member_tag && <p className="text-xs text-muted-foreground">Audience tag: {detail.member_tag}</p>}<div><p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Message</p><p className="mt-1 text-sm font-medium text-foreground">{detail.subject}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{detail.body}</p></div>
+        <div className="space-y-5 p-4"><CampaignPerformance key={detail.id} campaignId={detail.id} />{detail.whatsapp_template_sid && <p className="break-all text-xs text-muted-foreground">Approved template: {detail.whatsapp_template_sid} · Variables: {JSON.stringify(detail.whatsapp_variables)}</p>}{detail.member_tag && <p className="text-xs text-muted-foreground">Audience tag: {detail.member_tag}</p>}<div><p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Message</p><p className="mt-1 text-sm font-medium text-foreground">{detail.subject}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{detail.body}</p></div>
           {detail.status === "draft" || detail.status === "scheduled" ? <div className="border-t border-[var(--border)] pt-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-semibold text-foreground">Audience preview</h3><p className="mt-1 text-xs text-muted-foreground">{preview ? `${preview.count} eligible members match now` : "Refresh before sending to check recipients."}</p></div><Button variant="secondary" loading={busy} onClick={() => void refreshPreview()}>Preview audience</Button></div>
             {preview && <ul className="mt-3 divide-y divide-[var(--border)] border-y border-[var(--border)]">{preview.sample.map((member) => <li key={member.member_id} className="flex justify-between gap-3 py-2 text-xs"><span className="truncate font-medium text-foreground">{member.name}</span><span className="text-muted-foreground">{["sms", "whatsapp"].includes(detail.channel) ? member.phone || "No phone" : member.email || member.status}</span></li>)}{preview.count > preview.sample.length && <li className="py-2 text-xs text-muted-foreground">and {preview.count - preview.sample.length} more</li>}</ul>}
             <div className="mt-4 flex justify-end gap-2">{detail.status === "scheduled" && <Button variant="secondary" loading={busy} onClick={() => void cancel()}>Cancel schedule</Button>}<Button disabled={!preview || preview.count === 0} loading={busy} onClick={() => setConfirmSend(true)}>Send campaign now</Button></div>

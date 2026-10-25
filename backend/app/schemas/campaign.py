@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -22,6 +23,8 @@ class CampaignCreateIn(BaseModel):
     whatsapp_template_sid: str | None = Field(default=None, pattern=r"^HX[0-9a-fA-F]{32}$")
     whatsapp_variables: dict[str, str] = Field(default_factory=dict, max_length=10)
     member_tag: str | None = Field(default=None, min_length=1, max_length=32)
+    estimated_unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=6, allow_inf_nan=False)
+    cost_currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
 
     @field_validator("whatsapp_variables")
     @classmethod
@@ -49,6 +52,10 @@ class CampaignCreateIn(BaseModel):
 
 class CampaignScheduleIn(BaseModel):
     scheduled_at: datetime
+
+
+class CampaignPaymentIn(BaseModel):
+    payment_id: str = Field(min_length=1, max_length=128)
 
 
 class CampaignPreviewMember(BaseModel):
@@ -83,6 +90,8 @@ class CampaignOut(BaseModel):
     whatsapp_template_sid: str | None = None
     whatsapp_variables: dict[str, str] = Field(default_factory=dict)
     member_tag: str | None = None
+    estimated_unit_cost: Decimal | None = None
+    cost_currency: str = "USD"
 
 
 class CampaignListOut(CampaignOut):

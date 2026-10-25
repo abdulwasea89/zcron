@@ -19,9 +19,10 @@ a stray press of "send" from blasting hundreds of messages at once.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlmodel import Field, UniqueConstraint
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, JSON, Numeric
 
 from app.core.constants import (
     CampaignChannel,
@@ -42,6 +43,8 @@ class Campaign(UUIDModel, TimestampModel, table=True):
     whatsapp_template_sid: str | None = None
     whatsapp_variables: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     member_tag: str | None = None
+    estimated_unit_cost: Decimal | None = Field(default=None, sa_column=Column(Numeric(14, 6), nullable=True))
+    cost_currency: str = "USD"
 
     channel: CampaignChannel = Field(default=CampaignChannel.IN_APP, index=True)
     status: CampaignStatus = Field(default=CampaignStatus.DRAFT, index=True)
@@ -79,3 +82,13 @@ class CampaignDelivery(UUIDModel, TimestampModel, table=True):
     error: str | None = None
     provider_message_id: str | None = Field(default=None, index=True)
     delivery_status: str | None = None
+
+
+class CampaignPaymentAttribution(UUIDModel, TimestampModel, table=True):
+    __tablename__ = "campaign_payment_attributions"
+    __table_args__ = (UniqueConstraint("payment_id", name="uq_campaign_attribution_payment"),)
+
+    organization_id: str = Field(index=True, foreign_key="organizations.id")
+    campaign_id: str = Field(index=True, foreign_key="campaigns.id")
+    payment_id: str = Field(index=True, foreign_key="payments.id")
+    attributed_by: str = Field(foreign_key="users.id")

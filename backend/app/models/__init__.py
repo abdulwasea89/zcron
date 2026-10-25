@@ -7,7 +7,7 @@ Importing this package imports every table module so that
 from app.models.attendance import Attendance
 from app.models.audit_log import AuditLog
 from app.models.cash import CashReconciliation
-from app.models.campaign import Campaign, CampaignDelivery
+from app.models.campaign import Campaign, CampaignDelivery, CampaignPaymentAttribution
 from app.models.celebration import MemberCelebration
 from app.models.class_session import ClassBooking, ClassSession
 from app.models.company import Company
@@ -51,6 +51,7 @@ from app.models.visitor import Locker, Visitor
 from app.models.winback import WinBackAttempt
 
 __all__ = [
+    "CampaignPaymentAttribution",
     "PaymentRefund",
     "AuditLog",
     "Attendance",

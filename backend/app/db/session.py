@@ -110,6 +110,8 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "delivery_status": "VARCHAR",
         },
         "campaigns": {
+            "estimated_unit_cost": "NUMERIC(14, 6)",
+            "cost_currency": "VARCHAR NOT NULL DEFAULT 'USD'",
             "whatsapp_template_sid": "VARCHAR",
             "whatsapp_variables": "JSON NOT NULL DEFAULT '{}'",
             "member_tag": "VARCHAR",

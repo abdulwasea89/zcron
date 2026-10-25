@@ -18,6 +18,7 @@ haven't visited in 15 days" fall out of data we already row.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 import sqlalchemy as sa
 from fastapi import HTTPException
@@ -172,6 +173,7 @@ async def create_campaign(
     send_limit: int = DEFAULT_SEND_LIMIT,
     whatsapp_template_sid: str | None = None, whatsapp_variables: dict[str, str] | None = None,
     member_tag: str | None = None,
+    estimated_unit_cost: Decimal | None = None, cost_currency: str = "USD",
 ) -> Campaign:
     if not title.strip():
         raise HTTPException(status_code=422, detail="title is required.")
@@ -189,6 +191,7 @@ async def create_campaign(
     campaign = Campaign(
         organization_id=org_id,
         whatsapp_template_sid=whatsapp_template_sid, whatsapp_variables=whatsapp_variables or {}, member_tag=member_tag,
+        estimated_unit_cost=estimated_unit_cost, cost_currency=cost_currency,
         title=title.strip(),
         subject=subject.strip(),
         body=body.strip(),
