@@ -27,6 +27,13 @@ async def test_expense_ledger_is_idempotent_tenant_scoped_and_voidable(client):
     assert len(owner_list.json()["items"]) == 1
     assert other_list.json()["items"] == []
 
+    outside_range = await client.get(
+        "/api/v1/expenses", headers=owner_headers,
+        params={"date_from": "2026-11-01", "date_to": "2026-11-30"},
+    )
+    assert outside_range.json()["items"] == []
+    assert outside_range.json()["totals_by_currency"] == {}
+
     voided = await client.post(
         f"/api/v1/expenses/{created.json()['id']}/void",
         headers={**owner_headers, "Idempotency-Key": "expense-void-1"},

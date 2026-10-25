@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, Badge, Button, EmptyState, Input, Spinner } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
@@ -19,27 +19,34 @@ export default function ExpensesPage() {
   const [data, setData] = useState<ExpenseList | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [form, setForm] = useState({ category: "rent", description: "", vendor: "", amount: "", currency: "USD", incurred_on: today() });
 
-  async function load() {
+  const load = useCallback(async (from = "", to = "") => {
     try {
+      const params = new URLSearchParams();
+      if (from) params.set("date_from", from);
+      if (to) params.set("date_to", to);
+      const query = params.toString();
+      const suffix = query ? `?${query}` : "";
       const [expenses, org] = await Promise.all([
-        api.get<ExpenseList>("/expenses"), api.get<OrganizationOut>("/organizations/me"),
+        api.get<ExpenseList>(`/expenses${suffix}`), api.get<OrganizationOut>("/organizations/me"),
       ]);
       setData(expenses);
       setForm((current) => current.currency === "USD" ? { ...current, currency: org.default_currency || "USD" } : current);
       setError("");
     }
     catch (e) { setError((e as ApiError).message); setData({ items: [], totals_by_currency: {} }); }
-  }
-  useEffect(() => { queueMicrotask(() => void load()); }, []);
+  }, []);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
   async function create(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError("");
     try {
       await api.post<Expense>("/expenses", { ...form, vendor: form.vendor || null }, { "Idempotency-Key": crypto.randomUUID() });
       setForm((current) => ({ ...current, description: "", vendor: "", amount: "" }));
-      await load();
+      await load(dateFrom, dateTo);
     } catch (e) { setError((e as ApiError).message); }
     finally { setSaving(false); }
   }
@@ -49,7 +56,7 @@ export default function ExpensesPage() {
     if (!reason?.trim()) return;
     try {
       await api.post(`/expenses/${expense.id}/void`, { reason }, { "Idempotency-Key": crypto.randomUUID() });
-      await load();
+      await load(dateFrom, dateTo);
     } catch (e) { setError((e as ApiError).message); }
   }
 
@@ -71,6 +78,12 @@ export default function ExpensesPage() {
     <section className="mb-4 flex flex-wrap gap-2" aria-label="Expense totals">
       {data && Object.entries(data.totals_by_currency).map(([currency, amount]) => <div key={currency} className="rounded-lg border border-border px-4 py-3"><div className="text-xs text-muted-foreground">Recorded expenses · {currency}</div><div className="mt-1 text-lg font-semibold tabular-nums">{money(Number(amount), currency)}</div></div>)}
     </section>
+    <form onSubmit={(event) => { event.preventDefault(); void load(dateFrom, dateTo); }} className="mb-3 flex flex-wrap items-end gap-3">
+      <label className="grid gap-1 text-xs text-muted-foreground">From<Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></label>
+      <label className="grid gap-1 text-xs text-muted-foreground">To<Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></label>
+      <Button type="submit" variant="secondary">Apply dates</Button>
+      {(dateFrom || dateTo) && <Button type="button" variant="ghost" onClick={() => { setDateFrom(""); setDateTo(""); void load("", ""); }}>Clear</Button>}
+    </form>
     {data === null ? <Spinner label="Loading expenses…" /> : data.items.length === 0 ? <EmptyState title="No expenses recorded" hint="Add rent, utilities, equipment, and other operating costs above." /> :
       <div className="overflow-x-auto rounded-xl border border-border"><table className="w-full min-w-[680px] text-left text-sm"><thead className="border-b border-border text-xs text-muted-foreground"><tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Expense</th><th className="px-4 py-3">Category</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Action</th></tr></thead><tbody>{data.items.map((item) => <tr key={item.id} className="border-b border-border last:border-0"><td className="px-4 py-3 text-muted-foreground">{item.incurred_on}</td><td className="px-4 py-3"><div className="font-medium">{item.description}</div><div className="text-xs text-muted-foreground">{item.vendor || "No vendor"}</div></td><td className="px-4 py-3">{titleCase(item.category)}</td><td className="px-4 py-3 text-right font-medium tabular-nums">{money(Number(item.amount), item.currency)}</td><td className="px-4 py-3">{item.voided_at ? <Badge tone="neutral" size="sm">Voided</Badge> : <Badge tone="success" size="sm">Recorded</Badge>}</td><td className="px-4 py-3">{!item.voided_at && <Button variant="ghost" size="sm" onClick={() => void voidExpense(item)}>Void</Button>}</td></tr>)}</tbody></table><p className="px-4 py-3 text-xs text-muted-foreground">Showing the latest 1,000 records. Void entries are retained for audit and excluded from totals.</p></div>}
   </>;
