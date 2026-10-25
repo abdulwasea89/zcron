@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -12,7 +11,9 @@ from app.core.constants import NotificationKind, Role
 from app.core.security import now_utc
 from app.models.class_session import ClassSession
 from app.models.membership import OrganizationMember
-from app.models.notification import Notification
+from app.models.staff import Task
+from app.realtime import events
+from app.services.audit_service import record_audit
 from app.services.notifications_service import create_notification
 
 
@@ -48,26 +49,46 @@ async def run_class_reminders(session: AsyncSession, *, org_id: str) -> dict:
             continue
 
         data = {"class_session_id": class_session.id, "reminder": "one_hour"}
-        marker = json.dumps(data)
+        title = f"Class reminder: {class_session.title}"
+        description = f"Your class starts at {class_session.starts_at:%H:%M} UTC."
         exists = await session.execute(
-            select(Notification.id).where(
-                Notification.organization_id == org_id,
-                Notification.recipient_user_id == trainer.user_id,
-                Notification.data == marker,
+            select(Task.id).where(
+                Task.organization_id == org_id,
+                Task.assignee_member_id == trainer.id,
+                Task.title == title,
+                Task.deadline == class_session.starts_at,
             ).limit(1)
         )
         if exists.scalar_one_or_none() is not None:
             skipped += 1
             continue
 
+        task = Task(
+            organization_id=org_id,
+            title=title,
+            description=description,
+            assignee_member_id=trainer.id,
+            deadline=class_session.starts_at,
+        )
+        session.add(task)
+        await session.flush()
+        await record_audit(
+            session,
+            action="class.trainer_reminder_created",
+            organization_id=org_id,
+            entity_type="task",
+            entity_id=task.id,
+            metadata={"class_session_id": class_session.id},
+        )
         await create_notification(
             session,
             org_id=org_id,
             recipient_user_id=trainer.user_id,
             category=NotificationKind.TASK,
-            title=f"Class starts soon: {class_session.title}",
-            body=f"Your class starts at {class_session.starts_at:%H:%M} UTC.",
-            data=data,
+            title="Class starts soon",
+            body=description,
+            data={**data, "task_id": task.id},
         )
+        await events.task_changed(org_id, task_id=task.id, action="created")
         sent += 1
     return {"sent": sent, "skipped": skipped}
