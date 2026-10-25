@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { PageHeader } from "@/components/PageHeader";
 import { PaymentTrendChart, type PaymentTrendPoint } from "@/components/PaymentTrendChart";
 import { Badge } from "@/components/ui";
 import { WorkspaceAction } from "@/components/WorkspaceAction";
@@ -344,16 +343,21 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <PageHeader
-        title={greeting}
-        subtitle={today + " · " + (org?.name ?? "Workspace")}
-        action={quickActions[0] ? (
-          <WorkspaceAction href={quickActions[0].href} primary className={PRIMARY_ACTION_CLASS}>
-            <span aria-hidden="true" className="text-base leading-none">+</span>
-            {quickActions[0].label}
-          </WorkspaceAction>
-        ) : undefined}
-      />
+      <header className="mb-7 flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="mono-label mb-2 text-[10px] text-brand">GYM OPERATIONS</p>
+          <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground sm:text-[34px]">{greeting}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{today}<span className="mx-2 text-border-strong">/</span>{org?.name ?? "Workspace"}</p>
+        </div>
+        <nav aria-label="Quick actions" className="flex flex-wrap gap-2">
+          {quickActions.slice(0, 2).map((action, index) => (
+            <WorkspaceAction key={action.href} href={action.href} primary={index === 0} className={index === 0 ? PRIMARY_ACTION_CLASS : "inline-flex h-8 items-center gap-2 border border-border bg-background px-3 text-xs font-medium text-foreground no-underline transition-colors hover:bg-foreground/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"}>
+              {index === 0 ? <span aria-hidden="true" className="text-base leading-none">+</span> : <Icon d={action.icon} className="h-4 w-4 text-muted-foreground" />}
+              {action.label}
+            </WorkspaceAction>
+          ))}
+        </nav>
+      </header>
 
       {isTrainer && <section className="mb-7 grid gap-5 lg:grid-cols-2" aria-label="Trainer workspace">
         <div className="border border-border bg-background">
@@ -431,95 +435,111 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {canViewBusinessMetrics && <section aria-labelledby="snapshot-title" className="mb-8">
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <h2 id="snapshot-title" className="text-[13px] font-semibold">At a glance</h2>
-          <Link href="/app/analytics" className="text-[12px] font-medium text-brand no-underline hover:underline">Explore analytics ↗</Link>
+      {canViewBusinessMetrics && <section aria-labelledby="snapshot-title" className="mb-7">
+        <div className="mb-3 flex items-end justify-between gap-4">
+          <div>
+            <p className="mono-label text-[10px] text-muted-foreground">LIVE SNAPSHOT</p>
+            <h2 id="snapshot-title" className="mt-1 text-sm font-semibold">Your gym at a glance</h2>
+          </div>
+          <Link href="/app/analytics" className="shrink-0 text-xs font-medium text-brand no-underline hover:underline">All analytics <span aria-hidden="true">↗</span></Link>
         </div>
-        <div className="grid grid-cols-2 overflow-hidden border border-border bg-border gap-px md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           {stats.map((stat) => (
-            <Link key={stat.label} href={stat.href} className="group min-w-0 bg-background px-5 py-5 text-foreground no-underline transition-colors hover:bg-foreground/[0.025] focus-visible:relative focus-visible:outline-2 focus-visible:outline-brand">
-              <span className="block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</span>
-              <span className="mt-2 block truncate text-[clamp(20px,2.5vw,28px)] font-semibold tracking-tight tabular-nums">{stat.value}</span>
+            <Link key={stat.label} href={stat.href} className="group min-w-0 border border-border bg-background p-4 text-foreground no-underline transition-colors hover:border-brand/40 hover:bg-foreground/[0.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+              <div className="flex items-center justify-between">
+                <span className={`flex h-9 w-9 items-center justify-center ${stat.accent ? "bg-brand/10 text-brand" : "bg-foreground/[0.04] text-muted-foreground"}`}><Icon d={stat.icon} className="h-[18px] w-[18px]" /></span>
+                <span aria-hidden="true" className="text-sm text-muted-foreground transition-transform group-hover:translate-x-0.5">↗</span>
+              </div>
+              <span className="mt-4 block truncate text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</span>
+              <span className={`mt-1 block truncate text-[25px] font-semibold tracking-tight tabular-nums ${stat.accent ? "text-brand" : "text-foreground"}`}>{stat.value}</span>
             </Link>
           ))}
         </div>
       </section>}
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.8fr)]">
-        {canViewBusinessMetrics && <section className="min-w-0 border border-border bg-background" aria-labelledby="payments-title">
-          <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
-            <div>
-              <h2 id="payments-title" className="text-[16px] font-semibold tracking-tight">Payment activity</h2>
-              <p className="mt-1 text-[12px] text-muted-foreground">Successful transactions over the last 14 days</p>
-            </div>
-            <Link href="/app/payments" className="shrink-0 text-[12px] font-medium text-brand no-underline hover:underline">View all ↗</Link>
-          </div>
-          <div className="min-w-0 overflow-hidden">
-            {trend === null ? (
-              <p className="px-5 py-8 text-[13px] text-muted-foreground">Payments could not be loaded.</p>
-            ) : (
-              <PaymentTrendChart data={trend} />
-            )}
-          </div>
-        </section>}
-
-        <aside className="min-w-0 space-y-6" aria-label="Actions and setup">
-          {(tasks !== null || attention.length > 0 || canManageWorkspace) && <section aria-label="Today’s priorities and workspace setup">
-            <div className="overflow-hidden border border-border bg-background">
-              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                <div>
-                  <h2 className="text-[13px] font-semibold">Priority queue</h2>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">Untouched leads, deadlines, member risk, and reviews that need a decision.</p>
-                </div>
-                <span className="text-[11px] tabular-nums text-muted-foreground">{attention.length + openTasks.length} open</span>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <div className="min-w-0 space-y-5">
+          {(tasks !== null || attention.length > 0 || canManageWorkspace) && <section className="min-w-0 border border-border bg-background" aria-labelledby="priorities-title">
+            <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+              <div>
+                <p className="mono-label text-[10px] text-brand">TODAY</p>
+                <h2 id="priorities-title" className="mt-1 text-base font-semibold tracking-tight">Your priorities</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Follow up on leads, member risk, approvals, and tasks.</p>
               </div>
-              <DashboardTaskList tasks={priorityTasks} attention={attention} storageKey={`acron-dashboard:${org?.id ?? "unknown"}`} />
-              {canManageWorkspace && <div className="px-4 py-4">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <h3 className="text-[13px] font-semibold">Workspace setup</h3>
-                  {checklist !== null && <span className="text-[11px] tabular-nums text-muted-foreground">{doneSteps} of {totalSteps}</span>}
-                </div>
-                {checklist === null ? (
-                  <p className="text-[12px] text-muted-foreground">Setup status is temporarily unavailable.</p>
-                ) : nextStep ? (
-                  <>
-                    <p className="text-[12px] text-muted-foreground">Next: <span className="font-medium text-foreground">{nextStep.label}</span></p>
-                    <div className="my-3"><ProgressBar value={setupPct} /></div>
-                    <WorkspaceAction href={STEP_HREF[nextStep.key] ?? "/app/settings"} className="inline-flex min-h-8 items-center text-[12px] font-semibold text-brand no-underline hover:underline">Continue setup →</WorkspaceAction>
-                  </>
-                ) : (
-                  <p className="text-[12px] text-muted-foreground">{allSetCopy}</p>
-                )}
-                {checklistItems.length > 0 && (
-                  <details className="mt-3 border-t border-border pt-3 text-[12px]">
-                    <summary className="cursor-pointer text-muted-foreground">View checklist</summary>
-                    <ul className="mt-3 grid list-none gap-2.5 p-0">
-                      {checklistItems.map((item) => (
-                        <li key={item.key} className="flex items-center gap-2">
-                          <span className={item.done ? "text-success" : "text-muted-foreground"} aria-label={item.done ? "Complete" : "Incomplete"}>{item.done ? "✓" : "○"}</span>
-                          <span className="min-w-0 flex-1">{item.label}</span>
-                          {!item.done && <WorkspaceAction href={STEP_HREF[item.key] ?? "/app/settings"} label={"Open: " + item.label} className="text-brand no-underline hover:underline">Open</WorkspaceAction>}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </div>}
+              <span className="shrink-0 border border-border px-2.5 py-1 text-xs font-medium tabular-nums">{attention.length + openTasks.length} open</span>
             </div>
+            <DashboardTaskList tasks={priorityTasks} attention={attention} storageKey={`acron-dashboard:${org?.id ?? "unknown"}`} />
           </section>}
 
-          {quickActions.length > 1 && <nav aria-label="Common tasks">
-            <h2 className="mb-3 text-[16px] font-semibold tracking-tight">Common tasks</h2>
-            <div className="overflow-hidden border border-border bg-background">
+          {canViewBusinessMetrics && <section className="min-w-0 border border-border bg-background" aria-labelledby="payments-title">
+            <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
+              <div>
+                <p className="mono-label text-[10px] text-muted-foreground">LAST 14 DAYS</p>
+                <h2 id="payments-title" className="mt-1 text-base font-semibold tracking-tight">Payment activity</h2>
+              </div>
+              <Link href="/app/payments" className="shrink-0 text-xs font-medium text-brand no-underline hover:underline">View payments <span aria-hidden="true">↗</span></Link>
+            </div>
+            <div className="min-w-0 overflow-hidden">
+              {trend === null ? (
+                <p className="px-5 py-8 text-sm text-muted-foreground">Payment activity is temporarily unavailable.</p>
+              ) : (
+                <PaymentTrendChart data={trend} />
+              )}
+            </div>
+          </section>}
+        </div>
+
+        <aside className="min-w-0 space-y-5" aria-label="Common tasks and workspace setup">
+          {quickActions.length > 1 && <nav className="border border-border bg-background" aria-label="Common tasks">
+            <div className="border-b border-border px-4 py-3">
+              <p className="mono-label text-[10px] text-muted-foreground">SHORTCUTS</p>
+              <h2 className="mt-1 text-sm font-semibold">Common tasks</h2>
+            </div>
+            <div className="divide-y divide-border">
               {quickActions.slice(1).map((action) => (
-                <WorkspaceAction key={action.href} href={action.href} className="flex min-h-11 items-center gap-3 border-b border-border px-4 text-[12px] font-medium text-foreground no-underline transition-colors last:border-0 hover:bg-foreground/[0.025]">
-                  <Icon d={action.icon} className="h-4 w-4 text-muted-foreground" />
-                  <span className="flex-1">{action.label}</span><span aria-hidden="true" className="text-muted-foreground">↗</span>
+                <WorkspaceAction key={action.href} href={action.href} className="flex min-h-11 items-center gap-3 px-4 text-[12px] font-medium text-foreground no-underline transition-colors hover:bg-foreground/[0.025] focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-brand">
+                  <Icon d={action.icon} className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">{action.label}</span><span aria-hidden="true" className="text-muted-foreground">↗</span>
                 </WorkspaceAction>
               ))}
             </div>
           </nav>}
+
+          {canManageWorkspace && <section className="border border-border bg-background" aria-labelledby="setup-title">
+            <div className="border-b border-border px-4 py-3">
+              <p className="mono-label text-[10px] text-muted-foreground">GET STARTED</p>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <h2 id="setup-title" className="text-sm font-semibold">Workspace setup</h2>
+                {checklist !== null && <span className="text-xs tabular-nums text-muted-foreground">{doneSteps}/{totalSteps}</span>}
+              </div>
+            </div>
+            <div className="p-4">
+              {checklist === null ? (
+                <p className="text-xs leading-5 text-muted-foreground">Setup status is temporarily unavailable.</p>
+              ) : nextStep ? (
+                <>
+                  <p className="text-xs text-muted-foreground">Next step</p>
+                  <p className="mt-1 text-sm font-medium">{nextStep.label}</p>
+                  <div className="my-3"><ProgressBar value={setupPct} /></div>
+                  <WorkspaceAction href={STEP_HREF[nextStep.key] ?? "/app/settings"} className="inline-flex min-h-8 items-center text-xs font-semibold text-brand no-underline hover:underline">Continue setup <span aria-hidden="true" className="ml-1">→</span></WorkspaceAction>
+                </>
+              ) : (
+                <p className="text-xs leading-5 text-muted-foreground">{allSetCopy}</p>
+              )}
+              {checklistItems.length > 0 && <details className="mt-4 border-t border-border pt-3 text-xs">
+                <summary className="cursor-pointer font-medium text-muted-foreground">View all setup steps</summary>
+                <ul className="mt-3 grid list-none gap-2.5 p-0">
+                  {checklistItems.map((item) => (
+                    <li key={item.key} className="flex items-center gap-2">
+                      <span className={item.done ? "text-success" : "text-muted-foreground"} aria-label={item.done ? "Complete" : "Incomplete"}>{item.done ? "✓" : "○"}</span>
+                      <span className="min-w-0 flex-1">{item.label}</span>
+                      {!item.done && <WorkspaceAction href={STEP_HREF[item.key] ?? "/app/settings"} label={"Open: " + item.label} className="text-brand no-underline hover:underline">Open</WorkspaceAction>}
+                    </li>
+                  ))}
+                </ul>
+              </details>}
+            </div>
+          </section>}
         </aside>
       </div>
 
