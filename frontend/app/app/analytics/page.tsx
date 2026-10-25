@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { OperatingReportCard } from "@/components/OperatingReportCard";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, Badge, Card, CardHeader, Spinner, StatCard } from "@/components/ui";
 import {
@@ -234,6 +235,7 @@ export default function AnalyticsPage() {
         <Spinner label="Loading analytics…" />
       ) : (
         <div className="space-y-6">
+          <OperatingReportCard />
           {/* KPI strip */}
           <div className="grid grid-cols-1 gap-px overflow-hidden border border-foreground/10 bg-[var(--border)] sm:grid-cols-2 lg:grid-cols-4">
             {kpis.map((k) => (

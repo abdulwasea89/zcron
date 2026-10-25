@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PaymentOut(BaseModel):
@@ -29,7 +29,7 @@ class PaymentOut(BaseModel):
 
 class RefundRequest(BaseModel):
     payment_id: str
-    amount: float | None = None  # None = full refund
+    amount: float | None = Field(default=None, gt=0, allow_inf_nan=False)  # None = full refund
     reason: str | None = None
 
 

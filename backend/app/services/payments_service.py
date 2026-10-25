@@ -9,6 +9,8 @@ directly.
 
 from __future__ import annotations
 
+from math import isfinite
+
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -38,7 +40,7 @@ async def refund(
     session: AsyncSession, *, org_id: str, payment_id: str, amount: float | None,
     reason: str | None, idempotency_key: str, actor_id: str,
 ) -> Payment:
-    payment = await session.get(Payment, payment_id)
+    payment = await session.get(Payment, payment_id, with_for_update=True)
     if payment is None or payment.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Payment not found.")
 
@@ -75,7 +77,7 @@ async def refund(
     vault_credited = payment.vault_credited_minor / 100
     refundable = round(max(0, payment.amount - payment.refunded_amount - vault_credited), 2)
     refund_amount = round(amount if amount is not None else refundable, 2)
-    if refund_amount <= 0 or refund_amount > refundable:
+    if not isfinite(refund_amount) or refund_amount <= 0 or refund_amount > refundable:
         await idempotency_service.fail(session, claim.record, code=422,
                                        body='{"detail":"Invalid refund amount."}')
         raise HTTPException(status_code=422, detail="Invalid refund amount.")
@@ -98,6 +100,10 @@ async def refund(
                                            body='{"detail":"Refund failed at Stripe."}')
             raise HTTPException(status_code=402, detail="Refund failed at Stripe.")
 
+    from decimal import Decimal
+    from app.services.refund_ledger_service import record_refund
+
+    await record_refund(session, payment=payment, amount=Decimal(str(refund_amount)), source="admin", actor_id=actor_id)
     payment.refunded_amount = round(payment.refunded_amount + refund_amount, 2)
     payment.refunded_at = now_utc()
     payment.status = (

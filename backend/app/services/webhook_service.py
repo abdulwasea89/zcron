@@ -384,7 +384,7 @@ async def _connect_charge_refunded(session: AsyncSession, obj: dict, account_id:
 
     charge_id = obj.get("id")
     payment = (
-        await session.execute(select(Payment).where(Payment.stripe_charge_id == charge_id))
+        await session.execute(select(Payment).where(Payment.stripe_charge_id == charge_id).with_for_update())
     ).scalar_one_or_none()
     if payment is None:
         return {"ignored": "charge.refunded", "reason": "unknown charge"}
@@ -393,8 +393,12 @@ async def _connect_charge_refunded(session: AsyncSession, obj: dict, account_id:
         return {"ignored": "charge.refunded", "reason": "connected account mismatch"}
 
     amount_refunded = float(obj.get("amount_refunded", 0)) / 100.0
-    if amount_refunded > 0:
+    if amount_refunded > payment.refunded_amount:
         refund_delta = max(0, int(round((amount_refunded - payment.refunded_amount) * 100)))
+        from decimal import Decimal
+        from app.services.refund_ledger_service import record_refund
+
+        await record_refund(session, payment=payment, amount=Decimal(refund_delta) / 100, source="stripe_webhook")
         payment.refunded_amount = round(amount_refunded, 2)
         payment.refunded_at = now_utc()
         payment.status = (

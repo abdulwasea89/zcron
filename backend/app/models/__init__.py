@@ -33,6 +33,7 @@ from app.models.onboarding import OnboardingJourney, OnboardingMilestoneProgress
 from app.models.organization import Organization
 from app.models.operating_expense import OperatingExpense
 from app.models.payment import Payment
+from app.models.payment_refund import PaymentRefund
 from app.models.payroll import PayAdvance, PayrollEntry, PayrollRun
 from app.models.plan import MembershipPlan
 from app.models.promotion import Promotion
@@ -50,6 +51,7 @@ from app.models.visitor import Locker, Visitor
 from app.models.winback import WinBackAttempt
 
 __all__ = [
+    "PaymentRefund",
     "AuditLog",
     "Attendance",
     "AuthSession",

@@ -11,12 +11,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import Numeric, case, cast, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.api.deps import get_client_ip, get_session, require_capability
 from app.core.permissions import Capability
+from app.core.constants import PaymentKind, PaymentStatus
 from app.core.security import now_utc
 from app.core.tenancy import TenantContext
 from app.models.attendance import Attendance
@@ -24,6 +25,8 @@ from app.models.audit_log import AuditLog
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
 from app.models.payment import Payment
+from app.models.payment_refund import PaymentRefund
+from app.models.operating_expense import OperatingExpense
 from app.models.plan import MembershipPlan
 from app.models.receipt import ReceiptUpload
 from app.models.subscription import Subscription
@@ -31,6 +34,88 @@ from app.models.user import User
 from app.services.audit_service import record_audit
 
 router = APIRouter()
+
+
+def operating_totals(receipts, refunds, legacy_refunds, expenses) -> dict:
+    result = {}
+
+    def bucket(currency):
+        return result.setdefault(currency, {"gross_receipts": Decimal("0"), "taxes_collected": Decimal("0"),
+                                            "refunds": Decimal("0"), "operating_expenses": Decimal("0"),
+                                            "legacy_refund_payments": 0, "expense_categories": {}, "monthly_expenses": {}})
+
+    for currency, gross, tax in receipts:
+        row = bucket(currency)
+        row["gross_receipts"] += Decimal(str(gross or 0))
+        row["taxes_collected"] += Decimal(str(tax or 0))
+    for currency, amount, legacy_count in refunds:
+        row = bucket(currency)
+        row["refunds"] += Decimal(str(amount or 0))
+        row["legacy_refund_payments"] += int(legacy_count or 0)
+    for currency, amount, count in legacy_refunds:
+        row = bucket(currency)
+        row["refunds"] += Decimal(str(amount or 0))
+        row["legacy_refund_payments"] += int(count or 0)
+    for currency, category, year, month, amount in expenses:
+        row = bucket(currency)
+        amount = Decimal(str(amount or 0))
+        row["operating_expenses"] += amount
+        row["expense_categories"][category] = row["expense_categories"].get(category, Decimal("0")) + amount
+        period = f"{int(year):04}-{int(month):02}"
+        row["monthly_expenses"][period] = row["monthly_expenses"].get(period, Decimal("0")) + amount
+    for row in result.values():
+        row["net_collections"] = row["gross_receipts"] - row["refunds"]
+        row["operating_cash_surplus"] = row["net_collections"] - row["operating_expenses"]
+        for key, value in row.items():
+            if isinstance(value, Decimal):
+                row[key] = format(value.quantize(Decimal("0.01")), ".2f")
+            elif isinstance(value, dict):
+                row[key] = {name: format(amount.quantize(Decimal("0.01")), ".2f") for name, amount in sorted(value.items())}
+    return result
+
+
+@router.get("/operating-report")
+async def operating_report(
+    date_from: date, date_to: date,
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_REVENUE_ANALYTICS)),
+    session: AsyncSession = Depends(get_session),
+):
+    org = await session.get(Organization, ctx.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Gym not found.")
+    start, end = period_bounds(date_from, date_to, org.timezone or "UTC")
+    money_type = Numeric(18, 2)
+    paid_date = func.coalesce(Payment.paid_at, Payment.created_at)
+    kinds = [PaymentKind.MEMBER_FEE, PaymentKind.DAY_PASS]
+    receipts = (await session.execute(select(
+        Payment.currency, func.sum(cast(Payment.amount, money_type)), func.sum(cast(Payment.tax_amount, money_type)),
+    ).where(Payment.organization_id == ctx.org_id, Payment.kind.in_(kinds),
+            Payment.status.in_([PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED]),
+            paid_date >= start, paid_date < end).group_by(Payment.currency))).all()
+    refunds = (await session.execute(select(
+        PaymentRefund.currency, func.sum(PaymentRefund.amount),
+        func.sum(case((PaymentRefund.source == "legacy_snapshot", 1), else_=0)),
+    ).join(Payment, Payment.id == PaymentRefund.payment_id).where(
+        PaymentRefund.organization_id == ctx.org_id, Payment.organization_id == ctx.org_id,
+        Payment.kind.in_(kinds), PaymentRefund.occurred_at >= start, PaymentRefund.occurred_at < end,
+    ).group_by(PaymentRefund.currency))).all()
+    has_refund_ledger = select(PaymentRefund.id).where(
+        PaymentRefund.payment_id == Payment.id, PaymentRefund.organization_id == ctx.org_id,
+    ).exists()
+    legacy = (await session.execute(select(Payment.currency,
+        func.sum(cast(Payment.refunded_amount, money_type)), func.count(Payment.id),
+    ).where(Payment.organization_id == ctx.org_id, Payment.kind.in_(kinds), Payment.refunded_amount > 0,
+            Payment.refunded_at >= start, Payment.refunded_at < end, ~has_refund_ledger,
+    ).group_by(Payment.currency))).all()
+    year = func.extract("year", OperatingExpense.incurred_on)
+    month = func.extract("month", OperatingExpense.incurred_on)
+    expenses = (await session.execute(select(OperatingExpense.currency, OperatingExpense.category,
+        year, month, func.sum(OperatingExpense.amount),
+    ).where(OperatingExpense.organization_id == ctx.org_id, OperatingExpense.voided_at.is_(None),
+            OperatingExpense.incurred_on >= date_from, OperatingExpense.incurred_on <= date_to,
+    ).group_by(OperatingExpense.currency, OperatingExpense.category, year, month))).all()
+    return {"date_from": date_from, "date_to": date_to, "by_currency": operating_totals(receipts, refunds, legacy, expenses),
+            "basis": "Gym member/day-pass receipts include collected tax. Refunds include requests accepted by the provider, which may still be pending. Expenses use their recorded incurred dates. Payroll is included only when entered in the expense ledger. Legacy refunds use their last known refund date. These are recorded operating totals, not settled bank balances or accrual financial statements."}
 
 
 def period_bounds(start: date, end: date, zone_name: str) -> tuple[datetime, datetime]:
