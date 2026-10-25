@@ -7,6 +7,7 @@ import { api, ApiError } from "@/lib/api";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { ClientAssignment, TrainerSessionLog } from "@/lib/types";
 import { toast } from "sonner";
+import { TrainerMatchingPanel } from "@/components/TrainerMatchingPanel";
 
 type TrainerPackage = { id: string; member_id: string; member_name: string; trainer_member_id: string; trainer_name: string; name: string; total_sessions: number; used_sessions: number; remaining_sessions: number; expires_at: string | null; status: string };
 type MemberOption = { member_id: string; full_name: string | null; email: string; member_status: string; role: string };
@@ -134,6 +135,7 @@ export default function TrainingPage() {
   return <>
     <PageHeader title="Trainer operations" subtitle="Manage personal-training credits and record completed sessions." />
     {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+    {currentUser && ["owner", "manager"].includes(currentUser.role) && <TrainerMatchingPanel members={members} />}
     {currentUser && ["owner", "manager"].includes(currentUser.role) && <div className="mb-6 grid gap-6 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
       <section className="border border-border bg-background p-5">
         <h2 className="text-sm font-semibold">Grant session credits</h2>

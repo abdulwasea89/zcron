@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -12,6 +12,7 @@ from app.api.deps import get_client_ip, get_session, require_capability, require
 from app.core.constants import MemberStatus, Role
 from app.core.permissions import Capability, role_has
 from app.core.tenancy import TenantContext
+from app.services import idempotency_service
 from app.schemas.common import Message
 from app.schemas.members import (
     ApprovalDecision,
@@ -490,20 +491,32 @@ async def list_member_trainers(
 async def assign_trainer(
     member_id: str,
     data: TrainerAssign,
+    idempotency_key: str = Header(default="", alias="Idempotency-Key"),
     ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TRAINERS)),
     org: Organization = Depends(require_writable_org),
     session: AsyncSession = Depends(get_session),
 ):
+    claim = None
+    if idempotency_key:
+        claim = await idempotency_service.claim(
+            session, key=idempotency_key, endpoint=f"member.trainer_assign:{ctx.org_id}:{ctx.user_id}:{member_id}",
+            body=data.model_dump(mode="json"), organization_id=ctx.org_id, user_id=ctx.user_id,
+        )
+        if not claim.claimed:
+            return TrainerAssignment.model_validate_json(claim.cached_response or "{}")
     mt = await trainer_assign.assign(
         session, org_id=ctx.org_id, member_id=member_id,
         trainer_member_id=data.trainer_member_id, actor_user_id=ctx.user_id)
     trainer = await session.get(OrganizationMember, mt.trainer_member_id)
     user = await session.get(User, trainer.user_id) if trainer else None
-    return TrainerAssignment(
+    output = TrainerAssignment(
         member_id=mt.member_id, trainer_member_id=mt.trainer_member_id,
         trainer_name=(trainer.display_name or user.full_name or user.email) if user else "—",
         assigned_at=mt.assigned_at, active=mt.active,
     )
+    if claim:
+        await idempotency_service.complete(session, claim.record, code=201, body=output.model_dump_json())
+    return output
 
 
 @router.delete("/{member_id}/trainers/{trainer_member_id}", response_model=Message)

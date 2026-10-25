@@ -8,7 +8,10 @@ for audit (Security Rule #10).
 
 from __future__ import annotations
 
+from datetime import time
+
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -16,6 +19,7 @@ from app.core.constants import Role
 from app.models.member_trainer import MemberTrainer
 from app.models.membership import OrganizationMember
 from app.models.user import User
+from app.models.trainer_availability import TrainerAvailability
 from app.services.audit_service import record_audit
 
 
@@ -43,7 +47,12 @@ async def assign(
     member = await _get_member(session, org_id, member_id)
     if member.role != Role.MEMBER:
         raise HTTPException(status_code=422, detail="Trainers can only be assigned to members.")
-    await _get_trainer(session, org_id, trainer_member_id)
+    trainer = await _get_trainer(session, org_id, trainer_member_id)
+    trainer_user = await session.get(User, trainer.user_id)
+    if trainer.banned or trainer_user is None or not trainer_user.is_active:
+        raise HTTPException(status_code=422, detail="Selected trainer is not available for assignment.")
+    if member.banned:
+        raise HTTPException(status_code=422, detail="A banned member cannot receive trainer assignments.")
     if trainer_member_id == member.id:
         raise HTTPException(status_code=422, detail="A trainer cannot be assigned to themselves.")
 
@@ -72,6 +81,38 @@ async def assign(
                        actor_user_id=actor_user_id, entity_type="member", entity_id=member_id,
                        metadata={"trainer_member_id": trainer_member_id})
     return assignment
+
+
+async def matching_trainers(session: AsyncSession, *, org_id: str, member_id: str,
+                            weekday: int, start_time: time, end_time: time) -> list[dict]:
+    """Shortlist by weekly availability and assigned-client count; this does not book time."""
+    member = await _get_member(session, org_id, member_id)
+    if member.role != Role.MEMBER or member.banned:
+        raise HTTPException(status_code=422, detail="Choose an available gym member.")
+    if not 0 <= weekday <= 6 or start_time.tzinfo or end_time.tzinfo or end_time <= start_time:
+        raise HTTPException(status_code=422, detail="Choose one weekday and an increasing local time range.")
+    loads = (select(MemberTrainer.trainer_member_id, func.count(MemberTrainer.id).label("clients"))
+             .where(MemberTrainer.organization_id == org_id, MemberTrainer.active.is_(True))
+             .group_by(MemberTrainer.trainer_member_id).subquery())
+    assigned = set((await session.execute(select(MemberTrainer.trainer_member_id).where(
+        MemberTrainer.organization_id == org_id, MemberTrainer.member_id == member.id,
+        MemberTrainer.active.is_(True),
+    ))).scalars().all())
+    count = func.coalesce(loads.c.clients, 0)
+    rows = (await session.execute(
+        select(OrganizationMember, User, count)
+        .join(User, User.id == OrganizationMember.user_id)
+        .join(TrainerAvailability, TrainerAvailability.trainer_member_id == OrganizationMember.id)
+        .outerjoin(loads, loads.c.trainer_member_id == OrganizationMember.id)
+        .where(OrganizationMember.organization_id == org_id, OrganizationMember.role == Role.TRAINER,
+               OrganizationMember.banned.is_(False), User.is_active.is_(True),
+               TrainerAvailability.organization_id == org_id, TrainerAvailability.weekday == weekday,
+               TrainerAvailability.start_time <= start_time, TrainerAvailability.end_time >= end_time)
+        .distinct().order_by(count, User.full_name, OrganizationMember.id).limit(50)
+    )).all()
+    return [{"trainer_member_id": trainer.id, "name": trainer.display_name or user.full_name or user.email,
+             "assigned_clients": clients, "already_assigned": trainer.id in assigned}
+            for trainer, user, clients in rows]
 
 
 async def unassign(

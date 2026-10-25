@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import time, timezone
 import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -40,14 +40,31 @@ from app.schemas.staff import (
     TrainerAvailabilityOut,
     TrainerPackageCreate,
     TrainerPackageOut,
+    TrainerMatchOut,
 )
 from app.services import staff_service as staff
 from app.services import trainer_sessions_service as trainer_sessions
 from app.services import trainer_packages_service as trainer_packages
 from app.services.audit_service import record_audit
 from app.services import idempotency_service
+from app.services import member_trainers_service
 
 router = APIRouter()
+
+
+@router.get("/trainer-matches", response_model=list[TrainerMatchOut])
+async def trainer_matches(
+    member_id: str,
+    start_time: time,
+    end_time: time,
+    weekday: int = Query(ge=0, le=6),
+    ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TRAINERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    return await member_trainers_service.matching_trainers(
+        session, org_id=ctx.org_id, member_id=member_id, weekday=weekday,
+        start_time=start_time, end_time=end_time,
+    )
 
 
 @router.get("/directory", response_model=list[StaffDirectoryOut])

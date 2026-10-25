@@ -108,6 +108,13 @@ class TrainerAvailabilityOut(BaseModel):
     end_time: time
 
 
+class TrainerMatchOut(BaseModel):
+    trainer_member_id: str
+    name: str
+    assigned_clients: int
+    already_assigned: bool
+
+
 class TrainerSessionCreate(BaseModel):
     client_member_id: str
     package_id: str | None = None
