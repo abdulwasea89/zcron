@@ -16,6 +16,7 @@ from app.models.membership import OrganizationMember
 from app.models.user import User
 from app.models.base import utcnow
 from app.models.staff import ScheduledShift
+from app.models.trainer_availability import TrainerAvailability
 from app.schemas.auth import LoginResponse
 from app.schemas.common import Message
 from app.schemas.staff import (
@@ -33,12 +34,88 @@ from app.schemas.staff import (
     TaskUpdateIn,
     TrainerSessionCreate,
     TrainerSessionOut,
+    TrainerAvailabilityCreate,
+    TrainerAvailabilityOut,
 )
 from app.services import staff_service as staff
 from app.services import trainer_sessions_service as trainer_sessions
 from app.services.audit_service import record_audit
 
 router = APIRouter()
+
+
+@router.get("/availability", response_model=list[TrainerAvailabilityOut])
+async def list_trainer_availability(
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_ASSIGNED_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    statement = select(TrainerAvailability).where(
+        TrainerAvailability.organization_id == ctx.org_id,
+    )
+    if ctx.role == Role.TRAINER:
+        statement = statement.where(
+            TrainerAvailability.trainer_member_id == await _actor_member_id(session, ctx)
+        )
+    rows = (await session.execute(
+        statement.order_by(TrainerAvailability.weekday, TrainerAvailability.start_time)
+    )).scalars().all()
+    return [TrainerAvailabilityOut.model_validate(row) for row in rows]
+
+
+@router.post("/availability", response_model=TrainerAvailabilityOut, status_code=201,
+             dependencies=[Depends(require_writable_org)])
+async def create_trainer_availability(
+    data: TrainerAvailabilityCreate,
+    ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TRAINERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    trainer = await session.get(OrganizationMember, data.trainer_member_id)
+    if (
+        trainer is None or trainer.organization_id != ctx.org_id
+        or trainer.role != Role.TRAINER or trainer.banned
+    ):
+        raise HTTPException(status_code=404, detail="Trainer not found.")
+    overlap = (await session.execute(select(TrainerAvailability.id).where(
+        TrainerAvailability.organization_id == ctx.org_id,
+        TrainerAvailability.trainer_member_id == trainer.id,
+        TrainerAvailability.weekday == data.weekday,
+        TrainerAvailability.start_time < data.end_time,
+        TrainerAvailability.end_time > data.start_time,
+    ).limit(1))).scalar_one_or_none()
+    if overlap:
+        raise HTTPException(status_code=409, detail="This availability overlaps an existing window.")
+    availability = TrainerAvailability(
+        organization_id=ctx.org_id,
+        trainer_member_id=trainer.id,
+        weekday=data.weekday,
+        start_time=data.start_time,
+        end_time=data.end_time,
+    )
+    session.add(availability)
+    await session.flush()
+    await record_audit(
+        session, action="staff.trainer_availability_created", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="trainer_availability", entity_id=availability.id,
+    )
+    return TrainerAvailabilityOut.model_validate(availability)
+
+
+@router.delete("/availability/{availability_id}", response_model=Message,
+               dependencies=[Depends(require_writable_org)])
+async def delete_trainer_availability(
+    availability_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.ASSIGN_TRAINERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    availability = await session.get(TrainerAvailability, availability_id)
+    if availability is None or availability.organization_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Availability window not found.")
+    await record_audit(
+        session, action="staff.trainer_availability_deleted", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="trainer_availability", entity_id=availability.id,
+    )
+    await session.delete(availability)
+    return Message(message="Availability window removed.")
 
 
 @router.get("/trainer-sessions", response_model=list[TrainerSessionOut])

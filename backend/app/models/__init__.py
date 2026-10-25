@@ -41,6 +41,7 @@ from app.models.session import AuthSession
 from app.models.signup_attempt import SignupAttempt
 from app.models.staff import ScheduledShift, Shift, StaffInvite, Task
 from app.models.trainer_session import TrainerSessionLog
+from app.models.trainer_availability import TrainerAvailability
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.models.verification import VerificationToken
@@ -103,6 +104,7 @@ __all__ = [
     "Subscription",
     "Task",
     "TrainerSessionLog",
+    "TrainerAvailability",
     "User",
     "VerificationToken",
     "Visitor",

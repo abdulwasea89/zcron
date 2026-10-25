@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.constants import Role
 
@@ -76,6 +76,29 @@ class ShiftScheduleOut(BaseModel):
     starts_at: datetime
     ends_at: datetime
     note: str | None
+
+
+class TrainerAvailabilityCreate(BaseModel):
+    trainer_member_id: str
+    weekday: int = Field(ge=0, le=6)
+    start_time: time
+    end_time: time
+
+    @model_validator(mode="after")
+    def validate_window(self):
+        if self.end_time <= self.start_time:
+            raise ValueError("Availability end must be after its start.")
+        return self
+
+
+class TrainerAvailabilityOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    trainer_member_id: str
+    weekday: int
+    start_time: time
+    end_time: time
 
 
 class TrainerSessionCreate(BaseModel):

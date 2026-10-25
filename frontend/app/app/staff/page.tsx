@@ -33,6 +33,8 @@ import { useRealtimeEvent } from "@/components/Realtime";
 import type { StaffInviteOut, MemberDirectoryItem, ShiftOut, ClientAssignment, StaffScheduleOut } from "@/lib/types";
 
 const STAFF_ROLES = ["manager", "trainer", "front_desk"];
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+type TrainerAvailability = { id: string; trainer_member_id: string; weekday: number; start_time: string; end_time: string };
 
 /** Format a shift duration (ms) as HH:MM:SS. Pure, so it lives at module scope. */
 function formatDuration(ms: number): string {
@@ -122,6 +124,13 @@ export default function StaffPage() {
   const [scheduleNote, setScheduleNote] = useState("");
   const [scheduleError, setScheduleError] = useState("");
   const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [availability, setAvailability] = useState<TrainerAvailability[]>([]);
+  const [availabilityTrainerId, setAvailabilityTrainerId] = useState("");
+  const [availabilityWeekday, setAvailabilityWeekday] = useState("0");
+  const [availabilityStart, setAvailabilityStart] = useState("");
+  const [availabilityEnd, setAvailabilityEnd] = useState("");
+  const [availabilityError, setAvailabilityError] = useState("");
+  const [availabilitySaving, setAvailabilitySaving] = useState(false);
 
   const isOwner = currentUser?.role === "owner";
   const canManageSchedule = isOwner || currentUser?.role === "manager";
@@ -144,6 +153,7 @@ export default function StaffPage() {
     }
     if (canManageSchedule) {
       try { setSchedule(await api.get<StaffScheduleOut[]>("/staff/schedule")); } catch { /* best-effort */ }
+      try { setAvailability(await api.get<TrainerAvailability[]>("/staff/availability")); } catch { /* best-effort */ }
     }
   }, [canManageSchedule]);
 
@@ -227,6 +237,7 @@ export default function StaffPage() {
 
   const staff = (members ?? []).filter((m) => STAFF_ROLES.includes(m.role));
   const scheduleStaff = staff.filter((m) => m.member_status === "active");
+  const scheduleTrainers = scheduleStaff.filter((m) => m.role === "trainer");
   const pendingInvites = invites.filter((i) => !i.used);
 
   async function createScheduledShift(event: React.FormEvent<HTMLFormElement>) {
@@ -258,6 +269,37 @@ export default function StaffPage() {
       await load();
     } catch (e) {
       setScheduleError((e as ApiError).message);
+    }
+  }
+
+  async function createAvailability(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAvailabilityError("");
+    setAvailabilitySaving(true);
+    try {
+      await api.post<TrainerAvailability>("/staff/availability", {
+        trainer_member_id: availabilityTrainerId,
+        weekday: Number(availabilityWeekday),
+        start_time: availabilityStart,
+        end_time: availabilityEnd,
+      });
+      setAvailabilityStart("");
+      setAvailabilityEnd("");
+      setAvailability(await api.get<TrainerAvailability[]>("/staff/availability"));
+    } catch (error) {
+      setAvailabilityError((error as ApiError).message || "Could not save trainer availability.");
+    } finally {
+      setAvailabilitySaving(false);
+    }
+  }
+
+  async function removeAvailability(window: TrainerAvailability) {
+    setAvailabilityError("");
+    try {
+      await api.del(`/staff/availability/${window.id}`);
+      setAvailability((rows) => rows.filter((row) => row.id !== window.id));
+    } catch (error) {
+      setAvailabilityError((error as ApiError).message || "Could not remove availability.");
     }
   }
 
@@ -1021,6 +1063,47 @@ export default function StaffPage() {
             </div>;
           })}
         </div> : <p className="px-4 py-5 text-sm text-muted-foreground">No upcoming shifts have been planned.</p>}
+      </section>}
+
+      {canManageSchedule && <section className="mt-6 border border-border bg-background" aria-labelledby="availability-title">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div>
+            <h2 id="availability-title" className="text-sm font-semibold">Trainer availability</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Set recurring weekly windows to help staff plan classes and sessions.</p>
+          </div>
+          <span className="text-xs tabular-nums text-muted-foreground">{availability.length} windows</span>
+        </div>
+        <form onSubmit={createAvailability} className="grid gap-3 border-b border-border p-4 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="block text-xs text-muted-foreground sm:col-span-2 lg:col-span-1">
+            Trainer
+            <select required value={availabilityTrainerId} onChange={(event) => setAvailabilityTrainerId(event.target.value)} className="mt-1 block h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground">
+              <option value="">Choose trainer…</option>
+              {scheduleTrainers.map((person) => <option key={person.member_id} value={person.member_id}>{person.display_name || person.full_name || person.email}</option>)}
+            </select>
+          </label>
+          <label className="block text-xs text-muted-foreground">
+            Day
+            <select value={availabilityWeekday} onChange={(event) => setAvailabilityWeekday(event.target.value)} className="mt-1 block h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground">
+              {WEEKDAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
+            </select>
+          </label>
+          <Input label="Available from" type="time" required value={availabilityStart} onChange={(event) => setAvailabilityStart(event.target.value)} />
+          <Input label="Available until" type="time" required value={availabilityEnd} onChange={(event) => setAvailabilityEnd(event.target.value)} />
+          <div className="flex items-end"><Button type="submit" loading={availabilitySaving} disabled={!availabilityTrainerId || !availabilityStart || !availabilityEnd}>Add window</Button></div>
+          {availabilityError && <div className="sm:col-span-2 lg:col-span-5"><Alert>{availabilityError}</Alert></div>}
+        </form>
+        {availability.length ? <div className="divide-y divide-border">
+          {availability.map((window) => {
+            const trainer = scheduleTrainers.find((person) => person.member_id === window.trainer_member_id);
+            return <div key={window.id} className="flex items-center gap-3 px-4 py-3 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{trainer?.display_name || trainer?.full_name || trainer?.email || "Trainer"}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{WEEKDAYS[window.weekday]} · {window.start_time.slice(0, 5)}–{window.end_time.slice(0, 5)}</p>
+              </div>
+              <Button variant="secondary" onClick={() => void removeAvailability(window)} aria-label="Remove trainer availability">Remove</Button>
+            </div>;
+          })}
+        </div> : <p className="px-4 py-5 text-sm text-muted-foreground">No weekly availability has been entered.</p>}
       </section>}
 
       {/* Trainer: my clients */}
