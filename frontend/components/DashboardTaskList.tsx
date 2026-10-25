@@ -86,6 +86,11 @@ export function DashboardTaskList({
                   {item.value}
                 </span>
                 {item.phone && <a href={`tel:${item.phone}`} className="text-brand no-underline hover:underline">Call</a>}
+                {item.task && <Link
+                  href={`/app/tasks?edit=${encodeURIComponent(item.task.id)}`}
+                  className="text-brand no-underline hover:underline"
+                  aria-label={`Edit ${item.task.title}`}
+                >Edit</Link>}
                 {!item.task && <button
                   type="button"
                   disabled={addingTaskFor !== null}
@@ -97,8 +102,8 @@ export function DashboardTaskList({
                   type="button"
                   onClick={() => setHiddenAttention((current) => new Set(current).add(item.key))}
                   className="text-muted-foreground no-underline hover:text-foreground hover:underline"
-                  aria-label={`Hide ${item.label} for this view`}
-                >Hide</button>}
+                  aria-label={`Skip ${item.label} for this view`}
+                >Skip for this view</button>}
                 {item.task && <button
                   type="button"
                   aria-label={`Mark ${item.task.title} complete`}

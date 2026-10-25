@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, Avatar, Badge, Button, EmptyState, Input, Spinner, Textarea } from "@/components/ui";
@@ -50,6 +50,7 @@ export default function TasksPage() {
   const [viewing, setViewing] = useState<TaskOut | null>(null);
   const [menuTask, setMenuTask] = useState<TaskOut | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const editDeepLinkHandled = useRef(false);
 
   // Create form state
   const [formTitle, setFormTitle] = useState("");
@@ -59,11 +60,24 @@ export default function TasksPage() {
   const [formError, setFormError] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     setError("");
     try {
       const t = await api.get<TaskOut[]>("/staff/tasks");
       setTasks(t);
+      if (!editDeepLinkHandled.current) {
+        const taskId = new URLSearchParams(window.location.search).get("edit");
+        const task = taskId ? t.find((item) => item.id === taskId) : null;
+        if (task) {
+          editDeepLinkHandled.current = true;
+          setEditing(task);
+          setFormTitle(task.title);
+          setFormDesc(task.description || "");
+          setFormAssignee(task.assignee_member_id || "");
+          setFormDeadline(task.deadline ? task.deadline.slice(0, 10) : "");
+          setShowForm(true);
+        }
+      }
     } catch (e) {
       setError((e as ApiError).message);
       setTasks([]);
@@ -80,11 +94,11 @@ export default function TasksPage() {
     } catch {
       // Members fetch is best-effort for the assignee dropdown
     }
-  }
+  }, []);
 
   useEffect(() => {
     queueMicrotask(() => void load());
-  }, []);
+  }, [load]);
 
   const memberById = Object.fromEntries(
     members.map((m) => [m.member_id, m.full_name || m.email]),
