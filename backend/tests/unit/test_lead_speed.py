@@ -51,6 +51,22 @@ def test_speed_to_lead_empty_period_returns_zero_rates():
     }
 
 
+def test_manual_and_provider_accepted_contacts_are_unconfirmed_until_callback():
+    start = datetime(2026, 1, 1)
+    leads = [
+        SimpleNamespace(source="call", stage="contacted", created_at=start,
+                        first_contacted_at=start, first_contacted_by_user_id="staff",
+                        first_contact_logged=True, first_contact_delivery_status="manual_logged"),
+        SimpleNamespace(source="sms", stage="contacted", created_at=start,
+                        first_contacted_at=start, first_contacted_by_user_id="staff",
+                        first_contact_logged=True, first_contact_delivery_status="provider_accepted"),
+    ]
+    report = speed_to_lead_metrics(leads)
+    assert report["delivery_confirmed"] == 0
+    assert report["delivery_failed"] == 0
+    assert report["delivery_unconfirmed"] == 2
+
+
 @pytest.mark.asyncio
 async def test_pipeline_stage_change_does_not_fake_a_contact_log(monkeypatch):
     lead = Lead(organization_id="org", name="Prospect", stage="new")

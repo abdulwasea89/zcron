@@ -106,7 +106,7 @@ def speed_to_lead_metrics(leads: list[Lead], staff_names: dict[str, str] | None 
     delivery_confirmed = sum(getattr(lead, "first_contact_delivery_status", "unknown") == "delivered" for lead in leads)
     delivery_failed = sum(getattr(lead, "first_contact_delivery_status", "unknown") == "failed" for lead in leads)
     delivery_unconfirmed = sum(
-        lead.first_contact_logged and getattr(lead, "first_contact_delivery_status", "unknown") in {"unknown", "provider_accepted"}
+        lead.first_contact_logged and getattr(lead, "first_contact_delivery_status", "unknown") not in {"delivered", "failed"}
         for lead in leads
     )
     for lead in leads:
