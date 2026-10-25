@@ -417,6 +417,7 @@ export default function ClassesPage() {
                     <div>
                       <p className="text-sm font-medium text-[var(--foreground)]">{b.member_name || b.member_email}</p>
                       <p className="text-xs text-[var(--muted)]">{b.member_email}</p>
+                      {b.reminder_created_at && <p className="mt-1 text-xs text-muted-foreground">Reminder created · {b.reminder_email_accepted ? "email accepted by provider" : "in-app only; email not sent"}</p>}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <Badge tone={b.status === "booked" ? "success" : "neutral"}>{b.status}</Badge>

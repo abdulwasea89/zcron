@@ -293,6 +293,8 @@ export interface StaffInviteOut {
 }
 
 export interface BookingWithMember {
+  reminder_created_at?: string | null;
+  reminder_email_accepted?: boolean;
   booking_id: string;
   class_session_id: string;
   member_id: string;

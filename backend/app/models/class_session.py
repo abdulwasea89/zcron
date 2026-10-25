@@ -41,3 +41,5 @@ class ClassBooking(UUIDModel, TimestampModel, table=True):
     member_id: str = Field(index=True, foreign_key="organization_members.id")
     status: BookingStatus = Field(default=BookingStatus.BOOKED, index=True)
     idempotency_key: str | None = Field(default=None, index=True)
+    reminder_created_at: datetime | None = None
+    reminder_email_accepted: bool = False

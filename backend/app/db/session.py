@@ -78,6 +78,10 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
     inspector = inspect(connection)
     tables = set(inspector.get_table_names())
     additions = {
+        "class_bookings": {
+            "reminder_created_at": "DATETIME",
+            "reminder_email_accepted": "BOOLEAN NOT NULL DEFAULT 0",
+        },
         "payments": {"payer_contributions": "JSON NOT NULL DEFAULT '[]'"},
         "organization_members": {
             "marketing_email_consent": "BOOLEAN NOT NULL DEFAULT 0",

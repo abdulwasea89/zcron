@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.constants import AttendanceMethod, AttendanceSource, BookingStatus, MemberStatus, Role
+from app.core.constants import AttendanceMethod, AttendanceSource, BookingStatus, MemberStatus, NotificationKind, Role
 from app.core.security import now_utc
 from app.models.class_session import ClassBooking, ClassSession
 from app.models.lead import LeadBooking
@@ -25,6 +25,7 @@ from app.realtime import events
 from app.schemas.classes import ClassSessionCreate
 from app.services import attendance_service, idempotency_service
 from app.services.audit_service import record_audit
+from app.services.notifications_service import create_notification
 
 
 async def _get_owned_session(session: AsyncSession, org_id: str, class_id: str) -> ClassSession:
@@ -412,6 +413,13 @@ async def mark_no_show(
     await session.flush()
     booking.status = BookingStatus.NO_SHOW
     session.add(booking)
+    await create_notification(
+        session, org_id=org_id, recipient_user_id=member.user_id,
+        category=NotificationKind.SYSTEM, title="We missed you at class",
+        body=f"You missed {cs.title}. Please contact the gym if you need help booking another class.",
+        data={"class_session_id": cs.id, "booking_id": booking.id},
+    )
+    await events.task_changed(org_id, task_id=task.id, action="created")
     await record_audit(session, action="class.no_show", organization_id=org_id,
                        actor_user_id=actor_id, entity_type="class_booking", entity_id=booking.id,
                        metadata={"follow_up_task_id": task.id})
@@ -443,6 +451,8 @@ async def list_bookings(
             "member_name": m.display_name or u.full_name,
             "member_email": u.email,
             "status": b.status.value,
+            "reminder_created_at": b.reminder_created_at,
+            "reminder_email_accepted": b.reminder_email_accepted,
         })
     return result
 

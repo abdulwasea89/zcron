@@ -53,6 +53,8 @@ class BookingWithMember(BaseModel):
     member_name: str | None
     member_email: str
     status: str
+    reminder_created_at: datetime | None = None
+    reminder_email_accepted: bool = False
 
 
 class MyBookingOut(BaseModel):

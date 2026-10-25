@@ -100,7 +100,17 @@ async def test_marking_no_show_creates_follow_up_task(monkeypatch):
     async def record_audit(*_args, **kwargs):
         audits.append(kwargs)
 
+    notifications = []
+
+    async def create_notification(*_args, **kwargs):
+        notifications.append(kwargs)
+
+    async def task_changed(*_args, **_kwargs):
+        pass
+
     monkeypatch.setattr(classes_service, "record_audit", record_audit)
+    monkeypatch.setattr(classes_service, "create_notification", create_notification)
+    monkeypatch.setattr(classes_service.events, "task_changed", task_changed)
     result = await classes_service.mark_no_show(
         session, org_id="org", class_id=class_session.id, booking_id=booking.id, actor_id="owner",
     )
@@ -110,3 +120,4 @@ async def test_marking_no_show_creates_follow_up_task(monkeypatch):
     assert task.assignee_member_id == actor.id
     assert "Sam" in task.title and "Strength" in task.description
     assert audits[0]["metadata"]["follow_up_task_id"] == task.id
+    assert notifications[0]["recipient_user_id"] == "member-user"
