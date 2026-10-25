@@ -449,6 +449,52 @@ async def _deliver_message(session: AsyncSession, org_id: str, message: InboxMes
         message.delivery_status = "sent"
         message.delivery_error = None
         message.external_id = receipt.provider_message_id
+        if _value(message.sender_kind) == SenderKind.STAFF.value and message.sender_user_id:
+            await _record_lead_first_outreach(session, org_id, message, recipient)
+
+
+async def _record_lead_first_outreach(
+    session: AsyncSession, org_id: str, message: InboxMessage, recipient: str,
+) -> None:
+    """Count a staff reply as outreach only after the channel accepts it."""
+    from app.models.lead import Lead
+    from app.services import leads_service
+
+    conversation = await session.get(InboxConversation, message.conversation_id)
+    if (
+        conversation is None
+        or conversation.organization_id != org_id
+        or conversation.member_id is not None
+    ):
+        return
+    channel = Channel(_value(message.channel))
+    contact = recipient.strip()
+    if channel in {Channel.EMAIL, Channel.WEB_CHAT}:
+        match = func.lower(Lead.email) == contact.lower()
+    elif channel in {Channel.SMS, Channel.WHATSAPP}:
+        digits = re.sub(r"\D", "", contact.removeprefix("whatsapp:"))
+        if len(digits) < 7:
+            return
+        match = Lead.phone.in_({digits, f"+{digits}", contact, contact.removeprefix("whatsapp:")})
+    elif channel in {Channel.INSTAGRAM, Channel.MESSENGER, Channel.LINE, Channel.WECHAT, Channel.TELEGRAM}:
+        match = func.lower(Lead.contact_handle) == contact.lower()
+    else:
+        return
+
+    lead = (await session.execute(
+        select(Lead).where(
+            Lead.organization_id == org_id,
+            Lead.first_contact_logged.is_(False),
+            Lead.stage.notin_({"joined", "lost"}),
+            match,
+        ).order_by(Lead.created_at).limit(1).with_for_update()
+    )).scalar_one_or_none()
+    if lead is not None:
+        await leads_service.log_first_contact(
+            session, org_id=org_id, lead_id=lead.id,
+            actor_id=message.sender_user_id,
+            method=f"inbox_{channel.value}",
+        )
 
 
 async def assign(

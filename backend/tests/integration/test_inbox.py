@@ -308,6 +308,54 @@ async def test_reply_is_idempotent_and_assigns(client):
 
 
 @pytest.mark.asyncio
+async def test_lead_first_outreach_requires_provider_acceptance(client, monkeypatch):
+    from app.integrations.inbox_channels import DeliveryReceipt, InboxDeliveryError
+    from app.services import inbox_channels_service, organizations_service
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+    connected = False
+
+    async def credentials(*_args):
+        return {"test": True} if connected else None
+
+    accepted = False
+
+    async def deliver(*_args, **_kwargs):
+        if not accepted:
+            raise InboxDeliveryError("Provider unavailable")
+        return DeliveryReceipt("provider-message-1")
+
+    monkeypatch.setattr(inbox_channels_service, "get_credentials", credentials)
+    monkeypatch.setattr("app.integrations.inbox_channels.deliver", deliver)
+    headers, _org_id, _code = await _provision_gym(client)
+    conversation = (await _ingest(
+        client, headers, channel="whatsapp", handle="+923001234567"
+    )).json()
+    connected = True
+    reply = await client.post(
+        f"/api/v1/inbox/conversations/{conversation['id']}/reply",
+        headers={**headers, "Idempotency-Key": str(uuid.uuid4())},
+        json={"body": "We have a trial this evening."},
+    )
+    assert reply.status_code == 200, reply.text
+    assert reply.json()["messages"][-1]["delivery_status"] == "failed"
+    lead = (await client.get("/api/v1/leads", headers=headers)).json()[0]
+    assert lead["first_contact_logged"] is False
+
+    accepted = True
+    message_id = reply.json()["messages"][-1]["id"]
+    retried = await client.post(
+        f"/api/v1/inbox/conversations/{conversation['id']}/messages/{message_id}/retry",
+        headers=headers,
+    )
+    assert retried.status_code == 200, retried.text
+    lead = (await client.get("/api/v1/leads", headers=headers)).json()[0]
+    assert lead["first_contact_logged"] is True
+    assert lead["first_contacted_at"] is not None
+
+
+@pytest.mark.asyncio
 async def test_assign_and_status(client):
     headers, _org_id, _code = await _provision_gym(client)
     conv = (await _ingest(client, headers)).json()
