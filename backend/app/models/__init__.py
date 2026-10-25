@@ -31,6 +31,7 @@ from app.models.notification import Notification
 from app.models.nps import NpsSurvey
 from app.models.onboarding import OnboardingJourney, OnboardingMilestoneProgress
 from app.models.organization import Organization
+from app.models.operating_expense import OperatingExpense
 from app.models.payment import Payment
 from app.models.payroll import PayAdvance, PayrollEntry, PayrollRun
 from app.models.plan import MembershipPlan
@@ -86,6 +87,7 @@ __all__ = [
     "OnboardingJourney",
     "OnboardingMilestoneProgress",
     "Organization",
+    "OperatingExpense",
     "OrganizationMember",
     "PayAdvance",
     "Payment",

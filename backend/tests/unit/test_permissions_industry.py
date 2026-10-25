@@ -24,6 +24,9 @@ def test_gym_matches_base_matrix_for_every_role(role):
     assert role_has(role, Capability.VIEW_REVENUE_ANALYTICS, industry="gym") == (
         role in {Role.OWNER, Role.MANAGER}
     )
+    assert role_has(role, Capability.MANAGE_EXPENSES, industry="gym") == (
+        role in {Role.OWNER, Role.MANAGER}
+    )
 
 
 def test_vertical_capabilities_denied_for_gym():

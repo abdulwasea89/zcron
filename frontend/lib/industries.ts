@@ -78,7 +78,7 @@ export const INDUSTRIES: Record<IndustryKey, IndustryMeta> = {
     checklist: ["stripe", "offer", "enroll", "staff", "done"],
     modules: [
       "dashboard", "assistant", "analytics", "offers", "members", "leads", "referrals", "payments",
-      "cash", "receipts", "tasks", "classes", "attendance", "inbox",
+      "cash", "receipts", "expenses", "tasks", "classes", "attendance", "inbox",
       "visitors", "staff", "audit", "approvals", "payroll", "billing", "account", "settings",
     ],
     rolesLabels: ROLE_LABELS,
@@ -231,6 +231,7 @@ export const NAV_MODULE_BY_HREF: Record<string, string> = {
   "/app/referrals": "referrals",
   "/app/payments": "payments",
   "/app/cash": "cash",
+  "/app/expenses": "expenses",
   "/app/receipts": "receipts",
   "/app/tasks": "tasks",
   "/app/classes": "classes",

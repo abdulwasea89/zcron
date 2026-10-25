@@ -20,6 +20,7 @@ from app.api.v1.routes import (
     challenges,
     classes,
     data_subject_requests,
+    expenses,
     companies,
     front_desk,
     industries,
@@ -75,6 +76,7 @@ api_router.include_router(inbox_webhooks.router, prefix="/inbox", tags=["inbox-w
 api_router.include_router(front_desk.router, prefix="/front-desk", tags=["front-desk"])
 api_router.include_router(staff.router, prefix="/staff", tags=["staff"])
 api_router.include_router(payroll.router, prefix="/payroll", tags=["payroll"])
+api_router.include_router(expenses.router, prefix="/expenses", tags=["expenses"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(retention.router, prefix="/retention", tags=["retention"])
 api_router.include_router(ladder.router, prefix="/inactivity-ladder", tags=["inactivity-ladder"])

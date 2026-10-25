@@ -27,6 +27,7 @@ class Capability(str, Enum):
     BOOK_CLASSES = "book_classes"
     CHECK_IN_SHIFT = "check_in_shift"
     VIEW_REVENUE_ANALYTICS = "view_revenue_analytics"
+    MANAGE_EXPENSES = "manage_expenses"
     MANAGE_SETTINGS = "manage_settings"
     MANAGE_MEMBERS = "manage_members"
     ASSIGN_TRAINERS = "assign_trainers"
@@ -72,6 +73,7 @@ _MATRIX: dict[Capability, set[Role]] = {
     Capability.BOOK_CLASSES: {Role.MEMBER},
     Capability.CHECK_IN_SHIFT: {Role.TRAINER, Role.FRONT_DESK, Role.MANAGER},
     Capability.VIEW_REVENUE_ANALYTICS: {Role.OWNER, Role.MANAGER},
+    Capability.MANAGE_EXPENSES: {Role.OWNER, Role.MANAGER},
     Capability.MANAGE_SETTINGS: {Role.OWNER},
     Capability.MANAGE_MEMBERS: {Role.OWNER, Role.MANAGER},
     Capability.ASSIGN_TRAINERS: {Role.OWNER, Role.MANAGER},
