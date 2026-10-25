@@ -11,12 +11,13 @@ export function DashboardTaskList({
   attention,
 }: {
   tasks: (TaskOut & { dueLabel: string; overdue: boolean; dueToday: boolean })[];
-  attention: { label: string; value: string; href: string; tone: "neutral" | "success" | "danger" | "warning" | "info"; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[];
+  attention: { key: string; label: string; value: string; href: string; tone: "neutral" | "success" | "danger" | "warning" | "info"; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[];
 }) {
   const [openTasks, setOpenTasks] = useState(tasks);
   const [completing, setCompleting] = useState<string | null>(null);
   const [addingTaskFor, setAddingTaskFor] = useState<string | null>(null);
   const [taskCreatedFor, setTaskCreatedFor] = useState<Set<string>>(new Set());
+  const [hiddenAttention, setHiddenAttention] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
 
   async function complete(task: TaskOut) {
@@ -33,12 +34,12 @@ export function DashboardTaskList({
   }
 
   async function createFollowUpTask(item: (typeof attention)[number]) {
-    if (!item.member_id || addingTaskFor) return;
-    setAddingTaskFor(item.member_id);
+    if (addingTaskFor) return;
+    setAddingTaskFor(item.key);
     try {
       const created = await api.post<TaskOut>("/staff/tasks", {
-        title: `Follow up: ${item.personName || "member"}`,
-        description: `${item.label} (${item.value}). Open member: ${item.href}`,
+        title: (item.member_id ? `Follow up: ${item.personName || "member"}` : item.label).slice(0, 120),
+        description: `${item.label} (${item.value}). Open: ${item.href}`.slice(0, 500),
         deadline: new Date().toISOString(),
       });
       setOpenTasks((current) => [{
@@ -47,7 +48,7 @@ export function DashboardTaskList({
         overdue: false,
         dueToday: true,
       }, ...current]);
-      setTaskCreatedFor((current) => new Set(current).add(item.member_id!));
+      setTaskCreatedFor((current) => new Set(current).add(item.key));
       toast.success("Follow-up task added to the team queue.");
     } catch (error) {
       toast.error((error as ApiError).message || "Could not create follow-up task.");
@@ -69,7 +70,7 @@ export function DashboardTaskList({
       personName: undefined,
       task,
     })),
-    ...attention.filter((item) => !item.member_id || !taskCreatedFor.has(item.member_id)).map((item, index) => ({ ...item, id: `attention:${index}:${item.label}`, task: null })),
+    ...attention.filter((item) => !taskCreatedFor.has(item.key) && !hiddenAttention.has(item.key)).map((item) => ({ ...item, id: `attention:${item.key}`, task: null })),
   ].sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label));
   const visibleItems = showAll ? items : items.slice(0, 6);
 
@@ -85,12 +86,19 @@ export function DashboardTaskList({
                   {item.value}
                 </span>
                 {item.phone && <a href={`tel:${item.phone}`} className="text-brand no-underline hover:underline">Call</a>}
-                {item.member_id && <button
+                {!item.task && <button
                   type="button"
                   disabled={addingTaskFor !== null}
                   onClick={() => void createFollowUpTask(item)}
                   className="text-brand no-underline hover:underline disabled:opacity-50"
-                >{addingTaskFor === item.member_id ? "Adding…" : "Add task"}</button>}
+                  aria-label={`Create follow-up task for ${item.label}`}
+                >{addingTaskFor === item.key ? "Adding…" : "Add task"}</button>}
+                {!item.task && <button
+                  type="button"
+                  onClick={() => setHiddenAttention((current) => new Set(current).add(item.key))}
+                  className="text-muted-foreground no-underline hover:text-foreground hover:underline"
+                  aria-label={`Hide ${item.label} for this view`}
+                >Hide</button>}
                 {item.task && <button
                   type="button"
                   aria-label={`Mark ${item.task.title} complete`}

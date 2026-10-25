@@ -237,17 +237,18 @@ export default async function DashboardPage() {
       : "All set — your gym is fully configured.";
 
   // ── Needs attention ─────────────────────────────────────────────────────
-  const attention: { label: string; value: string; href: string; tone: Tone; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[] = [];
+  const attention: { key: string; label: string; value: string; href: string; tone: Tone; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[] = [];
   if (metrics?.pending_receipts) {
-    attention.push({ label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning", priority: 3 });
+    attention.push({ key: "pending-receipts", label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning", priority: 3 });
   }
   if (leadResponseSummary?.uncontacted) {
-    attention.push({ label: "Contact untouched leads", value: `${leadResponseSummary.uncontacted} · last 30 days`, href: "/app/leads", tone: "warning", priority: 0 });
+    attention.push({ key: "untouched-leads", label: "Contact untouched leads", value: `${leadResponseSummary.uncontacted} · last 30 days`, href: "/app/leads", tone: "warning", priority: 0 });
   }
   if (retentionSummary && retentionSummary.high + retentionSummary.medium > 0) {
     if (retentionRisks?.length) {
       for (const member of retentionRisks) {
         attention.push({
+          key: `at-risk:${member.member_id}`,
           label: `Follow up: ${member.name || "member"}`,
           value: `${member.band} risk`,
           href: `/app/members?member=${encodeURIComponent(member.member_id)}`,
@@ -259,6 +260,7 @@ export default async function DashboardPage() {
         });
       }
       attention.push({
+        key: "revenue-at-risk",
         label: "Estimated revenue at risk",
         value: money(retentionSummary.revenue_at_risk, currency),
         href: "/app/retention",
@@ -267,6 +269,7 @@ export default async function DashboardPage() {
       });
     } else {
       attention.push({
+        key: "at-risk-members",
         label: "Follow up on at-risk members",
         value: `${retentionSummary.high + retentionSummary.medium} members · ${money(retentionSummary.revenue_at_risk, currency)} at risk`,
         href: "/app/retention",
@@ -276,10 +279,10 @@ export default async function DashboardPage() {
     }
   }
   if (metrics?.pending_approvals) {
-    attention.push({ label: "Resolve member approvals", value: `${metrics.pending_approvals} waiting`, href: "/app/approvals", tone: "warning", priority: 4 });
+    attention.push({ key: "pending-approvals", label: "Resolve member approvals", value: `${metrics.pending_approvals} waiting`, href: "/app/approvals", tone: "warning", priority: 4 });
   }
   if (isOffice && (metrics?.outstanding_invoices ?? 0) > 0) {
-    attention.push({ label: "Follow up on invoices", value: money(metrics!.outstanding_invoices ?? 0, currency), href: "/app/invoices", tone: "danger", priority: 3 });
+    attention.push({ key: "outstanding-invoices", label: "Follow up on invoices", value: money(metrics!.outstanding_invoices ?? 0, currency), href: "/app/invoices", tone: "danger", priority: 3 });
   }
 
   // ── Quick actions ───────────────────────────────────────────────────────
