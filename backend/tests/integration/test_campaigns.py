@@ -224,13 +224,18 @@ async def test_sms_campaign_requires_consent_phone_and_uses_connected_transport(
     from app.services import campaign_service
 
     sent_to = []
+    callbacks = []
 
-    async def fake_sms(channel, recipient, body, credentials=None):
+    async def fake_sms(channel, recipient, body, credentials=None, *, status_callback=None):
         sent_to.append((channel.value, recipient, body))
+        callbacks.append(status_callback)
         return DeliveryReceipt("SM-test")
 
     monkeypatch.setattr(campaign_service, "deliver_inbox_message", fake_sms)
-    headers, _org_id, org_code, plan_id = await _provision_gym(client)
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "inbox_public_webhook_base_url", "https://api.example")
+    headers, org_id, org_code, plan_id = await _provision_gym(client)
     opted_in_id = await _signup_member(client, org_code, plan_id, headers, "smsin@camp.com")
     opted_out_id = await _signup_member(client, org_code, plan_id, headers, "smsout@camp.com")
     opted_in = await db.get(OrganizationMember, opted_in_id)
@@ -250,6 +255,12 @@ async def test_sms_campaign_requires_consent_phone_and_uses_connected_transport(
     assert result.status_code == 200, result.text
     assert result.json()["sent"] == 1
     assert sent_to == [("sms", "+15550000001", "Come back and save 20% this week.")]
+    assert callbacks == [f"https://api.example/api/v1/inbox/webhooks/{org_id}/twilio/status"]
+    delivery = (await db.execute(select(CampaignDelivery).where(
+        CampaignDelivery.organization_id == org_id,
+    ))).scalar_one()
+    assert delivery.provider_message_id == "SM-test"
+    assert delivery.delivery_status == "queued"
 
 
 @pytest.mark.asyncio

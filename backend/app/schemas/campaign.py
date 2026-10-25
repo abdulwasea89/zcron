@@ -66,6 +66,7 @@ class CampaignDeliveryOut(BaseModel):
     status: str
     channel: str
     delivered_at: datetime | None = None
+    delivery_status: str | None = None
     error: str | None = None
 
 

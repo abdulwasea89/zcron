@@ -73,3 +73,5 @@ class CampaignDelivery(UUIDModel, TimestampModel, table=True):
     channel: CampaignChannel = Field(default=CampaignChannel.IN_APP)
     delivered_at: datetime | None = None
     error: str | None = None
+    provider_message_id: str | None = Field(default=None, index=True)
+    delivery_status: str | None = None

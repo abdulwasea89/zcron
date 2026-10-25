@@ -18,7 +18,8 @@ from sqlmodel import select
 
 from app.api.deps import get_session
 from app.core.config import settings
-from app.core.constants import Channel
+from app.core.constants import CampaignDeliveryStatus, Channel
+from app.models.campaign import CampaignDelivery
 from app.models.organization import Organization
 from app.models.inbox import InboxConversation, InboxMessage
 from app.services import inbox_channels_service as channels
@@ -45,6 +46,20 @@ def _verify_twilio(request_url: str, signature: str, fields: dict[str, str], tok
 async def _check_org(session: AsyncSession, org_id: str) -> None:
     if await session.get(Organization, org_id) is None:
         raise HTTPException(status_code=404, detail="Workspace not found.")
+
+
+def _apply_campaign_sms_status(delivery: CampaignDelivery, status: str, error_code: str | None) -> None:
+    if delivery.delivery_status in {"delivered", "failed", "undelivered"}:
+        return
+    if status == "delivered":
+        delivery.delivery_status = "delivered"
+        delivery.error = None
+    elif status in {"failed", "undelivered"}:
+        delivery.delivery_status = "failed"
+        delivery.status = CampaignDeliveryStatus.FAILED
+        delivery.error = f"Twilio delivery failed{f' ({error_code})' if error_code else ''}."
+    elif status in {"sent", "queued", "accepted", "sending", "scheduled"}:
+        delivery.delivery_status = status
 
 
 @router.post("/webhooks/{org_id}/twilio")
@@ -151,6 +166,13 @@ async def twilio_status(org_id: str, request: Request, session: AsyncSession = D
                 message.delivery_status = "sent"
             message.delivery_error = fields.get("ErrorCode") if message.delivery_status == "failed" else None
             session.add(message)
+        campaign_delivery = (await session.execute(select(CampaignDelivery).where(
+            CampaignDelivery.organization_id == org_id,
+            CampaignDelivery.provider_message_id == sid,
+        ))).scalar_one_or_none()
+        if campaign_delivery:
+            _apply_campaign_sms_status(campaign_delivery, status, fields.get("ErrorCode"))
+            session.add(campaign_delivery)
     return {"ok": True}
 
 

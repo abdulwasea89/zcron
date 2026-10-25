@@ -316,10 +316,17 @@ async def _deliver_member(
 
     if wants_sms:
         from app.services.inbox_channels_service import get_credentials
+        from app.services.inbox_channels_service import webhook_url
 
         credentials = await get_credentials(session, org_id, "sms")
-        receipt = await deliver_inbox_message(Channel.SMS, member.phone.strip(), campaign.body, credentials)
+        callback = webhook_url(org_id, "sms")
+        receipt = await deliver_inbox_message(
+            Channel.SMS, member.phone.strip(), campaign.body, credentials,
+            status_callback=f"{callback}/status" if callback else None,
+        )
         sms_sent = bool(receipt.provider_message_id)
+        delivery.provider_message_id = receipt.provider_message_id
+        delivery.delivery_status = "queued" if sms_sent else "failed"
 
     if in_app_sent or email_sent or sms_sent:
         delivery.status = CampaignDeliveryStatus.SENT
@@ -333,6 +340,7 @@ async def _deliver_member(
     else:
         delivery.status = CampaignDeliveryStatus.SUPPRESSED
         delivery.channel = campaign.channel
+        delivery.delivery_status = "suppressed"
 
     return delivery
 
@@ -391,6 +399,7 @@ async def run_campaign(
         except Exception as exc:  # noqa: BLE001 - one bad recipient must not block the run
             delivery.status = CampaignDeliveryStatus.FAILED
             delivery.error = str(exc)[:300]
+            delivery.delivery_status = "failed"
         if delivery.status == CampaignDeliveryStatus.SENT:
             sent += 1
         elif delivery.status == CampaignDeliveryStatus.SUPPRESSED:
@@ -480,6 +489,7 @@ async def campaign_detail(
                 "status": d.status.value if hasattr(d.status, "value") else str(d.status),
                 "channel": d.channel.value if hasattr(d.channel, "value") else str(d.channel),
                 "delivered_at": d.delivered_at,
+                "delivery_status": d.delivery_status,
                 "error": d.error,
             }
         )
