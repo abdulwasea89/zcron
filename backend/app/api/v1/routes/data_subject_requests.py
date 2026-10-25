@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.api.deps import get_session, require_capability
+from app.api.deps import get_client_ip
+from app.core.constants import Role
 from app.core.permissions import Capability
 from app.core.security import now_utc
 from app.core.tenancy import TenantContext
@@ -239,9 +241,12 @@ async def update_member_marketing_consent(
 @router.get("/members/{member_id}/export")
 async def export_member_data(
     member_id: str,
+    request: Request,
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
     session: AsyncSession = Depends(get_session),
 ):
+    if ctx.role not in {Role.OWNER, Role.MANAGER}:
+        raise HTTPException(status_code=403, detail="Only owners and managers can export member data.")
     member = (await session.execute(select(OrganizationMember).where(
         OrganizationMember.id == member_id, OrganizationMember.organization_id == ctx.org_id,
         OrganizationMember.role == "member",
@@ -254,6 +259,8 @@ async def export_member_data(
     await record_audit(
         session, action="privacy.member_exported", organization_id=ctx.org_id,
         actor_user_id=ctx.user_id, entity_type="member", entity_id=member.id,
+        ip_address=get_client_ip(request), user_agent=request.headers.get("user-agent"),
+        metadata={"contains_sensitive_profile_data": True},
     )
     attendance = (await session.execute(select(Attendance).where(
         Attendance.organization_id == ctx.org_id, Attendance.member_id == member.id,

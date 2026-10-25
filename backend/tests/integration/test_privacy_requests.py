@@ -59,6 +59,23 @@ async def test_owner_can_record_review_export_and_resolve_member_data_request(cl
 
 
 @pytest.mark.asyncio
+async def test_front_desk_cannot_export_member_private_data(client, monkeypatch):
+    from app.services import organizations_service
+    from tests.integration.test_attendance import _provision_front_desk
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+    org_code, plan_id, headers, _org_id = await _provision(client)
+    email = "privacy-desk@example.com"
+    await _signup_and_pay(client, org_code, plan_id, email)
+    member_id = await _member_id(client, headers, email)
+    desk_headers = await _provision_front_desk(client, headers, org_code, "privacy-desk-staff@example.com")
+
+    response = await client.get(f"/api/v1/privacy/members/{member_id}/export", headers=desk_headers)
+    assert response.status_code == 403, response.text
+
+
+@pytest.mark.asyncio
 async def test_data_request_rejects_missing_resolution_note(client, monkeypatch):
     from app.services import organizations_service
     monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
