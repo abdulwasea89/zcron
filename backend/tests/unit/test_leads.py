@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from sqlmodel import select
 
 from app.models.organization import Organization
 from app.models.user import User
@@ -182,7 +183,7 @@ async def test_stage_history_transitions_legacy_and_rollback(db):
 async def test_referral_conversion_history(db, existing):
     from app.core.constants import MemberStatus, Role
     from app.models.membership import OrganizationMember
-    from app.models.referral import Referral, ReferralCode
+    from app.models.referral import Referral, ReferralCode, ReferralProgram, ReferralReward
     from app.services.referrals_service import qualify_referral_for_member
 
     org = Organization(name="Referral", org_code="REF-HISTORY")
@@ -196,7 +197,10 @@ async def test_referral_conversion_history(db, existing):
     db.add_all(members)
     await db.flush()
     code = ReferralCode(organization_id=org.id, member_id=members[0].id, code="REFTEST")
-    db.add(code)
+    db.add_all([code, ReferralProgram(
+        organization_id=org.id, enabled=True, reward_description="Gym credit",
+        reward_amount_minor=1250, reward_currency="PKR",
+    )])
     await db.flush()
     db.add(Referral(organization_id=org.id, referral_code_id=code.id,
                     referrer_member_id=members[0].id, referred_member_id=members[1].id))
@@ -207,9 +211,66 @@ async def test_referral_conversion_history(db, existing):
     await qualify_referral_for_member(db, org_id=org.id, member_id=members[1].id)
     await db.flush()
     await qualify_referral_for_member(db, org_id=org.id, member_id=members[1].id)
+    rewards = (await db.execute(select(ReferralReward).where(
+        ReferralReward.organization_id == org.id,
+    ))).scalars().all()
+    assert len(rewards) == 2
+    assert all(reward.amount_minor == 1250 and reward.currency == "PKR" for reward in rewards)
     lead = (await leads_service.list_leads(db, org_id=org.id))[0]
     history = await leads_service.stage_history(db, org_id=org.id, lead_id=lead.id)
     assert history["total"] == (2 if existing else 1)
     assert history["items"][0]["origin"] == "referral"
     assert history["items"][0]["stage"] == "joined"
     assert history["items"][0]["created"] is not existing
+
+
+@pytest.mark.asyncio
+async def test_fulfilling_referral_reward_posts_wallet_credit_once(db):
+    from app.core.constants import MemberStatus, Role
+    from app.models.member_credit import MemberCreditAccount, MemberCreditEntry
+    from app.models.membership import OrganizationMember
+    from app.models.referral import Referral, ReferralCode, ReferralReward
+    from app.services.referrals_service import fulfill_reward
+
+    org = Organization(name="Credit Referral", org_code="REF-CREDIT")
+    users = [User(email=f"ref-credit-{i}@example.com", hashed_password="unused") for i in range(2)]
+    db.add_all([org, *users])
+    await db.flush()
+    members = [OrganizationMember(
+        organization_id=org.id, user_id=user.id, role=Role.MEMBER,
+        member_status=MemberStatus.ACTIVE,
+    ) for user in users]
+    db.add_all(members)
+    await db.flush()
+    code = ReferralCode(organization_id=org.id, member_id=members[0].id, code="CREDIT")
+    referral = Referral(
+        organization_id=org.id, referral_code_id=code.id,
+        referrer_member_id=members[0].id, referred_member_id=members[1].id,
+        status="qualified", reward_description="Referral wallet credit",
+    )
+    db.add_all([code, referral])
+    await db.flush()
+    reward = ReferralReward(
+        organization_id=org.id, referral_id=referral.id,
+        recipient_member_id=members[0].id, description="Referral wallet credit",
+        amount_minor=2500, currency="PKR",
+    )
+    db.add(reward)
+    await db.flush()
+
+    result = await fulfill_reward(
+        db, org_id=org.id, reward_id=reward.id, actor_id=users[0].id,
+    )
+    with pytest.raises(HTTPException) as error:
+        await fulfill_reward(db, org_id=org.id, reward_id=reward.id, actor_id=users[0].id)
+    assert error.value.status_code == 409
+    account = (await db.execute(select(MemberCreditAccount).where(
+        MemberCreditAccount.organization_id == org.id,
+        MemberCreditAccount.member_id == members[0].id,
+    ))).scalar_one()
+    entries = (await db.execute(select(MemberCreditEntry).where(
+        MemberCreditEntry.reference == f"referral-reward:{reward.id}",
+    ))).scalars().all()
+    assert result.status == "fulfilled"
+    assert account.balance_minor == 2500
+    assert len(entries) == 1 and entries[0].amount_minor == 2500

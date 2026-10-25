@@ -15,6 +15,8 @@ class ReferralProgram(UUIDModel, TimestampModel, table=True):
     organization_id: str = Field(index=True, unique=True, foreign_key="organizations.id")
     enabled: bool = False
     reward_description: str = "A referral reward"
+    reward_amount_minor: int = 0
+    reward_currency: str = "USD"
     updated_by: str | None = Field(default=None, foreign_key="users.id")
 
 
@@ -55,6 +57,8 @@ class ReferralReward(UUIDModel, TimestampModel, table=True):
     referral_id: str = Field(index=True, foreign_key="referrals.id")
     recipient_member_id: str = Field(index=True, foreign_key="organization_members.id")
     description: str
+    amount_minor: int = 0
+    currency: str = "USD"
     status: str = Field(default="earned", index=True)
     earned_at: datetime = Field(default_factory=utcnow)
     fulfilled_at: datetime | None = None

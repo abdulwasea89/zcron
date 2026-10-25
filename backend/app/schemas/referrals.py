@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
@@ -10,11 +11,14 @@ from pydantic import BaseModel, Field
 class ReferralProgramUpdate(BaseModel):
     enabled: bool
     reward_description: str = Field(min_length=3, max_length=200)
+    reward_amount: Decimal = Field(default=Decimal("0.00"), ge=0, le=100000, max_digits=8, decimal_places=2)
 
 
 class ReferralProgramOut(BaseModel):
     enabled: bool
     reward_description: str
+    reward_amount: Decimal = Decimal("0.00")
+    reward_currency: str = "USD"
 
 
 class ReferralAdminItem(BaseModel):
@@ -59,3 +63,5 @@ class ReferralRewardOut(BaseModel):
     status: str
     earned_at: datetime
     fulfilled_at: datetime | None
+    amount_minor: int = 0
+    currency: str = "USD"

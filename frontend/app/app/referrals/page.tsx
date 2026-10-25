@@ -12,8 +12,8 @@ import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTit
 import { useModuleGate } from "@/hooks/useModuleGate";
 import { api, ApiError } from "@/lib/api";
 
-type Program = { enabled: boolean; reward_description: string };
-type Reward = { id: string; recipient_member_id: string; description: string; status: string };
+type Program = { enabled: boolean; reward_description: string; reward_amount: string; reward_currency: string };
+type Reward = { id: string; recipient_member_id: string; description: string; status: string; amount_minor: number; currency: string };
 type Referral = {
   id: string;
   referrer_name: string;
@@ -30,7 +30,7 @@ type Overview = { program: Program; referrals: Referral[]; pending_rewards: numb
 export default function ReferralsPage() {
   const { ready } = useModuleGate("referrals");
   const [overview, setOverview] = useState<Overview | null>(null);
-  const [program, setProgram] = useState<Program>({ enabled: false, reward_description: "A referral reward" });
+  const [program, setProgram] = useState<Program>({ enabled: false, reward_description: "A referral reward", reward_amount: "0.00", reward_currency: "USD" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -63,10 +63,12 @@ export default function ReferralsPage() {
   }
 
   async function fulfill(rewardId: string) {
+    const reward = overview?.referrals.flatMap((referral) => referral.rewards).find((item) => item.id === rewardId);
+    if (reward?.amount_minor && !window.confirm("Issue " + reward.currency + " " + (reward.amount_minor / 100).toFixed(2) + " as member credit?")) return;
     setBusy(true); setError(""); setNotice("");
     try {
       await api.post(`/referrals/rewards/${rewardId}/fulfill`, {}, { "Idempotency-Key": crypto.randomUUID() });
-      await load(); setNotice("Reward marked as delivered.");
+      await load(); setNotice("Referral reward fulfilled; any configured wallet credit was issued.");
     } catch (e) { setError((e as ApiError).message); }
     finally { setBusy(false); }
   }
@@ -97,11 +99,12 @@ export default function ReferralsPage() {
           <SheetBody>
       <form onSubmit={saveProgram} className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><h2 className="font-semibold">Program setup</h2><p className="mt-1 text-sm text-muted-foreground">Each successful referral earns the same reward for the member who invited and the new member. Your team records delivery here.</p></div>
+          <div><h2 className="font-semibold">Program setup</h2><p className="mt-1 text-sm text-muted-foreground">Each paid referral earns the same reward for both members. Your team fulfills each reward here.</p></div>
           <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={program.enabled} onChange={(e) => setProgram({ ...program, enabled: e.target.checked })} />Program active</label>
         </div>
         <label className="mt-5 block max-w-xl text-sm font-medium">Reward description<Input className="mt-2" value={program.reward_description} maxLength={200} onChange={(e) => setProgram({ ...program, reward_description: e.target.value })} placeholder="A free class for both members" required minLength={3} /></label>
-        <p className="mt-2 text-xs text-muted-foreground">Example: “One free class.” The owner confirms and records when the reward has been delivered.</p>
+        <label className="mt-4 block max-w-xs text-sm font-medium">Wallet credit per member<Input className="mt-2" type="number" min="0" max="100000" step="0.01" value={program.reward_amount} onChange={(e) => setProgram({ ...program, reward_amount: e.target.value })} /></label>
+        <p className="mt-2 text-xs text-muted-foreground">Currency: {program.reward_currency}. Enter 0 for a non-cash reward. Positive amounts are issued as wallet credit only when an owner or manager fulfills each reward.</p>
         <div className="flex justify-end"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save program"}</Button></div>
       </form>
           </SheetBody>
@@ -142,8 +145,8 @@ export default function ReferralsPage() {
             <td className={`${TD} ${CELL_FIRST} py-3`}><p className="text-[13px] font-medium text-foreground">{referral.referrer_name}</p><p className="text-[11px] text-muted-foreground">{referral.referrer_email}</p></td>
             <td className={`${TD} ${CELL} py-3`}><p className="text-[13px] font-medium text-foreground">{referral.referred_name}</p><p className="text-[11px] text-muted-foreground">{referral.referred_email || "Signup started"}</p></td>
             <td className={`${TD} ${CELL} py-3`}><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${referral.status === "qualified" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{referral.status === "qualified" ? "Joined and paid" : "Awaiting payment"}</span></td>
-            <td className={`${TD} ${CELL} py-3`}><div className="flex flex-wrap gap-2">{referral.rewards.length ? referral.rewards.map((reward) => <span key={reward.id} className="text-[12px] text-muted-foreground">{reward.description} · {reward.status === "fulfilled" ? "Delivered" : "Pending"}</span>) : <span className="text-[12px] text-muted-foreground">Unlocks after payment</span>}</div></td>
-            <td className={`${TD} ${CELL_LAST} py-3`}>{referral.rewards.some((reward) => reward.status !== "fulfilled") && <Button type="button" variant="secondary" disabled={busy} onClick={() => { const reward = referral.rewards.find((item) => item.status !== "fulfilled"); if (reward) void fulfill(reward.id); }}>Mark delivered</Button>}</td>
+            <td className={`${TD} ${CELL} py-3`}><div className="flex flex-wrap gap-2">{referral.rewards.length ? referral.rewards.map((reward) => <span key={reward.id} className="text-[12px] text-muted-foreground">{reward.description}{reward.amount_minor > 0 && <> · {reward.currency} {(reward.amount_minor / 100).toFixed(2)}</>} · {reward.status === "fulfilled" ? reward.amount_minor > 0 ? "Credit issued" : "Delivered" : "Pending"}</span>) : <span className="text-[12px] text-muted-foreground">Unlocks after payment</span>}</div></td>
+            <td className={`${TD} ${CELL_LAST} py-3`}>{referral.rewards.some((reward) => reward.status !== "fulfilled") && <Button type="button" variant="secondary" disabled={busy} onClick={() => { const reward = referral.rewards.find((item) => item.status !== "fulfilled"); if (reward) void fulfill(reward.id); }}>{referral.rewards.find((reward) => reward.status !== "fulfilled")?.amount_minor ? "Issue wallet credit" : "Mark delivered"}</Button>}</td>
           </tr>)}</tbody>
         </table>
         {filteredReferrals.length === 0 && <EmptyState

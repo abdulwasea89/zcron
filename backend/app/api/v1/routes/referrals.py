@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,8 @@ async def get_program(
     return ReferralProgramOut(
         enabled=bool(program and program.enabled),
         reward_description=program.reward_description if program else "A referral reward",
+        reward_amount=Decimal(program.reward_amount_minor if program else 0) / 100,
+        reward_currency=program.reward_currency if program else "USD",
     )
 
 
@@ -54,7 +57,11 @@ async def update_program(
     program = await referrals_service.set_program(
         session, org_id=ctx.org_id, actor_id=ctx.user_id, data=data,
     )
-    result = ReferralProgramOut(enabled=program.enabled, reward_description=program.reward_description)
+    result = ReferralProgramOut(
+        enabled=program.enabled, reward_description=program.reward_description,
+        reward_amount=Decimal(program.reward_amount_minor) / 100,
+        reward_currency=program.reward_currency,
+    )
     await idempotency_service.complete(session, claim.record, code=200, body=result.model_dump_json())
     return result
 
@@ -96,6 +103,7 @@ async def fulfill_reward(
     result = ReferralRewardOut(
         id=reward.id, description=reward.description, status=reward.status,
         earned_at=reward.earned_at, fulfilled_at=reward.fulfilled_at,
+        amount_minor=reward.amount_minor, currency=reward.currency,
     )
     await idempotency_service.complete(session, claim.record, code=200, body=result.model_dump_json())
     return result

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,10 +41,14 @@ async def set_program(session: AsyncSession, *, org_id: str, actor_id: str,
     program = await program_for_org(session, org_id=org_id)
     if program is None:
         program = ReferralProgram(organization_id=org_id, updated_by=actor_id,
-                                  enabled=data.enabled, reward_description=data.reward_description.strip())
+                                  enabled=data.enabled, reward_description=data.reward_description.strip(),
+                                  reward_amount_minor=int(data.reward_amount * 100),
+                                  reward_currency=organization.default_currency.upper() if organization else "USD")
     else:
         program.enabled = data.enabled
         program.reward_description = data.reward_description.strip()
+        program.reward_amount_minor = int(data.reward_amount * 100)
+        program.reward_currency = organization.default_currency.upper() if organization else program.reward_currency
         program.updated_by = actor_id
         program.updated_at = now_utc()
     session.add(program)
@@ -51,7 +56,9 @@ async def set_program(session: AsyncSession, *, org_id: str, actor_id: str,
     await record_audit(session, action="referral.program_updated", organization_id=org_id,
                        actor_user_id=actor_id, entity_type="referral_program", entity_id=program.id,
                        new_values={"enabled": program.enabled,
-                                   "reward_description": program.reward_description})
+                                   "reward_description": program.reward_description,
+                                   "reward_amount_minor": program.reward_amount_minor,
+                                   "reward_currency": program.reward_currency})
     return program
 
 
@@ -104,12 +111,15 @@ async def qualify_referral_for_member(
     referral.status = "qualified"
     referral.qualified_at = now_utc()
     session.add(referral)
+    program = await program_for_org(session, org_id=org_id)
     for recipient_id in {referral.referrer_member_id, referral.referred_member_id}:
         reward = ReferralReward(
             organization_id=org_id,
             referral_id=referral.id,
             recipient_member_id=recipient_id,
             description=referral.reward_description,
+            amount_minor=program.reward_amount_minor if program else 0,
+            currency=program.reward_currency if program else "USD",
         )
         session.add(reward)
 
@@ -258,13 +268,16 @@ async def admin_overview(session: AsyncSession, *, org_id: str, program: Referra
             "reward_description": referral.reward_description,
             "qualified_at": referral.qualified_at,
             "rewards": [{"id": reward.id, "recipient_member_id": reward.recipient_member_id,
-                         "description": reward.description, "status": reward.status}
+                         "description": reward.description, "status": reward.status,
+                         "amount_minor": reward.amount_minor, "currency": reward.currency}
                         for reward in reward_rows],
         })
     return {
         "program": {
             "enabled": bool(program and program.enabled),
             "reward_description": program.reward_description if program else "A referral reward",
+            "reward_amount": Decimal(program.reward_amount_minor if program else 0) / 100,
+            "reward_currency": program.reward_currency if program else "USD",
         },
         "referrals": result,
         "pending_rewards": pending_rewards,
@@ -274,16 +287,25 @@ async def admin_overview(session: AsyncSession, *, org_id: str, program: Referra
 
 async def fulfill_reward(session: AsyncSession, *, org_id: str, reward_id: str,
                          actor_id: str) -> ReferralReward:
-    reward = await session.get(ReferralReward, reward_id)
+    reward = await session.get(ReferralReward, reward_id, with_for_update=True)
     if reward is None or reward.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Referral reward not found.")
     if reward.status == "fulfilled":
         raise HTTPException(status_code=409, detail="Referral reward has already been fulfilled.")
+    if reward.amount_minor > 0:
+        from app.services.member_vault_service import post
+
+        await post(
+            session, org_id=org_id, member_id=reward.recipient_member_id,
+            currency=reward.currency, amount=reward.amount_minor,
+            reference=f"referral-reward:{reward.id}", description=reward.description,
+        )
     reward.status = "fulfilled"
     reward.fulfilled_at = now_utc()
     reward.fulfilled_by = actor_id
     session.add(reward)
     await record_audit(session, action="referral.reward_fulfilled", organization_id=org_id,
                        actor_user_id=actor_id, entity_type="referral_reward", entity_id=reward.id,
-                       new_values={"description": reward.description})
+                       new_values={"description": reward.description},
+                       metadata={"amount_minor": reward.amount_minor, "currency": reward.currency})
     return reward
