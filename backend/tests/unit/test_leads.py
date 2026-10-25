@@ -182,6 +182,7 @@ async def test_stage_history_transitions_legacy_and_rollback(db):
 @pytest.mark.parametrize("existing", [True, False])
 async def test_referral_conversion_history(db, existing):
     from app.core.constants import MemberStatus, Role
+    from app.models.member_credit import MemberCreditAccount, MemberCreditEntry
     from app.models.membership import OrganizationMember
     from app.models.referral import Referral, ReferralCode, ReferralProgram, ReferralReward
     from app.services.referrals_service import qualify_referral_for_member
@@ -216,6 +217,17 @@ async def test_referral_conversion_history(db, existing):
     ))).scalars().all()
     assert len(rewards) == 2
     assert all(reward.amount_minor == 1250 and reward.currency == "PKR" for reward in rewards)
+    assert all(reward.status == "fulfilled" and reward.fulfilled_at for reward in rewards)
+    credits = (await db.execute(select(MemberCreditAccount).where(
+        MemberCreditAccount.organization_id == org.id,
+    ))).scalars().all()
+    assert {credit.member_id: credit.balance_minor for credit in credits} == {
+        member.id: 1250 for member in members
+    }
+    entries = (await db.execute(select(MemberCreditEntry).where(
+        MemberCreditEntry.reference.in_([f"referral-reward:{reward.id}" for reward in rewards]),
+    ))).scalars().all()
+    assert len(entries) == 2
     lead = (await leads_service.list_leads(db, org_id=org.id))[0]
     history = await leads_service.stage_history(db, org_id=org.id, lead_id=lead.id)
     assert history["total"] == (2 if existing else 1)

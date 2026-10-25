@@ -79,7 +79,9 @@ export default function ReferralsPage() {
   const filteredReferrals = overview.referrals.filter((referral) => {
     const matchesFilter = referralFilter === "all" ||
       (referralFilter === "qualified" ? referral.status === "qualified" : referral.status !== "qualified");
-    const matchesReward = rewardFilter === NONE || referral.rewards.some((reward) => reward.status === rewardFilter);
+    const matchesReward = rewardFilter === NONE || referral.rewards.some((reward) =>
+      rewardFilter === "pending" ? reward.status === "earned" : reward.status === rewardFilter,
+    );
     const matchesSignup = signupFilter === NONE || Boolean(referral.referred_email) === (signupFilter === "complete");
     return matchesFilter && matchesReward && matchesSignup && `${referral.referrer_name} ${referral.referrer_email} ${referral.referred_name} ${referral.referred_email} ${referral.status}`
       .toLowerCase().includes(search.trim().toLowerCase());
@@ -99,7 +101,7 @@ export default function ReferralsPage() {
           <SheetBody>
       <form onSubmit={saveProgram} className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><h2 className="font-semibold">Program setup</h2><p className="mt-1 text-sm text-muted-foreground">Each paid referral earns the same reward for both members. Your team fulfills each reward here.</p></div>
+          <div><h2 className="font-semibold">Program setup</h2><p className="mt-1 text-sm text-muted-foreground">A configured wallet credit is issued automatically to both members after a paid referral. Non-cash rewards need staff confirmation.</p></div>
           <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={program.enabled} onChange={(e) => setProgram({ ...program, enabled: e.target.checked })} />Program active</label>
         </div>
         <label className="mt-5 block max-w-xl text-sm font-medium">Reward description<Input className="mt-2" value={program.reward_description} maxLength={200} onChange={(e) => setProgram({ ...program, reward_description: e.target.value })} placeholder="A free class for both members" required minLength={3} /></label>

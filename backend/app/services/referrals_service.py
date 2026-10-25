@@ -103,7 +103,7 @@ async def qualify_referral_for_member(
         select(Referral).where(
             Referral.organization_id == org_id,
             Referral.referred_member_id == member_id,
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
     if referral is None or referral.status == "qualified":
         return referral
@@ -121,6 +121,23 @@ async def qualify_referral_for_member(
             amount_minor=program.reward_amount_minor if program else 0,
             currency=program.reward_currency if program else "USD",
         )
+        if reward.amount_minor > 0:
+            from app.services.member_vault_service import post
+
+            await post(
+                session, org_id=org_id, member_id=recipient_id,
+                currency=reward.currency, amount=reward.amount_minor,
+                reference=f"referral-reward:{reward.id}", description=reward.description,
+            )
+            reward.status = "fulfilled"
+            reward.fulfilled_at = now_utc()
+            await record_audit(
+                session, action="referral.reward_fulfilled", organization_id=org_id,
+                actor_user_id=None, entity_type="referral_reward", entity_id=reward.id,
+                new_values={"description": reward.description},
+                metadata={"amount_minor": reward.amount_minor, "currency": reward.currency,
+                          "automatic": True},
+            )
         session.add(reward)
 
     member = await session.get(OrganizationMember, member_id)
