@@ -222,6 +222,16 @@ def lead_followups_task() -> dict:
     return _run(_for_each_org(_per_org))
 
 
+@celery_app.task(name="classes.trainer_reminders")
+def class_trainer_reminders_task() -> dict:
+    from app.workers.class_reminders import run_class_reminders
+
+    async def _per_org(session, org_id):
+        return await run_class_reminders(session, org_id=org_id)
+
+    return _run(_for_each_org(_per_org))
+
+
 @celery_app.task(name="owner.daily_briefing")
 def daily_owner_briefing_task() -> dict:
     from app.workers.daily_briefing import run_daily_owner_brief
@@ -285,6 +295,10 @@ celery_app.conf.beat_schedule = {
     "lead-followups": {
         "task": "leads.followups",
         "schedule": 300.0,  # every 5 minutes: notify staff about due lead touches
+    },
+    "class-trainer-reminders": {
+        "task": "classes.trainer_reminders",
+        "schedule": crontab(minute="*/15"),
     },
     "daily-owner-briefing": {
         "task": "owner.daily_briefing",
