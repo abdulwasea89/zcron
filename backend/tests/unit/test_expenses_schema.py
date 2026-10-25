@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.expenses import ExpenseCreate, ExpenseVoid
+from app.api.v1.routes.expenses import _csv_cell
 
 
 def test_expense_schema_normalizes_text_and_currency():
@@ -37,3 +38,12 @@ def test_expense_schema_rejects_blank_description_and_bad_currency():
 def test_expense_void_requires_reason():
     with pytest.raises(ValidationError):
         ExpenseVoid(reason="  ")
+
+
+@pytest.mark.parametrize("value", ["=1+1", "  +SUM(A1:A2)", "-cmd", "@value"])
+def test_expense_csv_neutralizes_spreadsheet_formulas(value):
+    assert _csv_cell(value).startswith("'")
+
+
+def test_expense_csv_preserves_normal_text():
+    assert _csv_cell("Rent / October") == "Rent / October"

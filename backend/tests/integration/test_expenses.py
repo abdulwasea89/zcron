@@ -10,7 +10,7 @@ async def test_expense_ledger_is_idempotent_tenant_scoped_and_voidable(client):
     owner_headers, *_ = await _provision_gym(client, owner_email="expense-owner@g.com")
     other_headers, *_ = await _provision_gym(client, owner_email="other-expense-owner@g.com")
     payload = {
-        "category": "utilities", "description": "October electricity", "vendor": "Power Co",
+        "category": "utilities", "description": "October electricity", "vendor": "=SUM(1,1)",
         "amount": "120.35", "currency": "USD", "incurred_on": "2026-10-25",
     }
     headers = {**owner_headers, "Idempotency-Key": "expense-create-1"}
@@ -43,3 +43,9 @@ async def test_expense_ledger_is_idempotent_tenant_scoped_and_voidable(client):
     after_void = await client.get("/api/v1/expenses", headers=owner_headers)
     assert after_void.json()["totals_by_currency"] == {}
     assert after_void.json()["items"][0]["voided_at"]
+
+    export = await client.get("/api/v1/expenses/export.csv", headers=owner_headers)
+    assert export.status_code == 200, export.text
+    assert "text/csv" in export.headers["content-type"]
+    assert "'=SUM(1,1)" in export.text
+    assert ",voided," in export.text

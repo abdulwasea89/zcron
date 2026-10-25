@@ -60,6 +60,14 @@ export default function ExpensesPage() {
     } catch (e) { setError((e as ApiError).message); }
   }
 
+  function exportCsv() {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    const query = params.toString();
+    window.location.assign(`/api/download/expenses/export.csv${query ? `?${query}` : ""}`);
+  }
+
   return <>
     <PageHeader title="Expenses" subtitle="Record and review gym operating costs. Totals stay separate by currency." />
     {error && <div className="mb-4"><Alert>{error}</Alert></div>}
@@ -82,6 +90,7 @@ export default function ExpensesPage() {
       <label className="grid gap-1 text-xs text-muted-foreground">From<Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></label>
       <label className="grid gap-1 text-xs text-muted-foreground">To<Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></label>
       <Button type="submit" variant="secondary">Apply dates</Button>
+      <Button type="button" variant="secondary" onClick={exportCsv}>Download CSV</Button>
       {(dateFrom || dateTo) && <Button type="button" variant="ghost" onClick={() => { setDateFrom(""); setDateTo(""); void load("", ""); }}>Clear</Button>}
     </form>
     {data === null ? <Spinner label="Loading expenses…" /> : data.items.length === 0 ? <EmptyState title="No expenses recorded" hint="Add rent, utilities, equipment, and other operating costs above." /> :

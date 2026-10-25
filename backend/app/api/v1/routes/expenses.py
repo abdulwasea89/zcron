@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -22,6 +25,13 @@ from app.services import idempotency_service
 from app.services.audit_service import record_audit
 
 router = APIRouter()
+
+
+def _csv_cell(value: object) -> str:
+    text = "" if value is None else str(value)
+    if text.lstrip(" \t\r\n")[:1] in {"=", "+", "-", "@"}:
+        return f"'{text}"
+    return text
 
 
 @router.get("", response_model=ExpenseListOut)
@@ -61,6 +71,53 @@ async def list_expenses(
         items=rows,
         totals_by_currency={currency: format(amount or Decimal("0.00"), ".2f")
                             for currency, amount in sorted(totals_rows)},
+    )
+
+
+@router.get("/export.csv")
+async def export_expenses(
+    request: Request,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_EXPENSES)),
+    session: AsyncSession = Depends(get_session),
+):
+    if date_from and date_to and date_to < date_from:
+        raise HTTPException(status_code=422, detail="End date must be on or after start date.")
+    statement = select(OperatingExpense).where(OperatingExpense.organization_id == ctx.org_id)
+    if date_from:
+        statement = statement.where(OperatingExpense.incurred_on >= date_from)
+    if date_to:
+        statement = statement.where(OperatingExpense.incurred_on <= date_to)
+    statement = statement.order_by(OperatingExpense.incurred_on, OperatingExpense.created_at)
+    result = await session.stream_scalars(statement.execution_options(yield_per=500))
+    await record_audit(
+        session, action="expense.exported", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="operating_expense",
+        ip_address=get_client_ip(request), user_agent=request.headers.get("user-agent"),
+        metadata={"date_from": str(date_from) if date_from else None,
+                  "date_to": str(date_to) if date_to else None},
+    )
+    await session.flush()
+
+    async def rows():
+        buffer = io.StringIO(newline="")
+        writer = csv.writer(buffer)
+        writer.writerow(["Date", "Category", "Description", "Vendor", "Amount", "Currency", "Status", "Void reason"])
+        yield buffer.getvalue()
+        async for expense in result:
+            buffer = io.StringIO(newline="")
+            writer = csv.writer(buffer)
+            writer.writerow([_csv_cell(value) for value in (
+                expense.incurred_on, expense.category, expense.description, expense.vendor,
+                format(expense.amount, ".2f"), expense.currency,
+                "voided" if expense.voided_at else "recorded", expense.void_reason,
+            )])
+            yield buffer.getvalue()
+
+    return StreamingResponse(
+        rows(), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="expense-ledger.csv"'},
     )
 
 
