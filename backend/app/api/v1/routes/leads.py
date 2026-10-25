@@ -24,6 +24,7 @@ from app.schemas.leads import (
     LeadCreate,
     LeadFollowUpOut,
     LeadFollowUpUpdate,
+    LeadFirstContactIn,
     LeadHistoryOut,
     LeadMissedCallOut,
     LeadOut,
@@ -135,6 +136,29 @@ async def log_missed_call(
         idempotency_key=idempotency_key or "",
     )
     output = LeadMissedCallOut(**result)
+    await idempotency_service.complete(session, claim.record, code=200, body=output.model_dump_json())
+    return output
+
+
+@router.post("/{lead_id}/first-contact", response_model=LeadOut)
+async def log_first_contact(
+    lead_id: str,
+    data: LeadFirstContactIn,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    org: Organization = Depends(require_writable_org),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    claim = await idempotency_service.claim(
+        session, key=idempotency_key or "", endpoint=f"leads.first_contact:{lead_id}",
+        body=data.model_dump(mode="json"), organization_id=ctx.org_id, user_id=ctx.user_id,
+    )
+    if not claim.claimed:
+        return LeadOut.model_validate_json(claim.cached_response or "{}")
+    lead = await leads_service.log_first_contact(
+        session, org_id=ctx.org_id, lead_id=lead_id, actor_id=ctx.user_id, method=data.method,
+    )
+    output = LeadOut.model_validate(lead)
     await idempotency_service.complete(session, claim.record, code=200, body=output.model_dump_json())
     return output
 

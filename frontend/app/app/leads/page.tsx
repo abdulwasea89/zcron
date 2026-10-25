@@ -32,6 +32,8 @@ type Lead = {
   sms_followup_consent: boolean;
   sms_followup_consent_at: string | null;
   lost_reason: string | null;
+  first_contacted_at: string | null;
+  first_contact_logged: boolean;
   lead_score: number;
   lead_score_factors: string[];
   created_at: string;
@@ -113,6 +115,7 @@ export default function LeadsPage() {
   const [inquiryLink, setInquiryLink] = useState("");
   const [showLostReason, setShowLostReason] = useState(false);
   const [lostReason, setLostReason] = useState("no_response");
+  const [contactMethod, setContactMethod] = useState("call");
   const [profile, setProfile] = useState({ name: "", email: "", phone: "", contact_handle: "", source: "staff_entered", goal: "", budget: "", preferred_times: "", preferences: "", email_followup_consent: false, sms_followup_consent: false });
 
   const load = useCallback(async (preferredId?: string) => {
@@ -235,6 +238,17 @@ export default function LeadsPage() {
     finally { setBusy(false); }
   }
 
+  async function logFirstContact() {
+    if (!selected) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await api.post(`/leads/${selected.id}/first-contact`, { method: contactMethod }, { "Idempotency-Key": crypto.randomUUID() });
+      await load(selected.id);
+      setNotice("First outreach attempt logged. Delivery is not verified by this record.");
+    } catch (e) { setError((e as ApiError).message); }
+    finally { setBusy(false); }
+  }
+
   if (!ready) return <div className="p-8"><Spinner /></div>;
 
   return (
@@ -242,9 +256,9 @@ export default function LeadsPage() {
       <PageHeader title="Leads" subtitle="Track prospects from first contact to membership."
         action={<div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={!orgCode} onClick={() => void copyInquiryLink()}>Copy inquiry form link</Button><Button onClick={() => { setShowCreate(true); setError(""); }}>+ New lead</Button></div>} />
       {speedReport && <section aria-labelledby="lead-speed-title" className="mb-5 border border-border bg-background">
-        <div className="border-b border-border px-4 py-3"><h2 id="lead-speed-title" className="text-sm font-semibold">Speed to lead · last 30 days</h2><p className="mt-1 text-xs text-muted-foreground">Time from lead creation until your team first marks it Contacted.</p></div>
+        <div className="border-b border-border px-4 py-3"><h2 id="lead-speed-title" className="text-sm font-semibold">Speed to lead · last 30 days</h2><p className="mt-1 text-xs text-muted-foreground">Based on staff-logged first outreach attempts; delivery is not verified.</p></div>
         <dl className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
-          {[["New leads", speedReport.leads], ["Contacted", `${speedReport.response_rate}% · ${speedReport.contacted}`], ["Median first contact", responseTime(speedReport.median_minutes)], ["Not contacted", speedReport.uncontacted]].map(([label, value]) => <div key={String(label)} className="bg-background px-4 py-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-foreground">{value}</dd></div>)}
+          {[["New leads", speedReport.leads], ["Outreach logged", `${speedReport.response_rate}% · ${speedReport.contacted}`], ["Median time to outreach", responseTime(speedReport.median_minutes)], ["No outreach logged", speedReport.uncontacted]].map(([label, value]) => <div key={String(label)} className="bg-background px-4 py-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-foreground">{value}</dd></div>)}
         </dl>
         {speedReport.by_source.length > 1 && <div className="overflow-x-auto px-4 py-3"><table className="w-full text-left text-xs"><caption className="sr-only">Lead response time by source</caption><thead className="text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="py-2 pr-4 font-medium">Source</th><th className="py-2 pr-4 font-medium">Leads</th><th className="py-2 pr-4 font-medium">Contact rate</th><th className="py-2 font-medium">Median</th></tr></thead><tbody className="divide-y divide-border">{speedReport.by_source.map((source) => <tr key={source.source}><th scope="row" className="py-2 pr-4 font-medium text-foreground">{SOURCES.find(([key]) => key === source.source)?.[1] ?? source.source}</th><td className="py-2 pr-4 tabular-nums text-foreground">{source.leads}</td><td className="py-2 pr-4 tabular-nums text-foreground">{source.contacted} ({source.response_rate}%)</td><td className="py-2 tabular-nums text-foreground">{responseTime(source.median_minutes)}</td></tr>)}</tbody></table></div>}
         {speedReport.by_staff.length > 0 && <div className="overflow-x-auto border-t border-border px-4 py-3"><table className="w-full text-left text-xs"><caption className="mb-1 text-left text-xs font-semibold text-foreground">Lead follow-up by staff</caption><thead className="text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="py-2 pr-4 font-medium">Staff member</th><th className="py-2 pr-4 font-medium">First contacts</th><th className="py-2 pr-4 font-medium">Median response</th><th className="py-2 pr-4 font-medium">Joins</th><th className="py-2 font-medium">Join rate</th></tr></thead><tbody className="divide-y divide-border">{speedReport.by_staff.map((staff, index) => <tr key={`${staff.staff_name}-${index}`}><th scope="row" className="py-2 pr-4 font-medium text-foreground">{staff.staff_name}</th><td className="py-2 pr-4 tabular-nums text-foreground">{staff.contacted}</td><td className="py-2 pr-4 tabular-nums text-foreground">{responseTime(staff.median_minutes)}</td><td className="py-2 pr-4 tabular-nums text-foreground">{staff.conversions}</td><td className="py-2 tabular-nums text-foreground">{staff.conversion_rate}%</td></tr>)}</tbody></table></div>}
@@ -329,6 +343,7 @@ export default function LeadsPage() {
               <label className="grid gap-1 text-xs font-medium text-muted-foreground">Pipeline stage<select className="h-10 min-w-40 rounded-lg border border-input bg-background px-3 text-sm text-foreground" value={selected.stage} disabled={busy} onChange={(e) => void changeStage(e.target.value)}>{STAGES.map((stage) => <option key={stage} value={stage}>{STAGE_LABEL[stage]}</option>)}</select></label>
             </div>
             <section aria-label="Lead qualification score" className="mb-5 rounded-xl border border-border bg-background p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Lead score</h3><span className="text-lg font-semibold tabular-nums">{selected.lead_score}/100</span></div><p className="mt-1 text-xs text-muted-foreground">Explainable profile-completeness score—not a prediction of conversion.</p><div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">{selected.lead_score_factors.map((factor) => <span key={factor} className="text-[11px] text-muted-foreground">{factor}</span>)}</div>{selected.stage === "lost" && selected.lost_reason && <p className="mt-2 text-xs font-medium text-rose-700">Lost reason: {LOST_REASONS.find(([value]) => value === selected.lost_reason)?.[1] ?? selected.lost_reason}</p>}</section>
+            <section aria-label="First outreach" className="mb-5 border border-border bg-background p-4"><h3 className="text-sm font-semibold">First outreach attempt</h3>{selected.first_contact_logged ? <p className="mt-1 text-sm text-muted-foreground">Logged {selected.first_contacted_at ? new Date(selected.first_contacted_at).toLocaleString() : ""}. Delivery was not verified.</p> : ["joined", "lost"].includes(selected.stage) ? <p className="mt-1 text-sm text-muted-foreground">No outreach was logged before this lead was closed; historical stage changes are not counted as contact.</p> : <><p className="mt-1 text-xs text-muted-foreground">Record when your team first tries to reach this prospect.</p><div className="mt-3 flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs text-muted-foreground">Method<select value={contactMethod} onChange={(event) => setContactMethod(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground"><option value="call">Call</option><option value="sms">SMS</option><option value="email">Email</option><option value="in_person">In person</option><option value="other">Other</option></select></label><Button type="button" variant="secondary" disabled={busy} onClick={() => void logFirstContact()}>Log first outreach</Button></div></>}</section>
             <LeadBookings
               key={selected.id}
               leadId={selected.id}

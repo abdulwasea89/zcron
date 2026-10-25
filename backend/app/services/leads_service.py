@@ -39,9 +39,6 @@ async def change_stage(session: AsyncSession, *, lead: Lead, stage: str,
         return
     lead.stage = stage
     lead.updated_at = now_utc()
-    if stage in {"contacted", "trial_booked", "visited", "joined"} and lead.first_contacted_at is None:
-        lead.first_contacted_at = lead.updated_at
-        lead.first_contacted_by_user_id = actor_id
     session.add(lead)
     await record_audit(
         session, action="lead.stage_changed", organization_id=lead.organization_id,
@@ -106,7 +103,7 @@ def speed_to_lead_metrics(leads: list[Lead], staff_names: dict[str, str] | None 
     staff_conversions: dict[str, int] = {}
     response_minutes: list[float] = []
     for lead in leads:
-        if lead.first_contacted_at is None:
+        if not lead.first_contact_logged or lead.first_contacted_at is None:
             continue
         minutes = (lead.first_contacted_at - lead.created_at).total_seconds() / 60
         if minutes < 0:
@@ -133,7 +130,7 @@ def speed_to_lead_metrics(leads: list[Lead], staff_names: dict[str, str] | None 
         **group_metrics(response_minutes, len(leads)),
         "uncontacted": sum(
             1 for lead in leads
-            if lead.first_contacted_at is None and lead.stage not in {"joined", "lost"}
+            if not lead.first_contact_logged and lead.stage not in {"joined", "lost"}
         ),
         "by_source": [
             {"source": source, **group_metrics(by_source.get(source, []), count)}
@@ -172,6 +169,28 @@ async def get_lead(session: AsyncSession, *, org_id: str, lead_id: str) -> Lead:
     lead = await session.get(Lead, lead_id)
     if lead is None or lead.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Lead not found.")
+    return lead
+
+
+async def log_first_contact(
+    session: AsyncSession, *, org_id: str, lead_id: str, actor_id: str, method: str,
+) -> Lead:
+    lead = await session.get(Lead, lead_id, with_for_update=True)
+    if lead is None or lead.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Lead not found.")
+    if lead.stage in {"joined", "lost"}:
+        raise HTTPException(status_code=409, detail="A closed lead cannot receive a first-contact log.")
+    if lead.first_contact_logged:
+        raise HTTPException(status_code=409, detail="The first outreach attempt is already recorded.")
+    lead.first_contacted_at = now_utc()
+    lead.first_contacted_by_user_id = actor_id
+    lead.first_contact_logged = True
+    session.add(lead)
+    await record_audit(
+        session, action="lead.first_contact_logged", organization_id=org_id,
+        actor_user_id=actor_id, entity_type="lead", entity_id=lead.id,
+        metadata={"method": method},
+    )
     return lead
 
 

@@ -78,6 +78,10 @@ class LeadCreate(LeadProfileFields):
     sms_followup_consent: bool = False
 
 
+class LeadFirstContactIn(BaseModel):
+    method: Literal["call", "sms", "email", "in_person", "other"]
+
+
 class LeadUpdate(LeadProfileFields):
     source: LeadSource | None = None
     stage: str | None = Field(default=None, pattern="^(new|contacted|trial_booked|visited|joined|lost)$")
@@ -116,6 +120,7 @@ class LeadOut(BaseModel):
     sms_followup_consent_at: datetime | None
     lost_reason: str | None
     first_contacted_at: datetime | None = None
+    first_contact_logged: bool = False
     created_at: datetime
     updated_at: datetime
 

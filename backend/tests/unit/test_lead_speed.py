@@ -11,10 +11,10 @@ from app.services.leads_service import speed_to_lead_metrics
 def test_speed_to_lead_reports_median_response_by_source_and_staff():
     start = datetime(2026, 1, 1)
     leads = [
-        SimpleNamespace(source="web_form", stage="contacted", created_at=start, first_contacted_at=start + timedelta(minutes=10), first_contacted_by_user_id="staff-1"),
-        SimpleNamespace(source="web_form", stage="joined", created_at=start, first_contacted_at=start + timedelta(minutes=30), first_contacted_by_user_id="staff-2"),
-        SimpleNamespace(source="referral", stage="new", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None),
-        SimpleNamespace(source="website", stage="lost", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None),
+        SimpleNamespace(source="web_form", stage="contacted", created_at=start, first_contacted_at=start + timedelta(minutes=10), first_contacted_by_user_id="staff-1", first_contact_logged=True),
+        SimpleNamespace(source="web_form", stage="joined", created_at=start, first_contacted_at=start + timedelta(minutes=30), first_contacted_by_user_id="staff-2", first_contact_logged=True),
+        SimpleNamespace(source="referral", stage="new", created_at=start, first_contacted_at=start + timedelta(minutes=4), first_contacted_by_user_id="staff-2", first_contact_logged=False),
+        SimpleNamespace(source="website", stage="lost", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None, first_contact_logged=False),
     ]
 
     report = speed_to_lead_metrics(leads, {"staff-1": "Amina", "staff-2": "Bilal"})
@@ -48,7 +48,7 @@ def test_speed_to_lead_empty_period_returns_zero_rates():
 
 
 @pytest.mark.asyncio
-async def test_first_contact_is_recorded_on_first_meaningful_stage_change(monkeypatch):
+async def test_pipeline_stage_change_does_not_fake_a_contact_log(monkeypatch):
     lead = Lead(organization_id="org", name="Prospect", stage="new")
     session = SimpleNamespace(add=lambda _row: None)
 
@@ -57,10 +57,37 @@ async def test_first_contact_is_recorded_on_first_meaningful_stage_change(monkey
 
     monkeypatch.setattr(leads_service, "record_audit", record_audit)
     await leads_service.change_stage(session, lead=lead, stage="trial_booked", actor_id="owner")
-    first_contact = lead.first_contacted_at
-
     await leads_service.change_stage(session, lead=lead, stage="contacted", actor_id="owner")
 
-    assert first_contact is not None
-    assert lead.first_contacted_at == first_contact
+    assert lead.first_contacted_at is None
+    assert lead.first_contact_logged is False
+
+
+@pytest.mark.asyncio
+async def test_first_outreach_log_is_recorded_once_with_staff_and_method(monkeypatch):
+    lead = Lead(organization_id="org", name="Prospect", stage="new")
+
+    async def get(_model, _id, **_kwargs):
+        return lead
+
+    session = SimpleNamespace(get=get, add=lambda _row: None)
+    audits = []
+
+    async def record_audit(*_args, **kwargs):
+        audits.append(kwargs)
+
+    monkeypatch.setattr(leads_service, "record_audit", record_audit)
+    await leads_service.log_first_contact(
+        session, org_id="org", lead_id=lead.id, actor_id="owner", method="call",
+    )
+    assert lead.first_contact_logged is True
+    assert lead.first_contacted_at is not None
     assert lead.first_contacted_by_user_id == "owner"
+    assert audits[0]["metadata"] == {"method": "call"}
+
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        await leads_service.log_first_contact(
+            session, org_id="org", lead_id=lead.id, actor_id="owner", method="call",
+        )
+    assert exc.value.status_code == 409
