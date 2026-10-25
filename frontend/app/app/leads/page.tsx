@@ -109,6 +109,8 @@ export default function LeadsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [orgCode, setOrgCode] = useState("");
+  const [inquiryLink, setInquiryLink] = useState("");
   const [showLostReason, setShowLostReason] = useState(false);
   const [lostReason, setLostReason] = useState("no_response");
   const [profile, setProfile] = useState({ name: "", email: "", phone: "", contact_handle: "", source: "staff_entered", goal: "", budget: "", preferred_times: "", preferences: "", email_followup_consent: false, sms_followup_consent: false });
@@ -129,7 +131,12 @@ export default function LeadsPage() {
     }
   }, []);
 
-  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  useEffect(() => {
+    queueMicrotask(() => void load());
+    void api.get<{ org_code: string }>("/organizations/me")
+      .then((org) => setOrgCode(org.org_code))
+      .catch(() => setOrgCode(""));
+  }, [load]);
   useEffect(() => {
     queueMicrotask(() => {
       void api.get<LeadSpeedReport>("/leads/speed-report?days=30")
@@ -157,6 +164,19 @@ export default function LeadsPage() {
     setError("");
     setNotice("");
     setShowDetails(true);
+  }
+
+  async function copyInquiryLink() {
+    if (!orgCode) return;
+    const link = `${window.location.origin}/inquiry/${encodeURIComponent(orgCode)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setNotice("Website inquiry form link copied.");
+      setInquiryLink("");
+    } catch {
+      setInquiryLink(link);
+      setNotice("Copy the website inquiry link below.");
+    }
   }
 
   async function create(e: FormEvent<HTMLFormElement>) {
@@ -220,7 +240,7 @@ export default function LeadsPage() {
   return (
     <main className="w-full">
       <PageHeader title="Leads" subtitle="Track prospects from first contact to membership."
-        action={<Button onClick={() => { setShowCreate(true); setError(""); }}>+ New lead</Button>} />
+        action={<div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={!orgCode} onClick={() => void copyInquiryLink()}>Copy inquiry form link</Button><Button onClick={() => { setShowCreate(true); setError(""); }}>+ New lead</Button></div>} />
       {speedReport && <section aria-labelledby="lead-speed-title" className="mb-5 border border-border bg-background">
         <div className="border-b border-border px-4 py-3"><h2 id="lead-speed-title" className="text-sm font-semibold">Speed to lead · last 30 days</h2><p className="mt-1 text-xs text-muted-foreground">Time from lead creation until your team first marks it Contacted.</p></div>
         <dl className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
@@ -231,6 +251,7 @@ export default function LeadsPage() {
       </section>}
       {error && <Alert tone="danger">{error}</Alert>}
       {notice && <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
+      {inquiryLink && <div className="mb-4"><Input label="Website inquiry form link" readOnly value={inquiryLink} onFocus={(event) => event.currentTarget.select()} /></div>}
       {showLostReason && selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><section role="dialog" aria-modal="true" aria-labelledby="lost-reason-title" className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-xl"><h2 id="lost-reason-title" className="text-lg font-semibold">Why was this lead lost?</h2><p className="mt-1 text-sm text-muted-foreground">Choose the closest reason so your team can improve follow-up and qualification.</p><label className="mt-4 grid gap-1.5 text-sm">Lost reason<select value={lostReason} onChange={(event) => setLostReason(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3">{LOST_REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><div className="mt-5 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setShowLostReason(false)}>Cancel</Button><Button type="button" variant="danger" disabled={busy} onClick={() => void saveStage("lost", lostReason)}>Mark lost</Button></div></section></div>}
       <Sheet open={showCreate} onOpenChange={setShowCreate}>
         <SheetContent><SheetHeader><SheetTitle>New lead</SheetTitle><SheetDescription>Add the prospect’s contact details.</SheetDescription></SheetHeader><SheetBody>

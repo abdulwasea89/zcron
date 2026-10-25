@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
-from app.api.deps import get_session, require_capability, require_writable_org
+from app.api.deps import get_client_ip, get_session, require_capability, require_writable_org
+from app.core.constants import LeadSource
 from app.core.permissions import Capability
+from app.core.rate_limit import rate_limiter
 from app.core.tenancy import TenantContext
 from app.models.organization import Organization
 from app.schemas.leads import (
@@ -28,6 +34,86 @@ from app.schemas.leads import (
 from app.services import idempotency_service, leads_service
 
 router = APIRouter()
+
+
+class PublicLeadInquiry(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    email: str | None = Field(default=None, max_length=320)
+    phone: str | None = Field(default=None, max_length=40)
+    goal: str | None = Field(default=None, max_length=2000)
+    website: str = Field(default="", max_length=200)  # honeypot
+
+    @field_validator("name", "goal", "phone")
+    @classmethod
+    def trim_fields(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str | None) -> str | None:
+        if value and len(re.sub(r"\D", "", value)) < 7:
+            raise ValueError("Enter a valid phone number.")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str | None) -> str | None:
+        value = value.strip().lower() if value else None
+        if value and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+    @model_validator(mode="after")
+    def require_contact_method(self):
+        if not self.name or not (self.email or self.phone):
+            raise ValueError("Enter your name and an email address or phone number.")
+        return self
+
+
+@router.get("/public/{org_code}")
+async def public_inquiry_info(
+    org_code: Annotated[str, Path(pattern=r"^[A-Za-z0-9-]{1,64}$")],
+    session: AsyncSession = Depends(get_session),
+):
+    org = (await session.execute(select(Organization).where(Organization.org_code == org_code))).scalar_one_or_none()
+    if org is None or org.industry not in {"gym", "gym_fitness"}:
+        raise HTTPException(status_code=404, detail="This gym’s inquiry form is unavailable.")
+    return {"organization_name": org.name}
+
+
+@router.post("/public/{org_code}", status_code=201)
+async def submit_public_inquiry(
+    org_code: Annotated[str, Path(pattern=r"^[A-Za-z0-9-]{1,64}$")],
+    data: PublicLeadInquiry,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    org = (await session.execute(select(Organization).where(Organization.org_code == org_code))).scalar_one_or_none()
+    if org is None or org.industry not in {"gym", "gym_fitness"}:
+        raise HTTPException(status_code=404, detail="This gym’s inquiry form is unavailable.")
+    allowed, _ = await rate_limiter.hit(
+        f"public-lead-form:{org_code}:{get_client_ip(request)}", 5, 60,
+    )
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Please wait a moment before sending another inquiry.")
+    if data.website:
+        return {"message": "Thanks. Your inquiry has been received."}
+
+    from app.services import leads_service
+
+    try:
+        await leads_service.create_lead(
+            session, org_id=org.id, actor_id=None,
+            data=LeadCreate(
+                name=data.name, email=data.email, phone=data.phone,
+                goal=data.goal, source=LeadSource.WEB_FORM,
+            ),
+        )
+    except HTTPException as exc:
+        # Keep duplicate submissions indistinguishable from successful intake.
+        if exc.status_code != 409:
+            raise
+    return {"message": "Thanks. Your inquiry has been received."}
 
 
 @router.post("/{lead_id}/missed-call", response_model=LeadMissedCallOut)
