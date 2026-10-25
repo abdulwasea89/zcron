@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
@@ -9,9 +9,11 @@ import type { TaskOut } from "@/lib/types";
 export function DashboardTaskList({
   tasks,
   attention,
+  storageKey,
 }: {
   tasks: (TaskOut & { dueLabel: string; overdue: boolean; dueToday: boolean })[];
   attention: { key: string; label: string; value: string; href: string; tone: "neutral" | "success" | "danger" | "warning" | "info"; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[];
+  storageKey: string;
 }) {
   const [openTasks, setOpenTasks] = useState(tasks);
   const [completing, setCompleting] = useState<string | null>(null);
@@ -19,6 +21,41 @@ export function DashboardTaskList({
   const [taskCreatedFor, setTaskCreatedFor] = useState<Set<string>>(new Set());
   const [hiddenAttention, setHiddenAttention] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
+
+  // shortcut: browser-local state, add server storage if dismissal sync across devices is needed.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+        setTaskCreatedFor(new Set(Array.isArray(saved.taskCreatedFor) ? saved.taskCreatedFor : []));
+        setHiddenAttention(new Set(Array.isArray(saved.hiddenAttention) ? saved.hiddenAttention : []));
+      } catch { /* Ignore invalid or blocked browser storage. */ }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [storageKey]);
+
+  function remember(action: "taskCreatedFor" | "hiddenAttention", key: string) {
+    const setter = action === "taskCreatedFor" ? setTaskCreatedFor : setHiddenAttention;
+    const current = action === "taskCreatedFor" ? taskCreatedFor : hiddenAttention;
+    setter(new Set(current).add(key));
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+      const values = Array.isArray(saved[action]) ? saved[action] as string[] : [];
+      window.localStorage.setItem(storageKey, JSON.stringify({
+        ...saved,
+        [action]: [...new Set([...values, key])].slice(-200),
+      }));
+    } catch { /* Keep this view usable when browser storage is unavailable. */ }
+  }
+
+  function restoreDismissed() {
+    setHiddenAttention(new Set());
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+      window.localStorage.setItem(storageKey, JSON.stringify({ ...saved, hiddenAttention: [] }));
+    } catch { /* Restore in-memory state even if storage is blocked. */ }
+  }
 
   async function complete(task: TaskOut) {
     setCompleting(task.id);
@@ -48,7 +85,7 @@ export function DashboardTaskList({
         overdue: false,
         dueToday: true,
       }, ...current]);
-      setTaskCreatedFor((current) => new Set(current).add(item.key));
+      remember("taskCreatedFor", item.key);
       toast.success("Follow-up task added to the team queue.");
     } catch (error) {
       toast.error((error as ApiError).message || "Could not create follow-up task.");
@@ -100,10 +137,10 @@ export function DashboardTaskList({
                 >{addingTaskFor === item.key ? "Adding…" : "Add task"}</button>}
                 {!item.task && <button
                   type="button"
-                  onClick={() => setHiddenAttention((current) => new Set(current).add(item.key))}
+                  onClick={() => remember("hiddenAttention", item.key)}
                   className="text-muted-foreground no-underline hover:text-foreground hover:underline"
-                  aria-label={`Skip ${item.label} for this view`}
-                >Skip for this view</button>}
+                  aria-label={`Dismiss ${item.label} until this alert changes`}
+                >Dismiss</button>}
                 {item.task && <button
                   type="button"
                   aria-label={`Mark ${item.task.title} complete`}
@@ -125,6 +162,7 @@ export function DashboardTaskList({
       )}
       <div className="flex gap-3 border-t border-border pt-2 text-[11px]">
         {items.length > 6 && <button type="button" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)} className="font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">{showAll ? "Show fewer" : `Show all ${items.length}`}</button>}
+        {hiddenAttention.size > 0 && <button type="button" onClick={restoreDismissed} className="font-medium text-muted-foreground hover:text-foreground hover:underline">Restore dismissed</button>}
         <Link href="/app/tasks" className="font-medium text-brand no-underline hover:underline">All tasks ↗</Link>
         {attention.length > 0 && <Link href="/app/approvals" className="font-medium text-brand no-underline hover:underline">Review queue ↗</Link>}
       </div>

@@ -243,16 +243,16 @@ export default async function DashboardPage() {
   // ── Needs attention ─────────────────────────────────────────────────────
   const attention: { key: string; label: string; value: string; href: string; tone: Tone; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[] = [];
   if (metrics?.pending_receipts) {
-    attention.push({ key: "pending-receipts", label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning", priority: 3 });
+    attention.push({ key: `pending-receipts:${todayKey}:${metrics.pending_receipts}`, label: "Review payment receipts", value: `${metrics.pending_receipts} waiting`, href: "/app/receipts", tone: "warning", priority: 3 });
   }
   if (leadResponseSummary?.uncontacted) {
-    attention.push({ key: "untouched-leads", label: "Contact untouched leads", value: `${leadResponseSummary.uncontacted} · last 30 days`, href: "/app/leads", tone: "warning", priority: 0 });
+    attention.push({ key: `untouched-leads:${todayKey}:${leadResponseSummary.uncontacted}`, label: "Contact untouched leads", value: `${leadResponseSummary.uncontacted} · last 30 days`, href: "/app/leads", tone: "warning", priority: 0 });
   }
   if (retentionSummary && retentionSummary.high + retentionSummary.medium > 0) {
     if (retentionRisks?.length) {
       for (const member of retentionRisks) {
         attention.push({
-          key: `at-risk:${member.member_id}`,
+          key: `at-risk:${todayKey}:${member.member_id}:${member.band}`,
           label: `Follow up: ${member.name || "member"}`,
           value: `${member.band} risk`,
           href: `/app/members?member=${encodeURIComponent(member.member_id)}`,
@@ -264,7 +264,7 @@ export default async function DashboardPage() {
         });
       }
       attention.push({
-        key: "revenue-at-risk",
+        key: `revenue-at-risk:${todayKey}:${revenueAtRiskLabel}`,
         label: "Estimated revenue at risk",
         value: revenueAtRiskLabel,
         href: "/app/retention",
@@ -273,7 +273,7 @@ export default async function DashboardPage() {
       });
     } else {
       attention.push({
-        key: "at-risk-members",
+        key: `at-risk-members:${todayKey}:${retentionSummary.high + retentionSummary.medium}`,
         label: "Follow up on at-risk members",
         value: `${retentionSummary.high + retentionSummary.medium} members · ${revenueAtRiskLabel} at risk`,
         href: "/app/retention",
@@ -283,10 +283,10 @@ export default async function DashboardPage() {
     }
   }
   if (metrics?.pending_approvals) {
-    attention.push({ key: "pending-approvals", label: "Resolve member approvals", value: `${metrics.pending_approvals} waiting`, href: "/app/approvals", tone: "warning", priority: 4 });
+    attention.push({ key: `pending-approvals:${todayKey}:${metrics.pending_approvals}`, label: "Resolve member approvals", value: `${metrics.pending_approvals} waiting`, href: "/app/approvals", tone: "warning", priority: 4 });
   }
   if (isOffice && (metrics?.outstanding_invoices ?? 0) > 0) {
-    attention.push({ key: "outstanding-invoices", label: "Follow up on invoices", value: money(metrics!.outstanding_invoices ?? 0, currency), href: "/app/invoices", tone: "danger", priority: 3 });
+    attention.push({ key: `outstanding-invoices:${todayKey}:${metrics!.outstanding_invoices}`, label: "Follow up on invoices", value: money(metrics!.outstanding_invoices ?? 0, currency), href: "/app/invoices", tone: "danger", priority: 3 });
   }
 
   // ── Quick actions ───────────────────────────────────────────────────────
@@ -474,7 +474,7 @@ export default async function DashboardPage() {
                 </div>
                 <span className="text-[11px] tabular-nums text-muted-foreground">{attention.length + openTasks.length} open</span>
               </div>
-              <DashboardTaskList tasks={priorityTasks} attention={attention} />
+              <DashboardTaskList tasks={priorityTasks} attention={attention} storageKey={`acron-dashboard:${org?.id ?? "unknown"}`} />
               {canManageWorkspace && <div className="px-4 py-4">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <h3 className="text-[13px] font-semibold">Workspace setup</h3>
