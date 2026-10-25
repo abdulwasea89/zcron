@@ -494,6 +494,8 @@ async def _record_lead_first_outreach(
             session, org_id=org_id, lead_id=lead.id,
             actor_id=message.sender_user_id,
             method=f"inbox_{channel.value}",
+            delivery_status="provider_accepted",
+            external_id=message.external_id,
         )
 
 

@@ -22,6 +22,8 @@ from app.core.constants import CampaignDeliveryStatus, Channel
 from app.models.campaign import CampaignDelivery
 from app.models.organization import Organization
 from app.models.inbox import InboxConversation, InboxMessage
+from app.models.lead import Lead
+from app.realtime import events
 from app.services import inbox_channels_service as channels
 from app.services.inbox_service import record_inbound
 
@@ -158,14 +160,27 @@ async def twilio_status(org_id: str, request: Request, session: AsyncSession = D
     if sid:
         message = (await session.execute(select(InboxMessage).where(InboxMessage.organization_id == org_id, InboxMessage.external_id == sid))).scalar_one_or_none()
         if message:
+            delivery_changed = False
             if status == "delivered":
                 message.delivery_status = "delivered"
+                delivery_changed = True
             elif status in {"failed", "undelivered"} and message.delivery_status != "delivered":
                 message.delivery_status = "failed"
+                delivery_changed = True
             elif status in {"sent", "queued", "accepted", "scheduled"} and message.delivery_status in {"sending", "queued"}:
                 message.delivery_status = "sent"
             message.delivery_error = fields.get("ErrorCode") if message.delivery_status == "failed" else None
             session.add(message)
+            if status in {"delivered", "failed", "undelivered"}:
+                lead = (await session.execute(select(Lead).where(
+                    Lead.organization_id == org_id,
+                    Lead.first_contact_external_id == sid,
+                ).limit(1))).scalar_one_or_none()
+                if lead and not (lead.first_contact_delivery_status == "delivered" and status != "delivered"):
+                    lead.first_contact_delivery_status = "delivered" if status == "delivered" else "failed"
+                    session.add(lead)
+            if delivery_changed:
+                await events.inbox_changed(org_id, conversation_id=message.conversation_id, action="delivery_status")
         campaign_delivery = (await session.execute(select(CampaignDelivery).where(
             CampaignDelivery.organization_id == org_id,
             CampaignDelivery.provider_message_id == sid,

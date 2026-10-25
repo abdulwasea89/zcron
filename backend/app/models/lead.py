@@ -35,6 +35,8 @@ class Lead(UUIDModel, TimestampModel, table=True):
     first_contacted_at: datetime | None = None
     first_contacted_by_user_id: str | None = Field(default=None, foreign_key="users.id")
     first_contact_logged: bool = Field(default=False, nullable=False)
+    first_contact_delivery_status: str = Field(default="unknown", nullable=False)
+    first_contact_external_id: str | None = Field(default=None, index=True)
     created_by: str | None = Field(default=None, foreign_key="users.id")
     converted_member_id: str | None = Field(default=None, foreign_key="organization_members.id")
     referred_by_member_id: str | None = Field(default=None, foreign_key="organization_members.id")

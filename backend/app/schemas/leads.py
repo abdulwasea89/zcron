@@ -121,6 +121,7 @@ class LeadOut(BaseModel):
     lost_reason: str | None
     first_contacted_at: datetime | None = None
     first_contact_logged: bool = False
+    first_contact_delivery_status: str = "unknown"
     created_at: datetime
     updated_at: datetime
 
@@ -172,6 +173,8 @@ class LeadSpeedSourceOut(BaseModel):
     contacted: int
     response_rate: float
     median_minutes: float | None
+    conversions: int
+    conversion_rate: float
 
 
 class LeadSpeedStaffOut(BaseModel):
@@ -189,6 +192,9 @@ class LeadSpeedReportOut(BaseModel):
     uncontacted: int
     response_rate: float
     median_minutes: float | None
+    delivery_confirmed: int
+    delivery_failed: int
+    delivery_unconfirmed: int
     by_source: list[LeadSpeedSourceOut]
     by_staff: list[LeadSpeedStaffOut]
 

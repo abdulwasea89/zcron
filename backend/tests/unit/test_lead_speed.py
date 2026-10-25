@@ -11,10 +11,10 @@ from app.services.leads_service import speed_to_lead_metrics
 def test_speed_to_lead_reports_median_response_by_source_and_staff():
     start = datetime(2026, 1, 1)
     leads = [
-        SimpleNamespace(source="web_form", stage="contacted", created_at=start, first_contacted_at=start + timedelta(minutes=10), first_contacted_by_user_id="staff-1", first_contact_logged=True),
-        SimpleNamespace(source="web_form", stage="joined", created_at=start, first_contacted_at=start + timedelta(minutes=30), first_contacted_by_user_id="staff-2", first_contact_logged=True),
-        SimpleNamespace(source="referral", stage="new", created_at=start, first_contacted_at=start + timedelta(minutes=4), first_contacted_by_user_id="staff-2", first_contact_logged=False),
-        SimpleNamespace(source="website", stage="lost", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None, first_contact_logged=False),
+        SimpleNamespace(source="web_form", stage="contacted", created_at=start, first_contacted_at=start + timedelta(minutes=10), first_contacted_by_user_id="staff-1", first_contact_logged=True, first_contact_delivery_status="delivered"),
+        SimpleNamespace(source="web_form", stage="joined", created_at=start, first_contacted_at=start + timedelta(minutes=30), first_contacted_by_user_id="staff-2", first_contact_logged=True, first_contact_delivery_status="failed"),
+        SimpleNamespace(source="referral", stage="new", created_at=start, first_contacted_at=start + timedelta(minutes=4), first_contacted_by_user_id="staff-2", first_contact_logged=False, first_contact_delivery_status="unknown"),
+        SimpleNamespace(source="website", stage="lost", created_at=start, first_contacted_at=None, first_contacted_by_user_id=None, first_contact_logged=False, first_contact_delivery_status="unknown"),
     ]
 
     report = speed_to_lead_metrics(leads, {"staff-1": "Amina", "staff-2": "Bilal"})
@@ -24,10 +24,11 @@ def test_speed_to_lead_reports_median_response_by_source_and_staff():
     assert report["uncontacted"] == 1
     assert report["response_rate"] == 50.0
     assert report["median_minutes"] == 20
+    assert (report["delivery_confirmed"], report["delivery_failed"], report["delivery_unconfirmed"]) == (1, 1, 0)
     assert report["by_source"] == [
-        {"source": "referral", "leads": 1, "contacted": 0, "response_rate": 0, "median_minutes": None},
-        {"source": "web_form", "leads": 2, "contacted": 2, "response_rate": 100.0, "median_minutes": 20},
-        {"source": "website", "leads": 1, "contacted": 0, "response_rate": 0, "median_minutes": None},
+        {"source": "referral", "leads": 1, "contacted": 0, "response_rate": 0, "median_minutes": None, "conversions": 0, "conversion_rate": 0.0},
+        {"source": "web_form", "leads": 2, "contacted": 2, "response_rate": 100.0, "median_minutes": 20, "conversions": 1, "conversion_rate": 50.0},
+        {"source": "website", "leads": 1, "contacted": 0, "response_rate": 0, "median_minutes": None, "conversions": 0, "conversion_rate": 0.0},
     ]
     assert report["by_staff"] == [
         {"staff_name": "Amina", "contacted": 1, "median_minutes": 10, "conversions": 0, "conversion_rate": 0.0},
@@ -41,6 +42,9 @@ def test_speed_to_lead_empty_period_returns_zero_rates():
         "contacted": 0,
         "response_rate": 0,
         "median_minutes": None,
+        "delivery_confirmed": 0,
+        "delivery_failed": 0,
+        "delivery_unconfirmed": 0,
         "uncontacted": 0,
         "by_source": [],
         "by_staff": [],

@@ -101,8 +101,17 @@ def speed_to_lead_metrics(leads: list[Lead], staff_names: dict[str, str] | None 
     by_source: dict[str, list[float]] = {}
     by_staff: dict[str, list[float]] = {}
     staff_conversions: dict[str, int] = {}
+    source_conversions: dict[str, int] = {}
     response_minutes: list[float] = []
+    delivery_confirmed = sum(getattr(lead, "first_contact_delivery_status", "unknown") == "delivered" for lead in leads)
+    delivery_failed = sum(getattr(lead, "first_contact_delivery_status", "unknown") == "failed" for lead in leads)
+    delivery_unconfirmed = sum(
+        lead.first_contact_logged and getattr(lead, "first_contact_delivery_status", "unknown") in {"unknown", "provider_accepted"}
+        for lead in leads
+    )
     for lead in leads:
+        if lead.stage == "joined":
+            source_conversions[lead.source] = source_conversions.get(lead.source, 0) + 1
         if not lead.first_contact_logged or lead.first_contacted_at is None:
             continue
         minutes = (lead.first_contacted_at - lead.created_at).total_seconds() / 60
@@ -128,12 +137,20 @@ def speed_to_lead_metrics(leads: list[Lead], staff_names: dict[str, str] | None 
         source_counts[lead.source] = source_counts.get(lead.source, 0) + 1
     return {
         **group_metrics(response_minutes, len(leads)),
+        "delivery_confirmed": delivery_confirmed,
+        "delivery_failed": delivery_failed,
+        "delivery_unconfirmed": delivery_unconfirmed,
         "uncontacted": sum(
             1 for lead in leads
             if not lead.first_contact_logged and lead.stage not in {"joined", "lost"}
         ),
         "by_source": [
-            {"source": source, **group_metrics(by_source.get(source, []), count)}
+            {
+                "source": source,
+                **group_metrics(by_source.get(source, []), count),
+                "conversions": source_conversions.get(source, 0),
+                "conversion_rate": round(source_conversions.get(source, 0) / count * 100, 1),
+            }
             for source, count in sorted(source_counts.items())
         ],
         "by_staff": [
@@ -174,6 +191,7 @@ async def get_lead(session: AsyncSession, *, org_id: str, lead_id: str) -> Lead:
 
 async def log_first_contact(
     session: AsyncSession, *, org_id: str, lead_id: str, actor_id: str, method: str,
+    delivery_status: str = "manual_logged", external_id: str | None = None,
 ) -> Lead:
     lead = await session.get(Lead, lead_id, with_for_update=True)
     if lead is None or lead.organization_id != org_id:
@@ -185,6 +203,8 @@ async def log_first_contact(
     lead.first_contacted_at = now_utc()
     lead.first_contacted_by_user_id = actor_id
     lead.first_contact_logged = True
+    lead.first_contact_delivery_status = delivery_status
+    lead.first_contact_external_id = external_id
     session.add(lead)
     await record_audit(
         session, action="lead.first_contact_logged", organization_id=org_id,

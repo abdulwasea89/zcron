@@ -353,6 +353,18 @@ async def test_lead_first_outreach_requires_provider_acceptance(client, monkeypa
     lead = (await client.get("/api/v1/leads", headers=headers)).json()[0]
     assert lead["first_contact_logged"] is True
     assert lead["first_contacted_at"] is not None
+    assert lead["first_contact_delivery_status"] == "provider_accepted"
+
+    from app.api.v1.routes import inbox_webhooks
+    monkeypatch.setattr(inbox_webhooks, "_verify_twilio", lambda *_args: True)
+    monkeypatch.setattr(inbox_webhooks.settings, "inbox_public_webhook_base_url", "https://example.test")
+    delivered = await client.post(
+        f"/api/v1/inbox/webhooks/{_org_id}/twilio/status",
+        data={"MessageSid": "provider-message-1", "MessageStatus": "delivered", "To": "+923001234567"},
+    )
+    assert delivered.status_code == 200, delivered.text
+    lead = (await client.get("/api/v1/leads", headers=headers)).json()[0]
+    assert lead["first_contact_delivery_status"] == "delivered"
 
 
 @pytest.mark.asyncio
