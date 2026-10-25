@@ -166,7 +166,7 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
             </label>
           ))}
         </div>
-        <p className="text-[11px] text-muted-foreground">SMS status changes to opted out when the member texts STOP. Bulk SMS campaigns are not enabled.</p>
+        <p className="text-[11px] text-muted-foreground">SMS campaigns require a connected Twilio account and explicit member consent. STOP replies revoke SMS consent.</p>
         <Button variant="secondary" disabled={!memberId || consent.member_id !== memberId || consentBusy || busy !== null} loading={consentBusy} onClick={() => void saveConsent()}>Save permissions</Button>
       </section>
 

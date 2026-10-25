@@ -29,6 +29,7 @@ class CampaignPreviewMember(BaseModel):
     member_id: str
     name: str
     email: str | None = None
+    phone: str | None = None
     status: str
 
 

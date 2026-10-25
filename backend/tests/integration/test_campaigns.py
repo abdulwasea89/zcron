@@ -219,6 +219,58 @@ async def test_email_channel_suppresses_unverified_addresses(client, db):
 
 
 @pytest.mark.asyncio
+async def test_sms_campaign_requires_consent_phone_and_uses_connected_transport(client, db, monkeypatch):
+    from app.integrations.inbox_channels import DeliveryReceipt
+    from app.services import campaign_service
+
+    sent_to = []
+
+    async def fake_sms(channel, recipient, body, credentials=None):
+        sent_to.append((channel.value, recipient, body))
+        return DeliveryReceipt("SM-test")
+
+    monkeypatch.setattr(campaign_service, "deliver_inbox_message", fake_sms)
+    headers, _org_id, org_code, plan_id = await _provision_gym(client)
+    opted_in_id = await _signup_member(client, org_code, plan_id, headers, "smsin@camp.com")
+    opted_out_id = await _signup_member(client, org_code, plan_id, headers, "smsout@camp.com")
+    opted_in = await db.get(OrganizationMember, opted_in_id)
+    opted_in.phone = "+15550000001"
+    opted_in.marketing_sms_consent = True
+    opted_out = await db.get(OrganizationMember, opted_out_id)
+    opted_out.phone = "+15550000002"
+    await db.commit()
+
+    campaign = await _create_campaign(client, headers, channel="sms")
+    preview = await client.get(f"/api/v1/campaigns/preview/{campaign['id']}?limit=8", headers=headers)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["count"] == 1
+    assert preview.json()["sample"][0]["phone"] == "+15550000001"
+
+    result = await client.post(f"/api/v1/campaigns/{campaign['id']}/send", headers=headers)
+    assert result.status_code == 200, result.text
+    assert result.json()["sent"] == 1
+    assert sent_to == [("sms", "+15550000001", "Come back and save 20% this week.")]
+
+
+@pytest.mark.asyncio
+async def test_campaign_send_limit_is_capped_at_200(client):
+    headers, _org_id, _org_code, _plan_id = await _provision_gym(client)
+    response = await client.post(
+        "/api/v1/campaigns",
+        headers=headers,
+        json={"title": "Too many", "subject": "Offer", "body": "Hello", "channel": "sms", "send_limit": 201},
+    )
+    assert response.status_code == 422
+
+    email_campaign = await client.post(
+        "/api/v1/campaigns",
+        headers=headers,
+        json={"title": "Email", "subject": "Offer", "body": "Hello", "channel": "email", "send_limit": 201},
+    )
+    assert email_campaign.status_code == 201, email_campaign.text
+
+
+@pytest.mark.asyncio
 async def test_campaign_excludes_members_without_channel_consent(client, db):
     headers, org_id, org_code, plan_id = await _provision_gym(client)
     member_id = await _signup_member(

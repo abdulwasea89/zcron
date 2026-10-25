@@ -413,6 +413,7 @@ class CampaignChannel(str, Enum):
     IN_APP = "in_app"  # in-app notification only
     EMAIL = "email"  # email only
     BOTH = "both"  # in-app notification + email
+    SMS = "sms"  # consented SMS only
 
 
 class CampaignStatus(str, Enum):

@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.constants import (
+    Channel,
     CampaignChannel,
     CampaignDeliveryStatus,
     CampaignStatus,
@@ -35,6 +36,7 @@ from app.core.constants import (
 )
 from app.core.security import now_utc
 from app.integrations.email import send_email_safe as send_email
+from app.integrations.inbox_channels import deliver as deliver_inbox_message
 from app.models.attendance import Attendance
 from app.models.campaign import Campaign, CampaignDelivery
 from app.models.membership import OrganizationMember
@@ -94,11 +96,13 @@ async def _resolve_segment(
     if not candidates:
         return []
 
+    wants_sms = campaign.channel == CampaignChannel.SMS
     wants_email = campaign.channel in {CampaignChannel.EMAIL, CampaignChannel.BOTH}
     wants_in_app = campaign.channel in {CampaignChannel.IN_APP, CampaignChannel.BOTH}
     candidates = [
         member for member in candidates
-        if (wants_email and member.marketing_email_consent)
+        if (wants_sms and member.marketing_sms_consent and member.phone and member.phone.strip())
+        or (wants_email and member.marketing_email_consent)
         or (wants_in_app and member.marketing_in_app_consent)
     ]
     if not candidates:
@@ -170,6 +174,8 @@ async def create_campaign(
         raise HTTPException(status_code=422, detail="min_days_since_last_visit must be >= 1.")
     if send_limit < 1:
         raise HTTPException(status_code=422, detail="send_limit must be >= 1.")
+    if channel == CampaignChannel.SMS and send_limit > DEFAULT_SEND_LIMIT:
+        raise HTTPException(status_code=422, detail="SMS campaigns are limited to 200 recipients per send.")
 
     campaign = Campaign(
         organization_id=org_id,
@@ -211,7 +217,8 @@ async def preview(session: AsyncSession, *, org_id: str, campaign_id: str, limit
             {
                 "member_id": m.id,
                 "name": await _name(m, user),
-                "email": user.email if user else None,
+                "email": user.email if user and campaign.channel != CampaignChannel.SMS else None,
+                "phone": m.phone if campaign.channel == CampaignChannel.SMS else None,
                 "status": m.member_status.value
                 if hasattr(m.member_status, "value")
                 else str(m.member_status),
@@ -284,11 +291,13 @@ async def _deliver_member(
 
     wants_email = campaign.channel in {CampaignChannel.EMAIL, CampaignChannel.BOTH} and member.marketing_email_consent
     wants_in_app = campaign.channel in {CampaignChannel.IN_APP, CampaignChannel.BOTH} and member.marketing_in_app_consent
+    wants_sms = campaign.channel == CampaignChannel.SMS and member.marketing_sms_consent and bool(member.phone and member.phone.strip())
 
     user = await session.get(User, member.user_id)
 
     in_app_sent = False
     email_sent = False
+    sms_sent = False
     if wants_in_app:
         await create_notification(
             session,
@@ -305,9 +314,21 @@ async def _deliver_member(
         await send_email(user.email, campaign.subject, campaign.body)
         email_sent = True
 
-    if in_app_sent or email_sent:
+    if wants_sms:
+        from app.services.inbox_channels_service import get_credentials
+
+        credentials = await get_credentials(session, org_id, "sms")
+        receipt = await deliver_inbox_message(Channel.SMS, member.phone.strip(), campaign.body, credentials)
+        sms_sent = bool(receipt.provider_message_id)
+
+    if in_app_sent or email_sent or sms_sent:
         delivery.status = CampaignDeliveryStatus.SENT
-        delivery.channel = CampaignChannel.BOTH if in_app_sent and email_sent else CampaignChannel.IN_APP if in_app_sent else CampaignChannel.EMAIL
+        if sms_sent:
+            delivery.channel = CampaignChannel.SMS
+        elif in_app_sent and email_sent:
+            delivery.channel = CampaignChannel.BOTH
+        else:
+            delivery.channel = CampaignChannel.IN_APP if in_app_sent else CampaignChannel.EMAIL
         delivery.delivered_at = now_utc()
     else:
         delivery.status = CampaignDeliveryStatus.SUPPRESSED
