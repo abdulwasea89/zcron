@@ -6,10 +6,12 @@ import { Alert, Badge, Button, EmptyState, Input, Spinner } from "@/components/u
 import { api, ApiError } from "@/lib/api";
 import { money, titleCase } from "@/lib/format";
 import type { OrganizationOut } from "@/lib/types";
+import { toast } from "sonner";
 
 type Expense = {
   id: string; category: string; description: string; vendor: string | null;
   amount: string; currency: string; incurred_on: string; voided_at: string | null;
+  has_receipt: boolean;
 };
 type ExpenseList = { items: Expense[]; totals_by_currency: Record<string, string> };
 const categories = ["rent", "payroll", "utilities", "equipment", "marketing", "maintenance", "supplies", "other"];
@@ -60,6 +62,39 @@ export default function ExpensesPage() {
     } catch (e) { setError((e as ApiError).message); }
   }
 
+  async function attachReceipt(expense: Expense, file: File) {
+    if (file.size > 5 * 1024 * 1024) { setError("Expense receipts must be 5MB or smaller."); return; }
+    setSaving(true); setError("");
+    const upload = new FormData(); upload.append("file", file);
+    try {
+      await api.post(`/expenses/${expense.id}/receipt`, upload, { "Idempotency-Key": crypto.randomUUID() });
+      toast.success("Receipt evidence attached.");
+      await load(dateFrom, dateTo);
+    } catch (cause) { setError((cause as ApiError).message || "Could not attach this receipt."); }
+    finally { setSaving(false); }
+  }
+
+  async function downloadReceipt(expense: Expense) {
+    setSaving(true); setError("");
+    try {
+      const response = await fetch(`/api/download/expenses/${expense.id}/receipt`, { cache: "no-store" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new ApiError(response.status, body?.detail || "Could not download this receipt.");
+      }
+      const file = await response.blob();
+      const url = URL.createObjectURL(file);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `expense-receipt.${file.type === "image/jpeg" ? "jpg" : file.type === "image/webp" ? "webp" : "png"}`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) {
+      const message = (cause as Error).message || "Could not download this receipt.";
+      setError(message); toast.error(message);
+    } finally { setSaving(false); }
+  }
+
   function exportCsv() {
     const params = new URLSearchParams();
     if (dateFrom) params.set("date_from", dateFrom);
@@ -94,6 +129,6 @@ export default function ExpensesPage() {
       {(dateFrom || dateTo) && <Button type="button" variant="ghost" onClick={() => { setDateFrom(""); setDateTo(""); void load("", ""); }}>Clear</Button>}
     </form>
     {data === null ? <Spinner label="Loading expenses…" /> : data.items.length === 0 ? <EmptyState title="No expenses recorded" hint="Add rent, utilities, equipment, and other operating costs above." /> :
-      <div className="overflow-x-auto rounded-xl border border-border"><table className="w-full min-w-[680px] text-left text-sm"><thead className="border-b border-border text-xs text-muted-foreground"><tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Expense</th><th className="px-4 py-3">Category</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Action</th></tr></thead><tbody>{data.items.map((item) => <tr key={item.id} className="border-b border-border last:border-0"><td className="px-4 py-3 text-muted-foreground">{item.incurred_on}</td><td className="px-4 py-3"><div className="font-medium">{item.description}</div><div className="text-xs text-muted-foreground">{item.vendor || "No vendor"}</div></td><td className="px-4 py-3">{titleCase(item.category)}</td><td className="px-4 py-3 text-right font-medium tabular-nums">{money(Number(item.amount), item.currency)}</td><td className="px-4 py-3">{item.voided_at ? <Badge tone="neutral" size="sm">Voided</Badge> : <Badge tone="success" size="sm">Recorded</Badge>}</td><td className="px-4 py-3">{!item.voided_at && <Button variant="ghost" onClick={() => void voidExpense(item)}>Void</Button>}</td></tr>)}</tbody></table><p className="px-4 py-3 text-xs text-muted-foreground">Showing the latest 1,000 records. Void entries are retained for audit and excluded from totals.</p></div>}
+      <div className="overflow-x-auto rounded-xl border border-border"><table className="w-full min-w-[680px] text-left text-sm"><thead className="border-b border-border text-xs text-muted-foreground"><tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Expense</th><th className="px-4 py-3">Category</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Action</th></tr></thead><tbody>{data.items.map((item) => <tr key={item.id} className="border-b border-border last:border-0"><td className="px-4 py-3 text-muted-foreground">{item.incurred_on}</td><td className="px-4 py-3"><div className="font-medium">{item.description}</div><div className="text-xs text-muted-foreground">{item.vendor || "No vendor"}</div></td><td className="px-4 py-3">{titleCase(item.category)}</td><td className="px-4 py-3 text-right font-medium tabular-nums">{money(Number(item.amount), item.currency)}</td><td className="px-4 py-3">{item.voided_at ? <Badge tone="neutral" size="sm">Voided</Badge> : <Badge tone="success" size="sm">Recorded</Badge>}</td><td className="px-4 py-3"><div className="flex items-center gap-3">{item.has_receipt ? <Button variant="ghost" disabled={saving} onClick={() => void downloadReceipt(item)}>Download receipt</Button> : !item.voided_at && <label className="cursor-pointer text-xs underline underline-offset-4 focus-within:outline focus-within:outline-2 focus-within:outline-ring">Attach receipt<input type="file" accept="image/png,image/jpeg,image/webp" disabled={saving} className="sr-only" aria-label={`Attach receipt for ${item.description}`} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachReceipt(item, file); }} /></label>}{!item.voided_at && <Button variant="ghost" disabled={saving} onClick={() => void voidExpense(item)}>Void</Button>}</div></td></tr>)}</tbody></table><p className="px-4 py-3 text-xs text-muted-foreground">Showing the latest 1,000 records. Void entries are retained for audit and excluded from totals. Receipt images (PNG, JPEG, WebP; up to 5MB) remain attached as original evidence and cannot be overwritten.</p></div>}
   </>;
 }

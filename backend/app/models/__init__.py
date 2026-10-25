@@ -32,6 +32,7 @@ from app.models.nps import NpsSurvey
 from app.models.onboarding import OnboardingJourney, OnboardingMilestoneProgress
 from app.models.organization import Organization
 from app.models.operating_expense import OperatingExpense
+from app.models.expense_receipt import ExpenseReceipt
 from app.models.payment import Payment
 from app.models.payment_refund import PaymentRefund
 from app.models.payroll import PayAdvance, PayrollEntry, PayrollRun
@@ -92,6 +93,7 @@ __all__ = [
     "OnboardingMilestoneProgress",
     "Organization",
     "OperatingExpense",
+    "ExpenseReceipt",
     "OrganizationMember",
     "PayAdvance",
     "Payment",

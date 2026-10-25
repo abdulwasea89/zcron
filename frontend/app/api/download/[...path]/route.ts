@@ -17,6 +17,7 @@ async function handle(req: NextRequest, path: string[]) {
       status: res.status,
       headers: {
         "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
         "Content-Type": res.headers.get("Content-Type") ?? "application/octet-stream",
         "Content-Disposition": res.headers.get("Content-Disposition") ?? "attachment",
         ...(res.headers.get("Content-Length") ? { "Content-Length": res.headers.get("Content-Length")! } : {}),

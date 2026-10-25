@@ -73,6 +73,7 @@ class ExpenseOut(BaseModel):
     created_at: datetime
     voided_at: datetime | None
     void_reason: str | None
+    has_receipt: bool = False
 
     @field_serializer("amount", when_used="json")
     def serialize_amount(self, value: Decimal) -> str:
