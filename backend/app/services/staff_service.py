@@ -187,7 +187,7 @@ async def set_compensation(
     session.add(member)
     await record_audit(session, action="staff.compensation_updated", organization_id=org_id,
                        actor_user_id=actor_id, entity_type="member", entity_id=member.id,
-                       new_values=data.model_dump(exclude_unset=True))
+                       metadata={"fields": sorted(data.model_fields_set)})
     return member
 
 

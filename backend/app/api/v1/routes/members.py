@@ -10,7 +10,7 @@ from sqlmodel import select
 
 from app.api.deps import get_client_ip, get_session, require_capability, require_writable_org
 from app.core.constants import MemberStatus, Role
-from app.core.permissions import Capability
+from app.core.permissions import Capability, role_has
 from app.core.tenancy import TenantContext
 from app.schemas.common import Message
 from app.schemas.members import (
@@ -132,7 +132,13 @@ async def list_directory(
 ):
     rows = await members.directory(session, org_id=ctx.org_id, status=status, role=role)
     names = await _trainer_names(session, ctx.org_id)
-    return [_item(m, u, trainers=names.get(m.id), include_compensation=ctx.role == Role.OWNER) for m, u in rows]
+    if rows and role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION):
+        await record_audit(
+            session, action="staff.compensation_viewed", organization_id=ctx.org_id,
+            actor_user_id=ctx.user_id, entity_type="member_directory",
+            metadata={"record_count": len(rows)},
+        )
+    return [_item(m, u, trainers=names.get(m.id), include_compensation=role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION)) for m, u in rows]
 
 
 @router.get("/assigned-to-me", response_model=list[ClientAssignment])
@@ -177,7 +183,13 @@ async def approval_queue(
 ):
     rows = await members.approval_queue(session, org_id=ctx.org_id)
     names = await _trainer_names(session, ctx.org_id)
-    return [_item(m, u, trainers=names.get(m.id), include_compensation=ctx.role == Role.OWNER) for m, u in rows]
+    if rows and role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION):
+        await record_audit(
+            session, action="staff.compensation_viewed", organization_id=ctx.org_id,
+            actor_user_id=ctx.user_id, entity_type="member_directory",
+            metadata={"record_count": len(rows)},
+        )
+    return [_item(m, u, trainers=names.get(m.id), include_compensation=role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION)) for m, u in rows]
 
 
 @router.get("/freeze-requests", response_model=list[FreezeRequestQueueOut])
@@ -265,7 +277,13 @@ async def member_detail(
     from app.api.v1.routes.payments import _to_out as payment_to_out
 
     rows = await trainer_assign.list_for_member(session, org_id=ctx.org_id, member_id=member.id)
-    private_access = ctx.role in {Role.OWNER, Role.MANAGER}
+    if role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION):
+        await record_audit(
+            session, action="staff.compensation_viewed", organization_id=ctx.org_id,
+            actor_user_id=ctx.user_id, entity_type="member", entity_id=member.id,
+            ip_address=get_client_ip(request), user_agent=request.headers.get("user-agent"),
+        )
+    private_access = role_has(ctx.role, Capability.VIEW_PRIVATE_MEMBER_PROFILE)
     private_fields = [
         field for field, value in (
             ("health_notes", member.health_notes),
@@ -290,7 +308,7 @@ async def member_detail(
     ]
 
     return MemberDetailOut(
-        member=_item(member, user, trainers=names, include_compensation=ctx.role == Role.OWNER),
+        member=_item(member, user, trainers=names, include_compensation=role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION)),
         profile=MemberProfileOut(
             display_name=member.display_name, phone=member.phone,
             photo_url=member.photo_url, emergency_contact=member.emergency_contact,
@@ -348,7 +366,7 @@ async def update_profile(
     org: Organization = Depends(require_writable_org),
     session: AsyncSession = Depends(get_session),
 ):
-    private_access = ctx.role in {Role.OWNER, Role.MANAGER}
+    private_access = role_has(ctx.role, Capability.VIEW_PRIVATE_MEMBER_PROFILE)
     if not private_access and data.model_fields_set & {"health_notes", "id_document_type", "id_document_last4"}:
         raise HTTPException(status_code=403, detail="Private profile details require owner or manager access.")
     member = await members.update_member_profile(
@@ -376,7 +394,7 @@ async def decide_approval(
     member = await members.decide_approval(session, org_id=ctx.org_id, member_id=member_id,
                                             approve=data.approve, reason=data.reason, actor_id=ctx.user_id)
     user = await session.get(User, member.user_id)
-    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=ctx.role == Role.OWNER)
+    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION))
 
 
 @router.post("/{member_id}/status", response_model=MemberDirectoryItem)
@@ -389,7 +407,7 @@ async def change_status(
     member = await members.change_status(session, org_id=ctx.org_id, member_id=member_id,
                                           action=data.action, reason=data.reason, actor_id=ctx.user_id)
     user = await session.get(User, member.user_id)
-    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=ctx.role == Role.OWNER)
+    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION))
 
 
 @router.patch("/{member_id}/role", response_model=MemberDirectoryItem)
@@ -402,7 +420,7 @@ async def change_role(
     member = await members.change_role(session, org_id=ctx.org_id, member_id=member_id,
                                         new_role=data.role, actor_id=ctx.user_id, actor_role=ctx.role)
     user = await session.get(User, member.user_id)
-    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=ctx.role == Role.OWNER)
+    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION))
 
 
 @router.patch("/{member_id}/email", response_model=MemberDirectoryItem)
@@ -415,7 +433,7 @@ async def change_email(
     member = await members.update_email(session, org_id=ctx.org_id, member_id=member_id,
                                          new_email=data.email, actor_id=ctx.user_id)
     user = await session.get(User, member.user_id)
-    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=ctx.role == Role.OWNER)
+    return await _item_with_trainers(session, ctx.org_id, member, user, include_compensation=role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION))
 
 
 @router.delete("/{member_id}", response_model=Message)

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, require_capability
-from app.core.permissions import Capability
+from app.core.permissions import Capability, role_has
 from app.core.tenancy import TenantContext
 from app.schemas.audit import AuditActionGroup, AuditLogOut, AuditLogPage
 from app.services import audit_service as audit
@@ -41,6 +41,10 @@ async def list_audit_logs(
         page=page,
         page_size=page_size,
     )
+    if not role_has(ctx.role, Capability.VIEW_STAFF_COMPENSATION):
+        for item in items:
+            if item["action"].startswith(("payroll.", "staff.compensation_")):
+                item.update(old_values=None, new_values=None, metadata={"redacted": True})
     return AuditLogPage(
         items=[AuditLogOut(**i) for i in items],
         total=total,

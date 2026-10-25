@@ -24,6 +24,7 @@ from app.models.membership import OrganizationMember
 from app.models.payroll import PayrollEntry, PayrollRun
 from sqlmodel import select
 from app.services import payroll_service as payroll
+from app.services.audit_service import record_audit
 
 router = APIRouter()
 
@@ -100,6 +101,12 @@ async def list_runs(
     session: AsyncSession = Depends(get_session),
 ):
     runs = await payroll.list_runs(session, org_id=ctx.org_id)
+    if runs:
+        await record_audit(
+            session, action="payroll.viewed", organization_id=ctx.org_id,
+            actor_user_id=ctx.user_id, entity_type="payroll_run",
+            metadata={"record_count": len(runs)},
+        )
     return [await _run_out(session, r) for r in runs]
 
 
