@@ -31,6 +31,8 @@ export default function PaymentsPage() {
   const [statusFilter, setStatusFilter] = useState(NONE);
   const [kindFilter, setKindFilter] = useState(NONE);
   const [refundFilter, setRefundFilter] = useState(NONE);
+  const [exportFrom, setExportFrom] = useState(() => new Date().toISOString().slice(0, 7) + "-01");
+  const [exportTo, setExportTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [refundFor, setRefundFor] = useState<PaymentOut | null>(null);
 
   async function load() {
@@ -125,6 +127,12 @@ export default function PaymentsPage() {
 
       {/* A refund is work you do against the ledger behind this sheet, so it rides
           in a sheet: the payments table stays in view while you fill it in. */}
+      <section className="mb-5 flex flex-wrap items-end gap-3 border border-border p-4" aria-label="Accounting export">
+        <Input type="date" label="Accounting export from" value={exportFrom} onChange={(event) => setExportFrom(event.target.value)} />
+        <Input type="date" label="Through" value={exportTo} min={exportFrom} onChange={(event) => setExportTo(event.target.value)} />
+        <Button variant="secondary" disabled={!exportFrom || !exportTo || exportTo < exportFrom} onClick={() => window.location.assign(`/api/download/finance/payments.csv?date_from=${exportFrom}&date_to=${exportTo}`)}>Download accounting CSV</Button>
+        <p className="w-full text-xs text-muted-foreground">Uses the gym’s timezone. Refund columns show lifetime totals for each payment; this export is a current ledger snapshot.</p>
+      </section>
       <Sheet open={!!refundFor} onOpenChange={(open) => { if (!open) setRefundFor(null); }}>
         <SheetContent>
           <SheetHeader className="flex items-start justify-between gap-4">
@@ -221,6 +229,7 @@ export default function PaymentsPage() {
                       <Badge tone={statusTone(p.status)}>{titleCase(p.status)}</Badge>
                     </td>
                     <td className={`${TD} ${CELL_LAST} py-2.5 text-right`}>
+                      <a href={`/api/download/finance/payments/${encodeURIComponent(p.id)}/evidence.zip`} className="mr-3 text-xs font-medium text-brand hover:underline" aria-label={`Download evidence for payment ${p.id}`}>Evidence</a>
                       {refundable(p) && (
                         <Button variant="ghost" onClick={() => setRefundFor(p)}>
                           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>

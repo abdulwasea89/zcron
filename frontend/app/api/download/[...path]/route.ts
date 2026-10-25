@@ -13,13 +13,13 @@ async function handle(req: NextRequest, path: string[]) {
   try {
     const res = await backendRaw(`${backendPath}${search}`, { method });
 
-    const body = await res.arrayBuffer();
-    return new NextResponse(body, {
+    return new NextResponse(res.body, {
       status: res.status,
       headers: {
+        "Cache-Control": "private, no-store",
         "Content-Type": res.headers.get("Content-Type") ?? "application/octet-stream",
         "Content-Disposition": res.headers.get("Content-Disposition") ?? "attachment",
-        "Content-Length": res.headers.get("Content-Length") ?? String(body.byteLength),
+        ...(res.headers.get("Content-Length") ? { "Content-Length": res.headers.get("Content-Length")! } : {}),
       },
     });
   } catch (e) {
