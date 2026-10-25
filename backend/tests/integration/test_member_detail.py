@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.models.audit_log import AuditLog
 from app.core.constants import PaymentStatus, SubscriptionStatus
 from app.models.membership import OrganizationMember
 from app.models.payment import Payment
@@ -76,11 +77,17 @@ async def _member_id(client, headers, email: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_detail_returns_plan_and_payments(client):
+async def test_detail_returns_plan_and_payments_and_audits_private_reads(client, db):
     org_code, plan_id, headers, _ = await _provision(client)
     email = "sarah@member.com"
     await _signup_and_pay(client, org_code, plan_id, email)
     member_id = await _member_id(client, headers, email)
+    member = await db.get(OrganizationMember, member_id)
+    member.health_notes = "Sensitive health note"
+    member.id_document_type = "passport"
+    member.id_document_last4 = "1234"
+    db.add(member)
+    await db.commit()
 
     r = await client.get(f"/api/v1/members/{member_id}", headers=headers)
     assert r.status_code == 200, r.text
@@ -103,6 +110,15 @@ async def test_detail_returns_plan_and_payments(client):
 
     # Active member with a settled payment has nothing pending.
     assert body["pending_payments"] == []
+    assert body["profile"]["health_notes"] == "Sensitive health note"
+    audit = (await db.execute(select(AuditLog).where(
+        AuditLog.organization_id == member.organization_id,
+        AuditLog.action == "member.private_profile_viewed",
+        AuditLog.entity_id == member_id,
+    ))).scalar_one()
+    assert audit.actor_user_id
+    assert audit.metadata_json == '{"fields": ["health_notes", "id_document"]}'
+    assert "Sensitive health note" not in audit.metadata_json
 
 
 @pytest.mark.asyncio

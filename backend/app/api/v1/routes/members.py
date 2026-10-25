@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.api.deps import get_session, require_capability, require_writable_org
+from app.api.deps import get_client_ip, get_session, require_capability, require_writable_org
 from app.core.constants import MemberStatus, Role
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
@@ -39,6 +39,7 @@ from app.schemas.members import (
 )
 from app.schemas.organizations import BulkImportResult
 from app.services import member_trainers_service as trainer_assign
+from app.services.audit_service import record_audit
 from app.services import members_service as members
 from app.services import family_service as families
 from app.services import membership_changes_service as member_changes
@@ -216,6 +217,7 @@ async def decide_freeze_request(
 @router.get("/{member_id}", response_model=MemberDetailOut)
 async def member_detail(
     member_id: str,
+    request: Request,
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
     session: AsyncSession = Depends(get_session),
 ):
@@ -264,6 +266,19 @@ async def member_detail(
 
     rows = await trainer_assign.list_for_member(session, org_id=ctx.org_id, member_id=member.id)
     private_access = ctx.role in {Role.OWNER, Role.MANAGER}
+    private_fields = [
+        field for field, value in (
+            ("health_notes", member.health_notes),
+            ("id_document", member.id_document_type or member.id_document_last4),
+        ) if value
+    ]
+    if private_access and private_fields:
+        await record_audit(
+            session, action="member.private_profile_viewed", organization_id=ctx.org_id,
+            actor_user_id=ctx.user_id, entity_type="member", entity_id=member.id,
+            ip_address=get_client_ip(request), user_agent=request.headers.get("user-agent"),
+            metadata={"fields": private_fields},
+        )
     names = sorted((t.display_name or u.full_name or u.email) for _mt, t, u in rows)
     trainer_assignments = [
         TrainerAssignment(
