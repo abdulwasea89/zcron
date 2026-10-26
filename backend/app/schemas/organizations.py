@@ -185,6 +185,7 @@ class OrgNameUpdate(BaseModel):
 
 class BulkImportResult(BaseModel):
     created: int
+    updated: int = 0
     skipped: int
     errors: list[dict]
 

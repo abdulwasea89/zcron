@@ -604,7 +604,7 @@ def xlsx_as_csv(xlsx_bytes: bytes) -> bytes:
                 raise HTTPException(status_code=413, detail="Excel workbook expands beyond the 20 MB import limit.")
         workbook = load_workbook(io.BytesIO(xlsx_bytes), read_only=True, data_only=True)
         try:
-            sheet = workbook.active
+            sheet = workbook.worksheets[0] if workbook.worksheets else None
             if sheet is None:
                 raise HTTPException(status_code=422, detail="Excel workbook has no active worksheet.")
             if (sheet.max_row or 0) > 10_001 or (sheet.max_column or 0) > 50:
@@ -627,6 +627,8 @@ def _import_header_map(fieldnames: list[str | None]) -> dict[str, str]:
     aliases = {
         "email": ("email", "email address", "member email", "e-mail"),
         "full_name": ("full_name", "full name", "member name", "name"),
+        "first_name": ("first_name", "first name", "given name"),
+        "last_name": ("last_name", "last name", "surname", "family name"),
         "phone": ("phone", "phone number", "mobile", "mobile number", "telephone", "cell phone"),
     }
     normalized: dict[str, str] = {}
@@ -643,44 +645,91 @@ def _import_header_map(fieldnames: list[str | None]) -> dict[str, str]:
     return columns
 
 
+def parse_import_csv(content: bytes, column_map: dict[str, str] | None = None, *, allow_unmapped=False):
+    try:
+        reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
+        headers = reader.fieldnames or []
+        if not headers or any(not name.strip() for name in headers) or len(headers) > 50 or len(set(headers)) != len(headers):
+            raise HTTPException(status_code=422, detail="Use 1–50 uniquely named column headers.")
+        mapping = _import_header_map(headers) if column_map is None else column_map
+        allowed = {"email", "full_name", "first_name", "last_name", "phone"}
+        if allow_unmapped and column_map is None and "email" not in mapping:
+            return headers, mapping, []
+        if (not isinstance(mapping, dict) or set(mapping) - allowed
+                or any(not isinstance(source, str) or source not in headers for source in mapping.values())
+                or "email" not in mapping or len(set(mapping.values())) != len(mapping)):
+            raise HTTPException(status_code=422, detail="Map email and each optional field to a different file column.")
+        rows, seen = [], set()
+        for number, source in enumerate(reader, 2):
+            if number > 10_001:
+                raise HTTPException(status_code=413, detail="Imports support up to 10,000 data rows.")
+            def value(field):
+                return (source.get(mapping.get(field, "")) or "").strip()
+            email = value("email").lower()
+            name = value("full_name") or " ".join(filter(None, [value("first_name"), value("last_name")]))
+            phone = value("phone")
+            error = None
+            if None in source:
+                error = "row has more cells than column headers"
+            elif len(email) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+                error = "invalid or missing email"
+            elif len(name) > 120 or len(phone) > 40:
+                error = "name exceeds 120 characters or phone exceeds 40 characters"
+            elif email in seen:
+                error = "duplicate email in this file; keep one row"
+            seen.add(email)
+            rows.append({"row": number, "email": email, "full_name": name or None, "phone": phone or None, "error": error})
+        return headers, mapping, rows
+    except (UnicodeDecodeError, csv.Error) as exc:
+        raise HTTPException(status_code=422, detail="Upload a valid UTF-8 CSV file.") from exc
+
+
+async def preview_import(session: AsyncSession, *, org_id: str, csv_bytes: bytes, column_map=None):
+    headers, mapping, rows = parse_import_csv(csv_bytes, column_map, allow_unmapped=True)
+    emails = list({row["email"] for row in rows if not row["error"]})
+    existing = {}
+    for start in range(0, len(emails), 500):
+        matches = (await session.execute(select(OrganizationMember, User.email).join(
+            User, User.id == OrganizationMember.user_id,
+        ).where(OrganizationMember.organization_id == org_id, User.email.in_(emails[start:start + 500])))).all()
+        existing.update({email: member for member, email in matches})
+    for row in rows:
+        member = existing.get(row["email"])
+        fields = []
+        if member and member.role == Role.MEMBER:
+            if not member.display_name and row["full_name"]:
+                fields.append("display_name")
+            if not member.phone and row["phone"]:
+                fields.append("phone")
+        row.update(action="error" if row["error"] else "existing" if member else "add", fillable_fields=fields)
+    return {"headers": headers, "mapping": mapping, "rows": rows}
+
+
 async def bulk_import_csv(
-    session: AsyncSession, *, org_id: str, csv_bytes: bytes, actor_id: str
+    session: AsyncSession, *, org_id: str, csv_bytes: bytes, actor_id: str,
+    column_map: dict[str, str] | None = None, fill_missing: bool = False,
 ) -> dict:
     """Import members from a CSV (Section 9.9, web-only owner action).
 
     Expected columns (header row, case-insensitive): ``email`` (required),
     ``full_name``, ``phone``. Each row creates a shell user (if new) + a
     ``pending_activation`` membership, then emails an activation code. Existing
-    members of this org are skipped. Returns a per-row summary.
+    members are skipped or have blank gym-profile fields filled when requested.
     """
 
     org = await session.get(Organization, org_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found.")
 
-    try:
-        text = csv_bytes.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=422, detail="CSV must be UTF-8 encoded.")
-    reader = csv.DictReader(io.StringIO(text))
-    if reader.fieldnames is None:
-        raise HTTPException(status_code=422, detail="CSV is empty or missing a header row.")
-    field_map = _import_header_map(reader.fieldnames)
-    if "email" not in field_map:
-        raise HTTPException(status_code=422, detail="CSV must have an 'email' column.")
-
-    created = 0
-    skipped = 0
+    _headers, _mapping, rows = parse_import_csv(csv_bytes, column_map)
+    created = skipped = updated = 0
     errors: list[dict] = []
-    for i, row in enumerate(reader, start=2):  # row 1 is the header
-        if i > 10_001:
-            raise HTTPException(status_code=413, detail="Imports support up to 10,000 data rows.")
-        email = (row.get(field_map["email"]) or "").strip().lower()
-        if not email or "@" not in email:
-            errors.append({"row": i, "error": "invalid or missing email"})
+    for row in rows:
+        i = row["row"]
+        if row.get("error"):
+            errors.append({"row": i, "error": row["error"]})
             continue
-        full_name = (row.get(field_map.get("full_name", "")) or "").strip() or None
-        phone = (row.get(field_map.get("phone", "")) or "").strip() or None
+        email, full_name, phone = row["email"], row["full_name"], row["phone"]
 
         user = (
             await session.execute(select(User).where(User.email == email))
@@ -695,24 +744,35 @@ async def bulk_import_csv(
                 )
             ).scalar_one_or_none()
             if existing is not None:
+                if fill_missing and existing.role == Role.MEMBER:
+                    changes = {}
+                    if not existing.display_name and full_name:
+                        changes["display_name"] = full_name
+                    if not existing.phone and phone:
+                        changes["phone"] = phone
+                    if changes:
+                        for field, value in changes.items():
+                            setattr(existing, field, value)
+                        session.add(existing)
+                        await record_audit(session, action="member.import_fields_filled", organization_id=org_id,
+                                           actor_user_id=actor_id, entity_type="member", entity_id=existing.id,
+                                           metadata={"fields": sorted(changes)})
+                        updated += 1
+                        continue
                 skipped += 1
                 continue
-        else:
-            user = User(email=email, full_name=full_name,
-                        hashed_password=hash_password(secrets.token_urlsafe(16)),
-                        email_verified=False)
-            session.add(user)
-            await session.flush()
-
-        member = OrganizationMember(
-            organization_id=org_id, user_id=user.id, role=Role.MEMBER,
-            member_status=MemberStatus.PENDING_ACTIVATION, phone=phone,
-        )
-        session.add(member)
         try:
-            # Savepoint so a duplicate insert (lost race against invite/signup)
-            # skips this row without aborting the rest of the import.
             async with session.begin_nested():
+                if user is None:
+                    user = User(email=email, full_name=full_name,
+                                hashed_password=hash_password(secrets.token_urlsafe(16)), email_verified=False)
+                    session.add(user)
+                    await session.flush()
+                member = OrganizationMember(
+                    organization_id=org_id, user_id=user.id, role=Role.MEMBER,
+                    member_status=MemberStatus.PENDING_ACTIVATION, phone=phone, display_name=full_name,
+                )
+                session.add(member)
                 await session.flush()
         except IntegrityError:
             skipped += 1
@@ -733,8 +793,8 @@ async def bulk_import_csv(
 
     await record_audit(session, action="member.bulk_imported", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="organization", entity_id=org_id,
-                       metadata={"created": created, "skipped": skipped, "errors": len(errors)})
-    return {"created": created, "skipped": skipped, "errors": errors}
+                       metadata={"created": created, "updated": updated, "skipped": skipped, "errors": len(errors)})
+    return {"created": created, "updated": updated, "skipped": skipped, "errors": errors}
 
 
 async def delete_member(

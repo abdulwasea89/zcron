@@ -236,7 +236,7 @@ async def test_bulk_import_csv(client, monkeypatch):
         "not-an-email,Bad,000\n"
     ).encode("utf-8")
     files = {"file": ("members.csv", csv_body, "text/csv")}
-    r = await client.post("/api/v1/members/import", headers=headers, files=files)
+    r = await client.post("/api/v1/members/import", headers={**headers, "Idempotency-Key": "import-csv"}, files=files)
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["created"] == 2
@@ -261,7 +261,7 @@ async def test_bulk_import_csv(client, monkeypatch):
     xlsx = io.BytesIO()
     workbook.save(xlsx)
     r = await client.post(
-        "/api/v1/members/import", headers=headers,
+        "/api/v1/members/import", headers={**headers, "Idempotency-Key": "import-excel"},
         files={"file": ("members.xlsx", xlsx.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert r.status_code == 201, r.text

@@ -1,113 +1,102 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApiError, api } from "@/lib/api";
-import { Button } from "@/components/ui";
+import { Button, Select } from "@/components/ui";
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
-type ImportResult = { created: number; skipped: number; errors: { row: number; error: string }[] };
+type ImportResult = { created: number; updated: number; skipped: number; errors: { row: number; error: string }[] };
+type Preview = { headers: string[]; mapping: Record<string, string>; rows: { row: number; email: string; action: "add" | "existing" | "error"; fillable_fields: string[]; error: string | null }[] };
+const fields = { email: "Email (required)", full_name: "Full name", first_name: "First name", last_name: "Last name", phone: "Phone" };
 
-export function MemberImportSheet({
-  open,
-  onOpenChange,
-  onImported,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onImported: () => void | Promise<void>;
+export function MemberImportSheet({ open, onOpenChange, onImported }: {
+  open: boolean; onOpenChange: (open: boolean) => void; onImported: () => void | Promise<void>;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [fillMissing, setFillMissing] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const importKey = useRef("");
+  const fileInput = useRef<HTMLInputElement>(null);
 
+  function invalidate() { setPreview(null); setResult(null); importKey.current = ""; }
   function downloadTemplate() {
     const url = URL.createObjectURL(new Blob(["email,full_name,phone\nmember@example.com,Alex Member,+15555550100\n"], { type: "text/csv" }));
     const link = document.createElement("a");
-    link.href = url;
-    link.download = "member-import-template.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    link.href = url; link.download = "member-import-template.csv"; link.click(); URL.revokeObjectURL(url);
   }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!file) return;
-    if (!/\.(csv|xlsx)$/i.test(file.name)) {
-      toast.error("Choose a CSV or .xlsx workbook.");
-      return;
+  async function submit(apply: boolean) {
+    if (!file || busy) return;
+    if (!/\.(csv|xlsx)$/i.test(file.name) || file.size > 2_000_000) {
+      toast.error("Choose a CSV or .xlsx workbook up to 2 MB."); return;
     }
-    if (file.size > 2_000_000) {
-      toast.error("Import files must be 2 MB or smaller.");
-      return;
-    }
-
     setBusy(true);
-    setResult(null);
     try {
       const form = new FormData();
       form.append("file", file);
-      const imported = await api.post<ImportResult>("/members/import", form);
-      setResult(imported);
-      setFile(null);
-      await onImported();
+      form.append("column_mapping", headers.length ? JSON.stringify(mapping) : "null");
+      if (apply) {
+        if (!preview?.rows.length) return;
+        form.append("fill_missing", String(fillMissing));
+        importKey.current ||= crypto.randomUUID();
+        const imported = await api.post<ImportResult>("/members/import", form, { "Idempotency-Key": importKey.current });
+        setResult(imported); setFile(null); setPreview(null);
+        if (fileInput.current) fileInput.current.value = "";
+        toast.success(`Import finished: ${imported.created} added, ${imported.updated} updated.`);
+        try { await onImported(); } catch { toast.error("Import finished. Reload the member list to see the changes."); }
+      } else {
+        const checked = await api.post<Preview>("/members/import/preview", form);
+        setHeaders(checked.headers); setMapping(checked.mapping); setPreview(checked); setResult(null);
+      }
     } catch (error) {
-      toast.error((error as ApiError).message || "Could not import members.");
-    } finally {
-      setBusy(false);
-    }
+      toast.error((error as ApiError).message || "Could not process this import.");
+    } finally { setBusy(false); }
   }
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="sm:max-w-[520px]">
-        <SheetHeader>
-          <SheetTitle>Import members</SheetTitle>
-          <SheetDescription>Upload a CSV or Excel workbook to add members to this workspace. Excel imports use the first worksheet.</SheetDescription>
-        </SheetHeader>
-        <SheetBody className="space-y-5">
-          <section className="space-y-2 text-sm">
-            <p className="text-foreground">Use a header row with <code>email</code>, <code>full_name</code>, and <code>phone</code>. Email is required; the other columns are optional.</p>
-            <Button type="button" variant="secondary" onClick={downloadTemplate}>Download CSV template</Button>
-          </section>
-
-          <p className="border border-border bg-background/50 px-3 py-2 text-xs leading-5 text-muted-foreground">
-            New rows are created as pending activation and an activation email is attempted. Existing workspace members are skipped. Delivery failures and invalid rows are included in the results.
-          </p>
-
-          <form id="member-import-form" onSubmit={(event) => void submit(event)} className="space-y-3">
-            <label htmlFor="member-import-file" className="block text-xs font-medium text-foreground">CSV or Excel workbook · up to 2 MB</label>
-            <input
-              id="member-import-file"
-              type="file"
-              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              disabled={busy}
-              onChange={(event) => { setFile(event.target.files?.[0] ?? null); setResult(null); }}
-              className="block w-full text-sm text-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-2 file:text-xs file:text-foreground"
-            />
-            {file && <p className="text-xs text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</p>}
-          </form>
-
-          {result && <section aria-live="polite" className="space-y-3 border border-border p-4">
-            <h3 className="text-sm font-semibold">Import complete</h3>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <div><dt className="text-xs text-muted-foreground">Added</dt><dd className="font-medium">{result.created}</dd></div>
-              <div><dt className="text-xs text-muted-foreground">Skipped</dt><dd className="font-medium">{result.skipped}</dd></div>
-            </dl>
-            {result.errors.length > 0 && <div>
-              <p className="mb-2 text-xs font-medium text-warning">Needs attention · {result.errors.length}</p>
-              <ul className="max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
-                {result.errors.slice(0, 20).map((error, index) => <li key={`${error.row}-${index}`}>Row {error.row}: {error.error}</li>)}
-              </ul>
-              {result.errors.length > 20 && <p className="mt-2 text-xs text-muted-foreground">Showing the first 20 issues.</p>}
-            </div>}
-          </section>}
-        </SheetBody>
-        <SheetFooter>
-          <Button type="button" variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>Close</Button>
-          <Button type="submit" form="member-import-form" disabled={!file || busy} loading={busy}>Import members</Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
+  const rows = preview?.rows ?? [];
+  return <Sheet open={open} onOpenChange={onOpenChange}>
+    <SheetContent side="right" className="sm:max-w-[620px]">
+      <SheetHeader><SheetTitle>Import members</SheetTitle><SheetDescription>Map CSV or Excel columns, review duplicates, then import. Excel uses the first worksheet.</SheetDescription></SheetHeader>
+      <SheetBody className="space-y-5">
+        <Button type="button" variant="secondary" onClick={downloadTemplate}>Download CSV template</Button>
+        <div className="space-y-2">
+          <label htmlFor="member-import-file" className="block text-xs font-medium">CSV or Excel · up to 2 MB</label>
+          <input ref={fileInput} id="member-import-file" type="file" disabled={busy} accept=".csv,.xlsx" onChange={(event) => {
+            setFile(event.target.files?.[0] ?? null); setHeaders([]); setMapping({}); invalidate();
+          }} className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-2" />
+        </div>
+        {headers.length > 0 && <section className="grid gap-3 sm:grid-cols-2" aria-label="Column mapping">
+          {Object.entries(fields).map(([field, label]) => <Select key={field} label={label} disabled={busy} value={mapping[field] || ""} onChange={(event) => {
+            const next = { ...mapping }; if (event.target.value) next[field] = event.target.value; else delete next[field];
+            setMapping(next); invalidate();
+          }}><option value="">{field === "email" ? "Choose a column" : "Do not import"}</option>{headers.map((header) => <option key={header} value={header}>{header}</option>)}</Select>)}
+        </section>}
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={fillMissing} disabled={busy} onChange={(event) => { setFillMissing(event.target.checked); importKey.current = ""; }} />
+          Fill blank display names and phones on matching gym members. Existing values and shared account details are preserved; staff profiles are skipped.
+        </label>
+        <p className="text-xs leading-5 text-muted-foreground">New members are pending activation; an activation email is attempted. No plans, payments, consent, or roles are imported. Duplicate emails within the file need correction. Different email addresses are never merged automatically.</p>
+        {preview && <section aria-live="polite" className="space-y-3 border border-border p-4">
+          <h3 className="text-sm font-semibold">Preview · {rows.length} rows</h3>
+          {rows.length === 0 ? <p className="text-sm">Choose an email column, then preview again.</p> : <>
+            <p className="text-xs text-muted-foreground">{rows.filter((row) => row.action === "add").length} to add · {rows.filter((row) => row.action === "existing").length} existing · {rows.filter((row) => row.error).length} invalid</p>
+            <ul className="max-h-64 space-y-2 overflow-y-auto text-xs">{rows.slice(0, 100).map((row) => <li key={row.row} className="break-words border-b border-border pb-2">
+              Row {row.row} · {row.email || "No email"} — {row.error || (row.action === "add" ? "Add pending member" : fillMissing && row.fillable_fields.length ? `Fill missing ${row.fillable_fields.join(", ")}` : "Skip existing member")}
+            </li>)}</ul>{rows.length > 100 && <p className="text-xs text-muted-foreground">Showing the first 100 rows; all rows are validated.</p>}
+          </>}
+        </section>}
+        {result && <section aria-live="polite" className="space-y-3 border border-border p-4">
+          <h3 className="text-sm font-semibold">Import finished</h3>
+          <p className="text-sm">{result.created} added · {result.updated} updated · {result.skipped} skipped</p>
+          <ul className="max-h-52 space-y-1 overflow-y-auto text-xs text-muted-foreground">{result.errors.map((error, index) => <li key={`${error.row}-${index}`}>Row {error.row}: {error.error}</li>)}</ul>
+        </section>}
+      </SheetBody>
+      <SheetFooter><Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>Close</Button>
+        <Button variant="secondary" disabled={!file || busy} onClick={() => void submit(false)}>Preview</Button>
+        <Button disabled={!file || busy || !rows.some((row) => row.action !== "error")} loading={busy} onClick={() => void submit(true)}>Import reviewed rows</Button>
+      </SheetFooter>
+    </SheetContent>
+  </Sheet>;
 }

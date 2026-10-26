@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import json
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -568,14 +570,7 @@ async def resend_invite(
     return _invite_out(member, user.email, code, delivered)
 
 
-@router.post("/import", response_model=BulkImportResult, status_code=201)
-async def bulk_import(
-    file: UploadFile = File(...),
-    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
-    session: AsyncSession = Depends(get_session),
-):
-    """Bulk-import members from CSV or XLSX (web-only, Section 9.9, 16)."""
-
+async def _import_content(file: UploadFile) -> bytes:
     content = await file.read(2_000_001)
     if not content:
         raise HTTPException(status_code=422, detail="Uploaded file is empty.")
@@ -586,6 +581,50 @@ async def bulk_import(
         raise HTTPException(status_code=422, detail="Upload a CSV or .xlsx workbook.")
     if extension == ".xlsx":
         content = members.xlsx_as_csv(content)
+    return content
+
+
+def _column_mapping(value: str):
+    try:
+        mapping = json.loads(value)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="Column mapping must be a JSON object.")
+    if mapping is not None and not isinstance(mapping, dict):
+        raise HTTPException(status_code=422, detail="Column mapping must be a JSON object.")
+    return mapping
+
+
+@router.post("/import/preview")
+async def preview_import(
+    file: UploadFile = File(...), column_mapping: str = Form(default="null", max_length=5000),
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await members.preview_import(session, org_id=ctx.org_id, csv_bytes=await _import_content(file),
+                                          column_map=_column_mapping(column_mapping))
+    await record_audit(session, action="member.import_previewed", organization_id=ctx.org_id,
+                       actor_user_id=ctx.user_id, entity_type="member", metadata={"rows": len(result["rows"])})
+    return result
+
+
+@router.post("/import", response_model=BulkImportResult, status_code=201)
+async def bulk_import(
+    file: UploadFile = File(...), column_mapping: str = Form(default="null", max_length=5000),
+    fill_missing: bool = Form(default=False),
+    idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    org: Organization = Depends(require_writable_org),
+    session: AsyncSession = Depends(get_session),
+):
+    content = await _import_content(file)
+    mapping = _column_mapping(column_mapping)
+    claim = await idempotency_service.claim(session, key=idempotency_key, endpoint="members.import",
+        body={"file": hashlib.sha256(content).hexdigest(), "mapping": mapping, "fill_missing": fill_missing},
+        organization_id=ctx.org_id, user_id=ctx.user_id)
+    if not claim.claimed:
+        return BulkImportResult.model_validate_json(claim.cached_response or "{}")
     result = await members.bulk_import_csv(session, org_id=ctx.org_id, csv_bytes=content,
-                                           actor_id=ctx.user_id)
-    return BulkImportResult(**result)
+                                           actor_id=ctx.user_id, column_map=mapping, fill_missing=fill_missing)
+    output = BulkImportResult(**result)
+    await idempotency_service.complete(session, claim.record, code=201, body=output.model_dump_json())
+    return output
