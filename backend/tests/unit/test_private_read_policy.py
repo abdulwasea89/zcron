@@ -21,7 +21,8 @@ from app.services.data_access_service import record_read_access
 
 def request(path='/api/v1/members/member-1', method='GET'):
     return Request({'type': 'http', 'method': method, 'path': path,
-                    'query_string': b'search=private-health-note', 'headers': [],
+                    'query_string': b'search=private-health-note',
+                    'headers': [(b'x-forwarded-for', b'203.0.113.8'), (b'user-agent', b'admin-browser')],
                     'path_params': {'member_id': 'member-1'},
                     'route': SimpleNamespace(path='/api/v1/members/{member_id}')})
 
@@ -66,6 +67,9 @@ async def test_private_reads_audit_scope_without_search_values(path):
     entry = entries[0]
     assert (entry.organization_id, entry.actor_user_id) == ('gym', 'actor')
     assert json.loads(entry.metadata_json)['identifiers'] == {'member_id': 'member-1'}
+    assert json.loads(entry.metadata_json)['access_type'] == ('export' if path.endswith('/export') else 'read')
+    assert entry.ip_address == '203.0.113.8'
+    assert entry.user_agent == 'admin-browser'
     assert 'private-health-note' not in entry.metadata_json
     assert entry.new_values_json is None
 

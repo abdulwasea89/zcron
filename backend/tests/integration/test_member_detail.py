@@ -86,6 +86,7 @@ async def test_detail_returns_plan_and_payments_and_audits_private_reads(client,
     member.health_notes = "Sensitive health note"
     member.id_document_type = "passport"
     member.id_document_last4 = "1234"
+    member.emergency_contact = "Emergency contact name · +1 555 0100"
     db.add(member)
     await db.commit()
 
@@ -117,7 +118,7 @@ async def test_detail_returns_plan_and_payments_and_audits_private_reads(client,
         AuditLog.entity_id == member_id,
     ))).scalar_one()
     assert audit.actor_user_id
-    assert audit.metadata_json == '{"fields": ["health_notes", "id_document"]}'
+    assert audit.metadata_json == '{"fields": ["emergency_contact", "health_notes", "id_document"]}'
     assert "Sensitive health note" not in audit.metadata_json
 
 

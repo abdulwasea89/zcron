@@ -292,6 +292,7 @@ async def member_detail(
     private_access = role_has(ctx.role, Capability.VIEW_PRIVATE_MEMBER_PROFILE)
     private_fields = [
         field for field, value in (
+            ("emergency_contact", member.emergency_contact),
             ("health_notes", member.health_notes),
             ("id_document", member.id_document_type or member.id_document_last4),
         ) if value

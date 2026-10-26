@@ -28,6 +28,13 @@ async def record_read_access(session: AsyncSession, request: Request | None) -> 
     route = getattr(request.scope.get("route"), "path", path)
     identifiers = {key: value for key, value in request.path_params.items()
                    if key.endswith("_id") and isinstance(value, str)}
+    forwarded_for = request.headers.get("x-forwarded-for")
+    client_ip = forwarded_for.split(",", 1)[0].strip() if forwarded_for else (
+        request.client.host if request.client else "unknown"
+    )
+    is_export = path.endswith(("/export", ".csv", ".zip"))
     await record_audit(session, action="privacy.data_accessed", organization_id=context.org_id,
                        actor_user_id=context.user_id, entity_type=area,
-                       metadata={"route": route, "role": context.role.value, "identifiers": identifiers})
+                       ip_address=client_ip, user_agent=request.headers.get("user-agent", "")[:512],
+                       metadata={"route": route, "role": context.role.value, "identifiers": identifiers,
+                                 "access_type": "export" if is_export else "read"})
