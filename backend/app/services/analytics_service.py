@@ -8,12 +8,13 @@ status breakdown, churn). All queries are org-scoped (Security Rule #1).
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.constants import MemberStatus, PaymentStatus, ReceiptStatus
+from app.core.constants import MemberStatus, PaymentKind, PaymentStatus, ReceiptStatus
 from app.core.industry import MoneyMode, get_industry
 from app.core.security import now_utc
 from app.models.attendance import Attendance
@@ -214,16 +215,26 @@ async def revenue_analytics(session: AsyncSession, *, org_id: str) -> dict:
         await session.execute(
             select(Payment).where(
                 Payment.organization_id == org_id,
+                Payment.kind.in_([PaymentKind.MEMBER_FEE, PaymentKind.DAY_PASS, PaymentKind.SPACE, PaymentKind.TUITION]),
                 Payment.status.in_([PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED]),
             )
         )
     ).scalars()
-    total = 0.0
-    by_method: dict[str, float] = {}
+    totals: dict[str, Decimal] = {}
+    methods: dict[str, dict[str, Decimal]] = {}
     for p in payments:
-        net = p.amount - p.refunded_amount
-        total += net
-        by_method[p.method.value] = round(by_method.get(p.method.value, 0.0) + net, 2)
+        net = (Decimal(str(p.amount)) - Decimal(str(p.refunded_amount))).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP,
+        )
+        totals[p.currency] = totals.get(p.currency, Decimal("0")) + net
+        by_method = methods.setdefault(p.currency, {})
+        by_method[p.method.value] = by_method.get(p.method.value, Decimal("0")) + net
+    currency = org.default_currency if org else "USD"
+    revenue_by_currency = {
+        code: {"total_revenue": format(totals[code], ".2f"),
+               "revenue_by_method": {method: format(amount, ".2f") for method, amount in methods[code].items()}}
+        for code in sorted(totals)
+    }
 
     members = (
         await session.execute(
@@ -256,12 +267,13 @@ async def revenue_analytics(session: AsyncSession, *, org_id: str) -> dict:
     ).all()
 
     return {
-        "total_revenue": round(total, 2),
-        "revenue_by_method": by_method,
+        "total_revenue": float(totals.get(currency, 0)),
+        "revenue_by_method": {method: float(amount) for method, amount in methods.get(currency, {}).items()},
+        "revenue_by_currency": revenue_by_currency,
         "member_count_by_status": by_status,
         "active_members": active,
         "churn_count": churn,
-        "currency": org.default_currency if org else "USD",
+        "currency": currency,
         "operating_expenses_by_currency": {
             currency: format(amount, ".2f") for currency, amount in expense_totals
         },

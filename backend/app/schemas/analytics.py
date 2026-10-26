@@ -35,6 +35,11 @@ class HeadlineMetrics(BaseModel):
     outstanding_invoices: float | None = None  # unpaid balance on sent/overdue invoices
 
 
+class CurrencyRevenue(BaseModel):
+    total_revenue: str
+    revenue_by_method: dict[str, str]
+
+
 class RevenueAnalytics(BaseModel):
     """Web revenue analytics (Section 16, view_revenue_analytics capability)."""
 
@@ -44,4 +49,5 @@ class RevenueAnalytics(BaseModel):
     active_members: int
     churn_count: int
     currency: str
+    revenue_by_currency: dict[str, CurrencyRevenue] = Field(default_factory=dict)
     operating_expenses_by_currency: dict[str, str] = Field(default_factory=dict)

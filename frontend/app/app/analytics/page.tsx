@@ -15,7 +15,7 @@ import {
 
 import { OperatingReportCard } from "@/components/OperatingReportCard";
 import { PageHeader } from "@/components/PageHeader";
-import { Alert, Badge, Card, CardHeader, Spinner, StatCard } from "@/components/ui";
+import { Alert, Card, CardHeader, Select, Spinner, StatCard } from "@/components/ui";
 import {
   ChartContainer,
   ChartLegend,
@@ -144,6 +144,10 @@ function ChartEmpty({ tone, title, hint }: { tone: "revenue" | "members"; title:
 export default function AnalyticsPage() {
   const [data, setData] = useState<RevenueAnalytics | null>(null);
   const [error, setError] = useState("");
+  const [selectedCurrency, setSelectedCurrency] = useState("");
+  const currency = selectedCurrency || data?.currency || "USD";
+  const currencyRevenue = data?.revenue_by_currency[currency];
+  const totalRevenue = Number(currencyRevenue?.total_revenue ?? 0);
 
   async function load() {
     setError("");
@@ -159,8 +163,8 @@ export default function AnalyticsPage() {
   }, []);
 
   const methodEntries = useMemo(
-    () => Object.entries(data?.revenue_by_method ?? {}).filter(([, amount]) => amount > 0),
-    [data],
+    () => Object.entries(currencyRevenue?.revenue_by_method ?? {}).map(([method, amount]): [string, number] => [method, Number(amount)]).filter(([, amount]) => amount > 0),
+    [currencyRevenue],
   );
   const statusEntries = useMemo(
     () => Object.entries(data?.member_count_by_status ?? {}).filter(([, count]) => count > 0),
@@ -210,14 +214,14 @@ export default function AnalyticsPage() {
     [statusEntries, statusChartConfig],
   );
 
-  const avgPerMember = data && data.active_members > 0 ? data.total_revenue / data.active_members : 0;
+  const avgPerMember = data && data.active_members > 0 ? totalRevenue / data.active_members : 0;
 
   const kpis = data
     ? [
-        { label: "Total revenue", value: money(data.total_revenue, data.currency), icon: ICONS.revenue, accent: true },
+        { label: "Net collections to date", value: money(totalRevenue, currency), icon: ICONS.revenue, accent: true },
         { label: "Active members", value: String(data.active_members), icon: ICONS.members },
         { label: "Churned", value: String(data.churn_count), icon: ICONS.churn },
-        { label: "Revenue / member", value: money(avgPerMember, data.currency), icon: ICONS.average },
+        { label: "Revenue / member", value: money(avgPerMember, currency), icon: ICONS.average },
       ]
     : [];
 
@@ -226,7 +230,7 @@ export default function AnalyticsPage() {
       <PageHeader
         title="Analytics"
         subtitle="Revenue and membership at a glance"
-        action={data ? <Badge tone="neutral">{data.currency}</Badge> : null}
+        action={data ? <Select label="Revenue currency" value={currency} onChange={(event) => setSelectedCurrency(event.target.value)}>{Array.from(new Set([data.currency, ...Object.keys(data.revenue_by_currency)])).sort().map((code) => <option key={code} value={code}>{code}</option>)}</Select> : null}
       />
 
       {error && <div className="mb-4"><Alert onDismiss={() => setError("")}>{error}</Alert></div>}
@@ -277,11 +281,11 @@ export default function AnalyticsPage() {
                         tickLine={false}
                         axisLine={false}
                         tickMargin={8}
-                        tickFormatter={(v: number) => money(v, data.currency)}
+                        tickFormatter={(v: number) => money(v, currency)}
                       />
                       <ChartTooltip
                         cursor={false}
-                        content={<ChartTooltipContent formatter={(v) => money(v, data.currency)} />}
+                        content={<ChartTooltipContent formatter={(v) => money(v, currency)} />}
                       />
                       <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
                         {revenueChartData.map((entry, i) => (
@@ -305,7 +309,7 @@ export default function AnalyticsPage() {
                       key={method}
                       color={revenueChartConfig[method]?.color || "var(--muted)"}
                       label={METHOD_LABELS[method] || titleCase(method)}
-                      value={money(amount, data.currency)}
+                      value={money(amount, currency)}
                       pct={totalByMethod ? Math.round((amount / totalByMethod) * 100) : 0}
                     />
                   ))}

@@ -234,6 +234,7 @@ export interface HeadlineMetrics {
 }
 
 export interface RevenueAnalytics {
+  revenue_by_currency: Record<string, { total_revenue: string; revenue_by_method: Record<string, string> }>;
   total_revenue: number;
   revenue_by_method: Record<string, number>;
   member_count_by_status: Record<string, number>;
