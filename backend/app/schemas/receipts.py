@@ -23,6 +23,7 @@ class ReceiptOut(BaseModel):
 class ReceiptReviewItem(BaseModel):
     id: str
     member_id: str
+    member_name: str | None = None
     plan_id: str | None
     status: str
     confidence_score: float | None

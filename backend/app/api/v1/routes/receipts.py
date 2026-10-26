@@ -16,6 +16,8 @@ from app.api.deps import get_session, require_capability
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
 from app.models.receipt import ReceiptUpload
+from app.models.membership import OrganizationMember
+from app.models.user import User
 from app.schemas.receipts import ReceiptOut, ReceiptReviewAction, ReceiptReviewItem
 from app.services import receipts_service as receipts
 from app.workers import receipt_pipeline, spot_audit
@@ -54,9 +56,19 @@ async def review_queue(
     session: AsyncSession = Depends(get_session),
 ):
     items = await receipts.review_queue(session, org_id=ctx.org_id)
+    names = {}
+    if items:
+        people = (await session.execute(select(
+            OrganizationMember.id, OrganizationMember.display_name, User.full_name, User.email,
+        ).join(User, User.id == OrganizationMember.user_id).where(
+            OrganizationMember.organization_id == ctx.org_id,
+            OrganizationMember.id.in_([item.member_id for item in items]),
+        ))).all()
+        names = {member_id: display_name or full_name or email
+                 for member_id, display_name, full_name, email in people}
     return [
         ReceiptReviewItem(
-            id=r.id, member_id=r.member_id, plan_id=r.plan_id, status=r.status.value,
+            id=r.id, member_id=r.member_id, member_name=names.get(r.member_id), plan_id=r.plan_id, status=r.status.value,
             confidence_score=r.confidence_score, extracted_amount=r.extracted_amount,
             extracted_date=r.extracted_date, extracted_payer=r.extracted_payer,
             extracted_payee=r.extracted_payee, extracted_txn_id=r.extracted_txn_id,

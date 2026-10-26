@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class RetentionCaseUpdate(BaseModel):
+    case_id: str | None = Field(default=None, max_length=128)
     next_action: str = Field(min_length=1, max_length=1000)
     assignee_member_id: str | None = None
     due_at: datetime | None = None

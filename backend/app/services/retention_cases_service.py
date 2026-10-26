@@ -19,7 +19,7 @@ from app.services.notifications_service import create_notification
 
 async def save_case(session: AsyncSession, *, org_id: str, member_id: str,
                     data: RetentionCaseUpdate, actor_id: str | None) -> Task:
-    member = await session.get(OrganizationMember, member_id, with_for_update=True)
+    member = await session.get(OrganizationMember, member_id, with_for_update=True, populate_existing=True)
     if member is None or member.organization_id != org_id or member.role != Role.MEMBER:
         raise HTTPException(status_code=404, detail="Member not found.")
     assignee = await session.get(OrganizationMember, data.assignee_member_id) if data.assignee_member_id else None
@@ -29,10 +29,12 @@ async def save_case(session: AsyncSession, *, org_id: str, member_id: str,
     task = (await session.execute(select(Task).where(
         Task.organization_id == org_id, Task.related_member_id == member.id,
         Task.category == "retention", Task.done.is_(False),
-    ).with_for_update())).scalar_one_or_none()
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     # Scheduled ladder steps must not overwrite a staff member's existing plan.
     if task is not None and actor_id is None:
         return task
+    if (task is not None and task.id != data.case_id) or (task is None and data.case_id is not None):
+        raise HTTPException(status_code=409, detail="This member's open case changed. Reload it before saving.")
     if task is None and data.outcome:
         raise HTTPException(status_code=409, detail="Open a case before recording its outcome.")
     created = task is None
@@ -47,6 +49,7 @@ async def save_case(session: AsyncSession, *, org_id: str, member_id: str,
     task.assignee_member_id = data.assignee_member_id
     task.case_outcome = data.outcome
     task.done = data.outcome is not None
+    task.updated_at = now_utc()
     session.add(task)
     await session.flush()
     await record_audit(session, action="retention.case_closed" if task.done else "retention.case_created" if created else "retention.case_updated",
@@ -60,7 +63,8 @@ async def save_case(session: AsyncSession, *, org_id: str, member_id: str,
     return task
 
 
-async def list_cases(session: AsyncSession, *, org_id: str, include_closed: bool = False) -> list[dict]:
+async def list_cases(session: AsyncSession, *, org_id: str, include_closed: bool = False,
+                     member_id: str | None = None) -> list[dict]:
     statement = select(Task, OrganizationMember, User).join(
         OrganizationMember, OrganizationMember.id == Task.related_member_id,
     ).join(User, User.id == OrganizationMember.user_id).where(
@@ -69,6 +73,8 @@ async def list_cases(session: AsyncSession, *, org_id: str, include_closed: bool
     )
     if not include_closed:
         statement = statement.where(Task.done.is_(False))
+    if member_id:
+        statement = statement.where(Task.related_member_id == member_id)
     rows = (await session.execute(statement.order_by(Task.updated_at.desc()).limit(500))).all()
     return [{"id": task.id, "member_id": member.id, "member_name": member.display_name or user.full_name or user.email,
              "next_action": task.description or task.title, "assignee_member_id": task.assignee_member_id,

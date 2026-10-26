@@ -98,6 +98,27 @@ async def test_payment_closes_case_with_audited_outcome(services):
     assert services[0][0]["action"] == "retention.case_closed"
 
 
+@pytest.mark.asyncio
+async def test_staff_must_load_existing_case_before_replacing_its_plan(services):
+    member = OrganizationMember(id="member", organization_id="gym", user_id="user", role=Role.MEMBER)
+    task = Task(id="existing-case", organization_id="gym", title="Retention", category="retention",
+                related_member_id="member", description="Staff already agreed on a call", assignee_member_id="staff")
+    session = Session(member, task)
+    with pytest.raises(HTTPException) as error:
+        await cases.save_case(session, org_id="gym", member_id="member",
+                              data=RetentionCaseUpdate(next_action="Unloaded default action"), actor_id="owner")
+    assert error.value.status_code == 409
+    assert task.description == "Staff already agreed on a call" and task.assignee_member_id == "staff"
+    await cases.save_case(session, org_id="gym", member_id="member",
+                          data=RetentionCaseUpdate(case_id=task.id, next_action="Agreed on a return visit"), actor_id="owner")
+    assert task.description == "Agreed on a return visit"
+    session.task = None
+    with pytest.raises(HTTPException) as error:
+        await cases.save_case(session, org_id="gym", member_id="member",
+                              data=RetentionCaseUpdate(case_id=task.id, next_action="Stale edit"), actor_id="owner")
+    assert error.value.status_code == 409
+
+
 def test_case_action_is_trimmed_and_blank_actions_are_rejected():
     assert RetentionCaseUpdate(next_action="  Call member  ").next_action == "Call member"
     with pytest.raises(ValueError):

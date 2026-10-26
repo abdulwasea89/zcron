@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
-import { AccountFields, emptyAccountFields, type AccountFieldsValue } from "@/app/app/account/page";
-import AuditPage from "@/app/app/audit/page";
-import BillingPage from "@/app/app/billing/page";
+import { AccountFields, emptyAccountFields, type AccountFieldsValue } from "@/components/settings/AccountFields";
+import { AuditWorkspace } from "@/components/settings/AuditWorkspace";
+import { BillingWorkspace } from "@/components/settings/BillingWorkspace";
 import { MfaCard } from "@/app/app/account/MfaCard";
 import { DataRequestsSection } from "@/components/settings/DataRequestsSection";
 import { LiveIndicator } from "@/components/Realtime";
@@ -567,8 +567,8 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
 
             {/* The full page views are embedded, so there is one implementation
                 of each rather than a lookalike. Each renders its own Section. */}
-            {active === "billing" && <BillingPage embedded />}
-            {active === "audit" && <AuditPage embedded />}
+            {active === "billing" && <BillingWorkspace embedded />}
+            {active === "audit" && <AuditWorkspace embedded />}
             </div>
 
             {/* One global Save for every staged edit. */}

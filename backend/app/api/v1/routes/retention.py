@@ -7,8 +7,9 @@ Attendance-drop detection and the churn-risk roster. Owner/manager only
 from __future__ import annotations
 
 from dataclasses import asdict
+import json
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, require_capability, require_writable_org
@@ -17,6 +18,7 @@ from app.core.tenancy import TenantContext
 from app.schemas.retention import MemberRiskOut, RetentionSummaryOut, RetentionWinOut, RetentionCaseUpdate
 from app.services import retention_service as retention
 from app.services import retention_cases_service as cases
+from app.services import idempotency_service
 
 router = APIRouter()
 
@@ -33,11 +35,30 @@ async def retention_cases(
 @router.put("/cases/{member_id}", dependencies=[Depends(require_writable_org)])
 async def save_retention_case(
     member_id: str, data: RetentionCaseUpdate,
+    idempotency_key: str = Header(default="", alias="Idempotency-Key"),
     ctx: TenantContext = Depends(require_capability(Capability.VIEW_RETENTION)),
     session: AsyncSession = Depends(get_session),
 ):
+    claim = await idempotency_service.claim(
+        session, key=idempotency_key, endpoint=f"retention.case:{ctx.org_id}:{ctx.user_id}:{member_id}",
+        body=data.model_dump(mode="json"), organization_id=ctx.org_id, user_id=ctx.user_id,
+    )
+    if not claim.claimed:
+        return json.loads(claim.cached_response or "{}")
     task = await cases.save_case(session, org_id=ctx.org_id, member_id=member_id, data=data, actor_id=ctx.user_id)
-    return {"id": task.id, "done": task.done, "outcome": task.case_outcome}
+    output = {"id": task.id, "done": task.done, "outcome": task.case_outcome}
+    await idempotency_service.complete(session, claim.record, code=200, body=json.dumps(output))
+    return output
+
+
+@router.get("/cases/{member_id}")
+async def open_retention_case(
+    member_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_RETENTION)),
+    session: AsyncSession = Depends(get_session),
+):
+    rows = await cases.list_cases(session, org_id=ctx.org_id, member_id=member_id)
+    return rows[0] if rows else None
 
 
 @router.get("/summary", response_model=RetentionSummaryOut)

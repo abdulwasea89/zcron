@@ -2,9 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import type { TaskOut } from "@/lib/types";
+import { DashboardWorkSheet } from "@/components/DashboardWorkSheet";
+import { dashboardWork, type DashboardWork } from "@/lib/dashboard-work";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export function DashboardTaskList({
   tasks,
@@ -15,6 +19,10 @@ export function DashboardTaskList({
   attention: { key: string; label: string; value: string; href: string; tone: "neutral" | "success" | "danger" | "warning" | "info"; phone?: string | null; member_id?: string; personName?: string | null; priority: number }[];
   storageKey: string;
 }) {
+  const router = useRouter();
+  const currentUser = useCurrentUser();
+  const canEditTasks = ["owner", "manager", "trainer"].includes(currentUser?.role ?? "");
+  const [work, setWork] = useState<DashboardWork | null>(null);
   const [openTasks, setOpenTasks] = useState(tasks);
   const [completing, setCompleting] = useState<string | null>(null);
   const [addingTaskFor, setAddingTaskFor] = useState<string | null>(null);
@@ -22,6 +30,11 @@ export function DashboardTaskList({
   const [hiddenAttention, setHiddenAttention] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const [savingAttention, setSavingAttention] = useState(false);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setOpenTasks(tasks));
+    return () => cancelAnimationFrame(frame);
+  }, [tasks]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -130,18 +143,19 @@ export function DashboardTaskList({
         <ul className="m-0 list-none divide-y divide-border p-0">
           {visibleItems.map((item) => (
             <li key={item.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
-              <Link href={item.href} className="min-w-0 truncate font-medium text-foreground no-underline hover:text-brand">{item.label}</Link>
+              {dashboardWork(item) ? <button type="button" onClick={() => setWork(dashboardWork(item))} className="min-w-0 truncate text-left font-medium text-foreground hover:text-brand">{item.label}</button> : <Link href={item.href} className="min-w-0 truncate font-medium text-foreground no-underline hover:text-brand">{item.label}</Link>}
               <span className="flex shrink-0 items-center gap-2">
                 <span className={item.tone === "danger" ? "text-danger" : item.tone === "warning" ? "text-warning" : "text-muted-foreground"}>
                   {item.value}
                 </span>
                 {item.phone && <a href={`tel:${item.phone}`} className="text-brand no-underline hover:underline">Call</a>}
-                {item.task && <Link
-                  href={`/app/tasks?edit=${encodeURIComponent(item.task.id)}`}
+                {item.task && canEditTasks && <button
+                  type="button"
+                  onClick={() => setWork(dashboardWork(item))}
                   className="text-brand no-underline hover:underline"
                   aria-label={`Edit ${item.task.title}`}
-                >Edit</Link>}
-                {!item.task && <button
+                >Edit</button>}
+                {!item.task && canEditTasks && <button
                   type="button"
                   disabled={addingTaskFor !== null}
                   onClick={() => void createFollowUpTask(item)}
@@ -180,6 +194,7 @@ export function DashboardTaskList({
         <Link href="/app/tasks" className="font-medium text-brand no-underline hover:underline">All tasks ↗</Link>
         {attention.length > 0 && <Link href="/app/approvals" className="font-medium text-brand no-underline hover:underline">Review queue ↗</Link>}
       </div>
+      <DashboardWorkSheet work={work} onClose={() => { setWork(null); router.refresh(); }} />
     </div>
   );
 }

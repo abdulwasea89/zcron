@@ -384,6 +384,7 @@ export interface MyPayStatement {
 export interface ReceiptReviewItem {
   id: string;
   member_id: string;
+  member_name?: string | null;
   plan_id: string | null;
   status: string;
   confidence_score: number | null;
