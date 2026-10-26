@@ -77,7 +77,7 @@ export const INDUSTRIES: Record<IndustryKey, IndustryMeta> = {
     defaultAccent: "brand",
     checklist: ["stripe", "offer", "enroll", "staff", "done"],
     modules: [
-      "dashboard", "assistant", "analytics", "offers", "members", "leads", "referrals", "payments",
+      "dashboard", "assistant", "analytics", "offers", "members", "leads", "referrals", "payments", "gym_invoices",
       "cash", "receipts", "expenses", "tasks", "classes", "attendance", "inbox",
       "visitors", "staff", "audit", "approvals", "payroll", "billing", "account", "settings",
     ],
@@ -230,6 +230,7 @@ export const NAV_MODULE_BY_HREF: Record<string, string> = {
   "/app/leads": "leads",
   "/app/referrals": "referrals",
   "/app/payments": "payments",
+  "/app/gym-invoices": "gym_invoices",
   "/app/cash": "cash",
   "/app/expenses": "expenses",
   "/app/receipts": "receipts",
@@ -264,6 +265,7 @@ export const NAV_LABEL_OVERRIDES: Partial<Record<IndustryKey, Record<string, str
 /** Which vertical an admin page belongs to (for module gating). Pages whose
  *  module isn't enabled for the active org's industry redirect to /app. */
 export const PAGE_MODULE_BY_HREF: Record<string, string> = {
+  "/app/gym-invoices": "gym_invoices",
   "/app/companies": "companies",
   "/app/invoices": "invoices",
   "/app/space": "space",

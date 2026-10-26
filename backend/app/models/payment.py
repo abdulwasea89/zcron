@@ -63,6 +63,7 @@ class Payment(UUIDModel, TimestampModel, table=True):
 
     # Office vertical: settlement of a B2B invoice (kind=SPACE, method=bank_transfer|cash).
     invoice_id: str | None = Field(default=None, foreign_key="invoices.id", index=True)
+    gym_invoice_id: str | None = Field(default=None, foreign_key="gym_invoices.id", index=True)
 
     paid_at: datetime | None = None
 

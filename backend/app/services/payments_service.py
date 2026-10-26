@@ -123,6 +123,10 @@ async def refund(
         else PaymentStatus.PARTIALLY_REFUNDED
     )
     session.add(payment)
+    if payment.gym_invoice_id:
+        from app.services import gym_invoices_service
+
+        await gym_invoices_service.refresh_after_refund(session, payment=payment, actor_id=actor_id)
     if payment.subscription_id:
         from app.models.subscription import Subscription
         subscription = await session.get(Subscription, payment.subscription_id)

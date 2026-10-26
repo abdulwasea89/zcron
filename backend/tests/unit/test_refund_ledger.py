@@ -4,10 +4,12 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from app.core.constants import PaymentMethod, PaymentStatus
+from app.core.constants import PaymentKind, PaymentMethod, PaymentStatus
+from app.core.security import now_utc
 from app.models.organization import Organization
 from app.models.payment import Payment
 from app.models.payment_refund import PaymentRefund
+from app.models.gym_invoice import GymInvoice
 from app.schemas.payments import RefundRequest
 from app.services import payments_service, refund_ledger_service, webhook_service
 
@@ -57,6 +59,60 @@ async def test_refund_holds_payment_lock_and_creates_one_ledger_movement(monkeyp
     movements = [row for row in added if isinstance(row, PaymentRefund)]
     assert len(movements) == 1 and movements[0].amount == Decimal("20.15")
     assert payment.refunded_amount == 20.15
+
+
+@pytest.mark.asyncio
+async def test_refund_reopens_member_invoice_balance(monkeypatch):
+    payment = Payment(
+        id="payment", organization_id="org", kind=PaymentKind.MEMBER_FEE,
+        method=PaymentMethod.CASH, status=PaymentStatus.SUCCEEDED, amount=100,
+        gym_invoice_id="invoice",
+    )
+    invoice = GymInvoice(
+        id="invoice", organization_id="org", member_id="member", invoice_number="GINV-1",
+        description="Training", issue_date=now_utc().date(), due_date=now_utc().date(),
+        status="paid", subtotal=100, tax_amount=0, total=100, currency="USD",
+    )
+    audits = []
+
+    class Session:
+        async def get(self, model, *_args, **_kwargs):
+            return payment if model is Payment else invoice
+
+        def add(self, _row):
+            pass
+
+        async def flush(self):
+            pass
+
+    async def claim(*_args, **_kwargs):
+        return SimpleNamespace(claimed=True, record=SimpleNamespace())
+
+    async def record(*_args, **_kwargs):
+        pass
+
+    async def paid(*_args, **_kwargs):
+        return Decimal("70.00")
+
+    async def audit(*_args, **kwargs):
+        audits.append(kwargs)
+
+    async def complete(*_args, **_kwargs):
+        pass
+
+    monkeypatch.setattr(payments_service.idempotency_service, "claim", claim)
+    monkeypatch.setattr(payments_service.idempotency_service, "complete", complete)
+    monkeypatch.setattr("app.services.refund_ledger_service.record_refund", record)
+    monkeypatch.setattr("app.services.gym_invoices_service._paid", paid)
+    monkeypatch.setattr(payments_service, "record_audit", audit)
+    monkeypatch.setattr("app.services.gym_invoices_service.record_audit", audit)
+    await payments_service.refund(
+        Session(), org_id="org", payment_id=payment.id, amount=30, reason="Return",
+        idempotency_key="refund-invoice", actor_id="owner",
+    )
+    assert payment.status == PaymentStatus.PARTIALLY_REFUNDED
+    assert invoice.status == "partial"
+    assert any(row["action"] == "gym_invoice.balance_reopened" for row in audits)
 
 
 @pytest.mark.asyncio

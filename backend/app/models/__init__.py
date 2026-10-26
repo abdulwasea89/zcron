@@ -23,6 +23,7 @@ from app.models.inactivity_ladder import InactivityLadderProgress, InactivityLad
 from app.models.inbox import InboxConversation, InboxMessage
 from app.models.inbox_channel import InboxChannelConnection
 from app.models.invoice import Invoice
+from app.models.gym_invoice import GymInvoice
 from app.models.lead import Lead, LeadBooking, LeadFollowUp
 from app.models.member_trainer import MemberTrainer
 from app.models.membership import OrganizationMember
@@ -79,6 +80,7 @@ __all__ = [
     "InboxMessage",
     "InboxChannelConnection",
     "Invoice",
+    "GymInvoice",
     "Lead",
     "LeadBooking",
     "LeadFollowUp",

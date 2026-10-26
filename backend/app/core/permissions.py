@@ -42,6 +42,7 @@ class Capability(str, Enum):
     # ---- Multi-industry capabilities (office/academy, Phase 0) ----
     MANAGE_COMPANIES = "manage_companies"    # office: tenant companies & contracts
     ISSUE_INVOICES = "issue_invoices"        # office: draft/send/settle invoices
+    MANAGE_GYM_INVOICES = "manage_gym_invoices"  # gym: member invoices and receivables
     MANAGE_COURSES = "manage_courses"        # academy: courses & batches
     ENROLL_STUDENTS = "enroll_students"      # academy: register students into batches
     TAKE_ATTENDANCE = "take_attendance"      # gym: log member visits; academy: per-lesson attendance
@@ -78,6 +79,7 @@ _MATRIX: dict[Capability, set[Role]] = {
     Capability.CHECK_IN_SHIFT: {Role.TRAINER, Role.FRONT_DESK, Role.MANAGER},
     Capability.VIEW_REVENUE_ANALYTICS: {Role.OWNER, Role.MANAGER},
     Capability.MANAGE_EXPENSES: {Role.OWNER, Role.MANAGER},
+    Capability.MANAGE_GYM_INVOICES: {Role.OWNER, Role.MANAGER},
     Capability.MANAGE_SETTINGS: {Role.OWNER},
     Capability.MANAGE_MEMBERS: {Role.OWNER, Role.MANAGER},
     Capability.VIEW_PRIVATE_MEMBER_PROFILE: {Role.OWNER, Role.MANAGER},

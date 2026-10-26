@@ -406,6 +406,10 @@ async def _connect_charge_refunded(session: AsyncSession, obj: dict, account_id:
             else PaymentStatus.PARTIALLY_REFUNDED
         )
         session.add(payment)
+        if payment.gym_invoice_id:
+            from app.services import gym_invoices_service
+
+            await gym_invoices_service.refresh_after_refund(session, payment=payment, actor_id=None)
         if refund_delta and payment.subscription_id:
             sub = await session.get(Subscription, payment.subscription_id)
             if sub is not None and sub.prepaid_value_minor is not None:
