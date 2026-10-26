@@ -342,6 +342,7 @@ async def export_member_data(
         "attendance": [{"checked_in_at": item.checked_in_at, "method": item.method.value,
                         "source": item.source.value, "note": item.note} for item in attendance],
         "payments": [{"created_at": item.created_at, "amount": item.amount, "currency": item.currency,
+                      "tax_amount": item.tax_amount, "tax_included": item.tax_included,
                       "status": item.status.value, "method": item.method.value, "kind": item.kind.value}
                      for item in payments],
         "subscriptions": [{"created_at": item.created_at, "status": item.status.value,

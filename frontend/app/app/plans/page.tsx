@@ -596,6 +596,8 @@ function FieldSelect({
 function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | null; industryKey?: string; onCreated: () => void }) {
   const [name, setName] = useState(plan?.name ?? "");
   const [price, setPrice] = useState(plan ? String(plan.price) : "0");
+  const [taxMode, setTaxMode] = useState(plan?.tax_mode ?? "inclusive");
+  const [taxRate, setTaxRate] = useState(String(Number(((plan?.tax_rate ?? 0) * 100).toFixed(4))));
   const [joiningFee, setJoiningFee] = useState(plan ? String(plan.joining_fee ?? 0) : "0");
   const [billing, setBilling] = useState(plan?.billing_type ?? "recurring");
   const [cycleUnit, setCycleUnit] = useState(plan?.cycle_unit ?? "month");
@@ -636,6 +638,7 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
         name,
         price: parseFloat(price) || 0,
         joining_fee: isOffice ? 0 : parseFloat(joiningFee) || 0,
+        ...(!isOffice ? { tax_mode: taxMode, tax_rate: Number(taxRate) / 100 } : {}),
         billing_type: billing,
         visibility,
         public_description: desc || null,
@@ -723,6 +726,15 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
           onChange={(e) => setJoiningFee(e.target.value)}
           hint="Charged only on the member's first successful payment."
         />}
+
+        {!isOffice && <section className="space-y-3 border-y border-border py-4" aria-label="Plan tax settings">
+          <FieldSelect label="Tax behavior" value={taxMode} onChange={setTaxMode}>
+            <SelectItem value="inclusive">Included in the plan price</SelectItem>
+            <SelectItem value="added">Added to the plan price</SelectItem>
+          </FieldSelect>
+          <Input label="Tax rate (%)" type="number" required min="0" max="100" step="0.0001" value={taxRate} onChange={(event) => setTaxRate(event.target.value)} hint="Enter the rate applicable to this gym. Rates are not selected automatically by country." />
+          <p className="text-xs leading-5 text-muted-foreground">Tax is calculated after promotions, including any joining fee. Changes apply to future quotes and renewals; past receipts keep their recorded breakdown.</p>
+        </section>}
 
         {isOffice && (
           <>

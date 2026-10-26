@@ -24,6 +24,7 @@ from app.models.plan import MembershipPlan
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.services.plan_entitlements import subscription_terms
+from app.services.pricing_service import tax_totals
 
 
 MAX_RENEWAL_ATTEMPTS = 3
@@ -128,12 +129,7 @@ def _renewal_amount_cents(sub: Subscription, plan: MembershipPlan) -> tuple[int,
             Decimal("1"), rounding=ROUND_HALF_UP
         )
     subtotal = max(Decimal("0"), price - discount)
-    tax = Decimal("0")
-    if plan.tax_mode == TaxMode.ADDED:
-        tax = (subtotal * Decimal(str(plan.tax_rate))).quantize(
-            Decimal("1"), rounding=ROUND_HALF_UP
-        )
-    return int(subtotal + tax), int(tax)
+    return tax_totals(int(subtotal), plan.tax_rate, plan.tax_mode)
 
 
 def _mark_grace(sub: Subscription, member: OrganizationMember, *, attempt: int) -> None:
@@ -296,7 +292,7 @@ async def run_due_member_renewals(session: AsyncSession, *, org_id: str) -> dict
             organization_id=org_id, member_id=member.id, subscription_id=sub.id,
             plan_id=plan.id, kind=PaymentKind.MEMBER_FEE, method=PaymentMethod.CARD,
             status=PaymentStatus.PENDING, amount=amount / 100, plan_price_amount=sub.price_snapshot,
-            tax_amount=tax / 100, currency=sub.currency, note=note,
+            tax_amount=tax / 100, tax_included=plan.tax_mode == TaxMode.INCLUSIVE, currency=sub.currency, note=note,
             recurring_consent=True,
             idempotency_key=(
                 f"renew-{sub.id}-{int(sub.current_period_end.timestamp())}-"

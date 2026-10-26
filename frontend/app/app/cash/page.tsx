@@ -436,7 +436,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
   const [payerShares, setPayerShares] = useState<FamilyShare[]>([]);
   const [amount, setAmount] = useState("");
   const [promoCode, setPromoCode] = useState("");
-  const [quote, setQuote] = useState<{ plan_price: number; joining_fee: number; discount_amount: number; tax_amount: number; total: number; currency: string } | null>(null);
+  const [quote, setQuote] = useState<{ plan_price: number; joining_fee: number; discount_amount: number; tax_amount: number; tax_included: boolean; total: number; currency: string } | null>(null);
   const [quoteError, setQuoteError] = useState("");
   const [method, setMethod] = useState("cash");
   const [note, setNote] = useState("");
@@ -619,7 +619,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
             <div>Plan price: {money(quote.plan_price, quote.currency)}</div>
             {quote.joining_fee > 0 && <div>Joining fee: {money(quote.joining_fee, quote.currency)}</div>}
             {quote.discount_amount > 0 && <div>Promo discount: −{money(quote.discount_amount, quote.currency)}</div>}
-            {quote.tax_amount > 0 && <div>Tax: {money(quote.tax_amount, quote.currency)}</div>}
+            {quote.tax_amount > 0 && <div>Tax{quote.tax_included ? " (included)" : " (added)"}: {money(quote.tax_amount, quote.currency)}</div>}
             <strong className="text-foreground">Due now: {money(quote.total, quote.currency)}</strong>
           </div>}
           <div className="grid min-w-0 gap-5">

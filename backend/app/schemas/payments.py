@@ -17,6 +17,7 @@ class PaymentOut(BaseModel):
     status: str
     amount: float
     tax_amount: float
+    tax_included: bool = False
     plan_price_amount: float | None = None
     joining_fee_amount: float = 0.0
     discount_amount: float = 0.0

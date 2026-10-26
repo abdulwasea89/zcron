@@ -163,7 +163,7 @@ async def export_payments(
     async def content():
         yield "\ufeff" + csv_row(["payment_id", "paid_at_utc", "member_id", "kind", "method", "status",
                                   "currency", "gross_amount", "tax_amount", "lifetime_refunded_amount",
-                                  "current_net_amount", "stripe_payment_intent_id", "stripe_charge_id"])
+                                  "current_net_amount", "stripe_payment_intent_id", "stripe_charge_id", "tax_included"])
         rows = await session.stream_scalars(statement)
         async for payment in rows:
             gross = Decimal(str(payment.amount)).quantize(Decimal("0.01"))
@@ -171,7 +171,7 @@ async def export_payments(
             yield csv_row([payment.id, payment.paid_at or payment.created_at, payment.member_id,
                            payment.kind.value, payment.method.value, payment.status.value, payment.currency,
                            gross, Decimal(str(payment.tax_amount)).quantize(Decimal("0.01")), refunded,
-                           gross - refunded, payment.stripe_payment_intent_id, payment.stripe_charge_id])
+                           gross - refunded, payment.stripe_payment_intent_id, payment.stripe_charge_id, payment.tax_included])
 
     return StreamingResponse(content(), media_type="text/csv", headers={
         "Content-Disposition": f'attachment; filename="payments-{date_from}-{date_to}.csv"',

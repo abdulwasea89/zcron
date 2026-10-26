@@ -1,8 +1,8 @@
 """One quote for card checkout and offline membership payments.
 
 The joining fee is charged on the first successful member payment. Promotions
-discount the plan price only; added tax applies after the discount and includes
-the joining fee. All calculations use cents to avoid float drift.
+discount the plan price only; tax applies after the discount and includes the
+joining fee. All calculations use cents to avoid float drift.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -21,6 +21,17 @@ from app.schemas.promotions import PriceQuoteOut
 
 def _cents(value: float) -> int:
     return int((Decimal(str(value)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def tax_totals(subtotal: int, rate: float, mode: TaxMode) -> tuple[int, int]:
+    """Return total and tax in cents; inclusive tax stays inside the quoted price."""
+    fraction = Decimal(str(rate))
+    if not fraction.is_finite() or not 0 <= fraction <= 1 or subtotal < 0 or mode not in {TaxMode.ADDED, TaxMode.INCLUSIVE}:
+        raise HTTPException(status_code=422, detail="Plan tax settings are invalid.")
+    tax = int((Decimal(subtotal) * fraction / (1 + fraction if mode == TaxMode.INCLUSIVE else 1)).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP,
+    ))
+    return (subtotal + tax if mode == TaxMode.ADDED else subtotal), tax
 
 
 async def quote_member_payment(
@@ -58,10 +69,10 @@ async def quote_member_payment(
         )
         discount = min(price, discount)
     subtotal = price + joining - discount
-    tax = _cents(Decimal(subtotal) / 100 * Decimal(str(plan.tax_rate))) if plan.tax_mode == TaxMode.ADDED else 0
+    total, tax = tax_totals(subtotal, plan.tax_rate, plan.tax_mode)
     return PriceQuoteOut(
         plan_price=price / 100, joining_fee=joining / 100,
         discount_amount=discount / 100, tax_amount=tax / 100,
-        total=(subtotal + tax) / 100, currency=plan.currency,
+        total=total / 100, currency=plan.currency, tax_included=plan.tax_mode == TaxMode.INCLUSIVE,
         promo_code=normalized, first_purchase=first_purchase,
     )

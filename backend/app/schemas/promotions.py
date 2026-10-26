@@ -47,6 +47,7 @@ class PromotionOut(BaseModel):
 
 
 class PriceQuoteOut(BaseModel):
+    tax_included: bool = False
     plan_price: float
     joining_fee: float
     discount_amount: float

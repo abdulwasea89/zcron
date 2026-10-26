@@ -83,7 +83,7 @@ async def log_cash_payment(
         method=data.method,
         status=PaymentStatus.SUCCEEDED,
         amount=quote.total,
-        tax_amount=quote.tax_amount,
+        tax_amount=quote.tax_amount, tax_included=quote.tax_included,
         plan_price_amount=quote.plan_price,
         joining_fee_amount=quote.joining_fee,
         discount_amount=quote.discount_amount,
@@ -225,6 +225,7 @@ async def render_receipt(session: AsyncSession, *, org_id: str, payment_id: str)
         joining_fee=payment.joining_fee_amount,
         discount=payment.discount_amount,
         tax=payment.tax_amount,
+        tax_included=payment.tax_included,
         promo_code=payment.promo_code,
     )
     return pdf, f"receipt-{payment.id[:12]}.pdf"

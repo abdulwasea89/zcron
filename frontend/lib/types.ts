@@ -431,6 +431,7 @@ export interface PaymentOut {
   status: string;
   amount: number;
   tax_amount: number;
+  tax_included?: boolean;
   plan_price_amount?: number | null;
   joining_fee_amount?: number;
   discount_amount?: number;
@@ -611,6 +612,7 @@ export interface OfficeInvoiceOut {
   status: string;
   subtotal: number;
   tax_amount: number;
+  tax_included?: boolean;
   total: number;
   currency: string;
   line_items: Record<string, unknown>[];

@@ -51,7 +51,7 @@ async def test_family_payment_creates_one_payment_and_subscription_or_rejects_fo
             pass
 
     async def quote(*_args, **_kwargs):
-        return SimpleNamespace(total=100, tax_amount=0, plan_price=100, joining_fee=0, discount_amount=0, promo_code=None)
+        return SimpleNamespace(total=100, tax_amount=0, tax_included=True, plan_price=100, joining_fee=0, discount_amount=0, promo_code=None)
 
     async def noop(*_args, **_kwargs):
         pass
@@ -75,6 +75,7 @@ async def test_family_payment_creates_one_payment_and_subscription_or_rejects_fo
     else:
         payment, _member, _url = await cash.log_cash_payment(Session(), org_id="org", data=data, staff_user_id="staff")
         assert payment.amount == 100
+        assert payment.tax_included is True
         assert payment.payer_contributions == [{"member_id": "holder", "amount": "40.00"}, {"member_id": "dependent", "amount": "60.00"}]
         assert len({item.id for item in saved if isinstance(item, Payment)}) == 1
         assert len([item for item in saved if isinstance(item, Subscription)]) == 1

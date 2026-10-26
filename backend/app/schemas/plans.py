@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.constants import PlanBillingType, PlanVisibility, TaxMode
 from app.core.industry import OfferKind
@@ -12,11 +12,11 @@ class PlanCreate(BaseModel):
     name: str
     public_description: str | None = None
     internal_notes: str | None = None
-    price: float = Field(default=0.0, ge=0)
-    joining_fee: float = Field(default=0.0, ge=0)
+    price: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    joining_fee: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     currency: str | None = None  # defaults to org currency
     tax_mode: TaxMode = TaxMode.INCLUSIVE
-    tax_rate: float = 0.0
+    tax_rate: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
     billing_type: PlanBillingType = PlanBillingType.RECURRING
     cycle_length: int | None = 1
     cycle_unit: str | None = "month"
@@ -44,10 +44,18 @@ class PlanUpdate(BaseModel):
     name: str | None = None
     public_description: str | None = None
     internal_notes: str | None = None
-    price: float | None = Field(default=None, ge=0)
-    joining_fee: float | None = Field(default=None, ge=0)
+    price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    joining_fee: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     tax_mode: TaxMode | None = None
-    tax_rate: float | None = None
+    tax_rate: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+
+    @field_validator("price", "joining_fee", "tax_mode", "tax_rate")
+    @classmethod
+    def pricing_cannot_be_cleared(cls, value):
+        if value is None:
+            raise ValueError("Pricing and tax settings cannot be cleared; use zero for no charge or tax.")
+        return value
+
     billing_type: PlanBillingType | None = None
     cycle_length: int | None = None
     cycle_unit: str | None = None

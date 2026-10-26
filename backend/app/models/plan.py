@@ -39,7 +39,7 @@ class MembershipPlan(UUIDModel, TimestampModel, table=True):
     joining_fee: float = 0.0  # first successful membership purchase only
     currency: str = "USD"
     tax_mode: TaxMode = Field(default=TaxMode.INCLUSIVE)
-    tax_rate: float = 0.0  # fraction, applies when tax_mode == ADDED
+    tax_rate: float = 0.0  # fraction; extracted for inclusive prices, otherwise added
 
     # Billing type (Section 6.3)
     billing_type: PlanBillingType = Field(default=PlanBillingType.RECURRING)

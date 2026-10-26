@@ -96,7 +96,7 @@ export default function PaymentsPage() {
   function clearPaymentFilters() { setStatusFilter(NONE); setKindFilter(NONE); setRefundFilter(NONE); }
 
   function exportFilteredPayments() {
-    const columns = ["payment_id", "member_id", "plan_id", "kind", "method", "provider_method", "status", "amount", "tax_amount", "refunded_amount", "currency", "promo_code", "created_at", "paid_at"];
+    const columns = ["payment_id", "member_id", "plan_id", "kind", "method", "provider_method", "status", "amount", "tax_amount", "refunded_amount", "currency", "promo_code", "created_at", "paid_at", "tax_included"];
     const csvCell = (value: unknown) => {
       const text = String(value ?? "");
       const safe = /^[\s]*[=+@-]/.test(text) ? `'${text}` : text;
@@ -105,7 +105,7 @@ export default function PaymentsPage() {
     const rows = filtered.map((p) => [
       p.id, p.member_id, p.plan_id, p.kind, p.method, p.stripe_payment_method_type,
       p.status, p.amount, p.tax_amount, p.refunded_amount, p.currency, p.promo_code,
-      p.created_at, p.paid_at,
+      p.created_at, p.paid_at, p.tax_included ?? false,
     ]);
     const csv = [columns, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));

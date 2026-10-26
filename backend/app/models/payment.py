@@ -30,6 +30,7 @@ class Payment(UUIDModel, TimestampModel, table=True):
 
     amount: float = 0.0
     tax_amount: float = 0.0
+    tax_included: bool = False
     plan_price_amount: float | None = None
     joining_fee_amount: float = 0.0
     discount_amount: float = 0.0

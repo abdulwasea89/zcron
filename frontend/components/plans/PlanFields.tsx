@@ -63,6 +63,7 @@ export function PlanFields({ plan }: { plan: PlanOut }) {
         <span className="font-medium tabular-nums">{money(plan.price, plan.currency)}</span>
         <span className="ml-1.5 text-muted-foreground">{planCadence(plan.billing_type, plan.cycle_length, plan.cycle_unit)}</span>
       </FieldRow>
+      <FieldRow icon={<TagIcon />} label="Tax">{Number((plan.tax_rate * 100).toFixed(4))}% · {plan.tax_mode === "added" ? "added to price" : "included in price"}</FieldRow>
       <FieldRow icon={<RepeatIcon />} label="Billing">{titleCase(plan.billing_type)}</FieldRow>
       {plan.offer_kind === "membership" && (
         <>

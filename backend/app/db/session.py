@@ -90,7 +90,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "reminder_created_at": "DATETIME",
             "reminder_email_accepted": "BOOLEAN NOT NULL DEFAULT 0",
         },
-        "payments": {"payer_contributions": "JSON NOT NULL DEFAULT '[]'"},
+        "payments": {"payer_contributions": "JSON NOT NULL DEFAULT '[]'", "tax_included": "BOOLEAN NOT NULL DEFAULT 0"},
         "organization_members": {
             "marketing_whatsapp_consent": "BOOLEAN NOT NULL DEFAULT 0",
             "marketing_whatsapp_consent_at": "DATETIME",

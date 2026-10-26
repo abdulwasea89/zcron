@@ -169,6 +169,7 @@ def render_receipt_pdf(
     joining_fee: float = 0,
     discount: float = 0,
     tax: float = 0,
+    tax_included: bool = False,
     promo_code: str | None = None,
     valid_until: str | None = None,
     note: str | None = None,
@@ -219,7 +220,7 @@ def render_receipt_pdf(
     for label, value in (
         ("Joining fee", joining_fee),
         (f"Promo {promo_code}" if promo_code else "Discount", -discount),
-        ("Tax", tax),
+        ("Tax (included)" if tax_included else "Tax", tax),
     ):
         if value:
             lines.append(_text_at(72, y, label, size=10))
