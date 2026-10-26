@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fastapi import HTTPException, status
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -45,18 +47,18 @@ async def claim(
 ) -> ClaimResult:
     if not key:
         raise HTTPException(status_code=400, detail="Idempotency-Key header is required.")
+    if len(key) > 512:
+        raise HTTPException(status_code=400, detail="Idempotency-Key must be 512 characters or fewer.")
 
     request_hash = hash_request_body(body)
-    existing = (
-        await session.execute(
-            select(IdempotencyKey).where(
-                IdempotencyKey.key == key,
-                IdempotencyKey.endpoint == endpoint,
-            )
-        )
-    ).scalar_one_or_none()
+    organization_id = organization_id or None
+    user_id = user_id or None
+    statement = select(IdempotencyKey).where(
+        IdempotencyKey.key == key, IdempotencyKey.endpoint == endpoint,
+        IdempotencyKey.organization_id == organization_id, IdempotencyKey.user_id == user_id,
+    )
 
-    if existing is not None:
+    def replay(existing: IdempotencyKey) -> ClaimResult:
         # Same key, different body -> replay attack with modified params.
         if existing.request_hash != request_hash:
             raise HTTPException(
@@ -72,6 +74,11 @@ async def claim(
             )
         if existing.status == IdempotencyStatus.FAILED:
             return ClaimResult(False, existing, existing.response_body, existing.response_code)
+        raise HTTPException(status_code=409, detail="Request status is unavailable. Retry shortly.")
+
+    existing = (await session.execute(statement)).scalar_one_or_none()
+    if existing is not None:
+        return replay(existing)
 
     record = IdempotencyKey(
         key=key,
@@ -81,9 +88,20 @@ async def claim(
         user_id=user_id,
         status=IdempotencyStatus.IN_PROGRESS,
     )
-    session.add(record)
-    await session.flush()
-    return ClaimResult(True, record)
+    dialect = session.get_bind().dialect.name
+    insert = postgres_insert if dialect == "postgresql" else sqlite_insert if dialect == "sqlite" else None
+    if insert is None:
+        raise RuntimeError("Idempotency claims require PostgreSQL or SQLite.")
+    claimed = (await session.execute(
+        insert(IdempotencyKey).values(**record.model_dump()).on_conflict_do_nothing().returning(IdempotencyKey)
+    )).scalar_one_or_none()
+    if claimed is not None:
+        return ClaimResult(True, claimed)
+    # A concurrent request won the unique claim without aborting this transaction.
+    existing = (await session.execute(statement)).scalar_one_or_none()
+    if existing is None:
+        raise HTTPException(status_code=409, detail="Request is being claimed. Retry shortly.")
+    return replay(existing)
 
 
 async def complete(

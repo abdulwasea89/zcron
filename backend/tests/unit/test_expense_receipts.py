@@ -44,6 +44,9 @@ def store(monkeypatch):
     SQLModel.metadata.create_all(engine)
     with Session(engine) as db:
         class AsyncFacade:
+            def get_bind(self):
+                return db.get_bind()
+
             async def get(self, *args, **kwargs):
                 return db.get(*args, **kwargs)
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlmodel import Field
+from sqlalchemy import Index, text
 
 from app.core.constants import IdempotencyStatus
 from app.models.base import TimestampModel, UUIDModel
@@ -20,6 +21,7 @@ class IdempotencyKey(UUIDModel, TimestampModel, table=True):
     __tablename__ = "idempotency_keys"
 
     key: str = Field(index=True)
+    original_key: str | None = None
     organization_id: str | None = Field(default=None, index=True)
     user_id: str | None = None
 
@@ -33,4 +35,7 @@ class IdempotencyKey(UUIDModel, TimestampModel, table=True):
 
     completed_at: datetime | None = None
 
-    __table_args__ = ()
+    __table_args__ = (Index(
+        "uq_idempotency_scope_key", "key", "endpoint",
+        text("coalesce(organization_id, '')"), text("coalesce(user_id, '')"), unique=True,
+    ),)

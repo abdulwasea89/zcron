@@ -78,6 +78,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
     inspector = inspect(connection)
     tables = set(inspector.get_table_names())
     additions = {
+        "idempotency_keys": {"original_key": "VARCHAR"},
         "tasks": {
             "category": "VARCHAR NOT NULL DEFAULT 'general'",
             "related_member_id": "VARCHAR",
@@ -165,6 +166,34 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_open_retention "
             "ON tasks (organization_id, related_member_id) WHERE category = 'retention' AND done = 0"
         )
+    if "idempotency_keys" in tables:
+        _upgrade_sqlite_idempotency_scope(connection)
+
+
+def _upgrade_sqlite_idempotency_scope(connection) -> None:
+    from sqlalchemy import text
+
+    exists = connection.exec_driver_sql(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='uq_idempotency_scope_key'"
+    ).first()
+    if exists:
+        return
+    connection.exec_driver_sql("UPDATE idempotency_keys SET organization_id=NULL WHERE organization_id=''")
+    connection.exec_driver_sql("UPDATE idempotency_keys SET user_id=NULL WHERE user_id=''")
+    duplicates = connection.exec_driver_sql("""
+        SELECT id, key FROM (
+            SELECT id, key, ROW_NUMBER() OVER (
+                PARTITION BY key, endpoint, coalesce(organization_id, ''), coalesce(user_id, '')
+                ORDER BY CASE WHEN lower(cast(status AS TEXT)) = 'completed' THEN 0 ELSE 1 END,
+                         created_at, id
+            ) AS position FROM idempotency_keys
+        ) AS ranked WHERE position > 1
+    """).all()
+    for row in duplicates:
+        connection.execute(text("UPDATE idempotency_keys SET original_key=:original, key=:archived WHERE id=:id"),
+                           {"id": row.id, "original": row.key, "archived": f"archived-duplicate:{row.id}"})
+    connection.exec_driver_sql("CREATE UNIQUE INDEX uq_idempotency_scope_key ON idempotency_keys "
+                               "(key, endpoint, coalesce(organization_id, ''), coalesce(user_id, ''))")
 
 
 def _upgrade_sqlite_owner_onboarding_schema(connection) -> None:
