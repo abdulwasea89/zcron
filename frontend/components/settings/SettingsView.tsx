@@ -736,8 +736,9 @@ const INBOX_PROVIDERS = [
   { id: "instagram", title: "Instagram Messaging", detail: "Connect an Instagram professional account through Meta webhooks and Graph API.", fields: [
     ["sender_id", "Instagram account ID", "text"], ["page_access_token", "Page access token", "password"], ["app_secret", "Meta app secret", "password"], ["verify_token", "Webhook verify token", "password"],
   ] },
-  { id: "messenger", title: "Facebook Messenger", detail: "Connect a Facebook Page inbox through Meta webhooks and Graph API.", fields: [
+  { id: "messenger", title: "Facebook Messenger and lead ads", detail: "Connect your Page inbox and optionally capture leads from approved Facebook forms.", fields: [
     ["sender_id", "Facebook Page ID", "text"], ["page_access_token", "Page access token", "password"], ["app_secret", "Meta app secret", "password"], ["verify_token", "Webhook verify token", "password"],
+    ["lead_form_ids", "Lead form IDs (optional, comma-separated)", "text"],
   ] },
   { id: "wechat", title: "WeChat Official Account", detail: "Connect a WeChat Official Account using its customer-service API and plaintext-mode callback.", fields: [
     ["app_id", "App ID", "text"], ["app_secret", "App secret", "password"], ["verify_token", "Webhook token", "password"],
@@ -830,6 +831,7 @@ function InboxChannelsSection() {
           <p className="text-xs font-medium text-foreground">{provider.id === "web_chat" ? "Member chat link" : "Provider webhook URL"}</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{connection.webhook_url}</p>
           <div className="mt-2 flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void copyWebhook(connection.webhook_url!)}>Copy {provider.id === "web_chat" ? "link" : "URL"}</Button><span className="text-[11px] text-muted-foreground">{provider.id === "web_chat" ? "Share this page with members and prospects." : "Add this URL in your provider’s webhook settings. Keep it private."}</span></div>
         </div>}
+        {provider.id === "messenger" && <p className="mt-3 text-xs leading-5 text-muted-foreground">For lead ads, enter the form IDs to allow, subscribe the Meta callback to leadgen, and grant the Page token lead-retrieval access. Intake does not grant marketing consent. Leaving form IDs empty disables ad intake.</p>}
         {connection?.connected && provider.id === "sms" && connection.voice_webhook_url && <div className="mt-3 rounded-md bg-foreground/[0.035] p-3">
           <p className="text-xs font-medium text-foreground">Twilio Voice webhook URL</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{connection.voice_webhook_url}</p>
           <div className="mt-2 flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void copyWebhook(connection.voice_webhook_url!)}>Copy URL</Button><span className="text-[11px] text-muted-foreground">Set this as the Twilio phone number’s incoming voice URL. Calls ring the configured gym number for 20 seconds; missed calls create a staff task, and SMS is sent only with lead consent.</span></div>

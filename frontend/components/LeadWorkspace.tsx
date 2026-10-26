@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { useRealtimeEvent } from "@/components/Realtime";
 import { ListToolbar } from "@/components/ListToolbar";
 import { ListFilterSheet } from "@/components/ListFilterSheet";
 import { FieldSelect, NONE } from "@/components/FieldSelect";
@@ -124,10 +125,17 @@ export function LeadWorkspace({ untouchedOnly = false }: { untouchedOnly?: boole
   const [contactMethod, setContactMethod] = useState("call");
   const [profile, setProfile] = useState({ name: "", email: "", phone: "", contact_handle: "", source: "staff_entered", goal: "", budget: "", preferred_times: "", preferences: "", email_followup_consent: false, sms_followup_consent: false });
 
+  const readLeads = useCallback(async () => {
+    const rows = await api.get<Lead[]>("/leads");
+    return untouchedOnly ? rows.filter((lead) => isRecentUntouchedLead(lead, prioritySince)) : rows;
+  }, [untouchedOnly, prioritySince]);
+  useRealtimeEvent(["lead.changed"], () => {
+    void readLeads().then(setLeads).catch((cause) => setError((cause as ApiError).message));
+  });
+
   const load = useCallback(async (preferredId?: string) => {
     try {
-      const allRows = await api.get<Lead[]>("/leads");
-      const rows = untouchedOnly ? allRows.filter((lead) => isRecentUntouchedLead(lead, prioritySince)) : allRows;
+      const rows = await readLeads();
       setLeads(rows);
       const active = rows.find((lead) => lead.id === preferredId) ?? rows[0] ?? null;
       setSelectedId(active?.id ?? null);
@@ -139,7 +147,7 @@ export function LeadWorkspace({ untouchedOnly = false }: { untouchedOnly?: boole
       setError((e as ApiError).message);
       setLeads([]);
     }
-  }, [untouchedOnly, prioritySince]);
+  }, [readLeads]);
 
   useEffect(() => {
     queueMicrotask(() => void load());

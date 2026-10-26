@@ -214,7 +214,7 @@ async def log_first_contact(
     return lead
 
 
-async def _reject_duplicate_contact(
+async def find_matching_lead(
     session: AsyncSession,
     *,
     org_id: str,
@@ -223,7 +223,7 @@ async def _reject_duplicate_contact(
     source: str | None = None,
     contact_handle: str | None = None,
     exclude_lead_id: str | None = None,
-) -> None:
+) -> Lead | None:
     contact_matches = []
     if email:
         contact_matches.append(Lead.email == email)
@@ -241,7 +241,7 @@ async def _reject_duplicate_contact(
             (Lead.source == source) & (func.lower(Lead.contact_handle) == contact_handle.lower())
         )
     if not contact_matches:
-        return
+        return None
 
     statement = select(Lead).where(
         Lead.organization_id == org_id,
@@ -249,7 +249,16 @@ async def _reject_duplicate_contact(
     )
     if exclude_lead_id:
         statement = statement.where(Lead.id != exclude_lead_id)
-    duplicate = (await session.execute(statement.limit(1))).scalar_one_or_none()
+    return (await session.execute(statement.limit(1))).scalar_one_or_none()
+
+
+async def _reject_duplicate_contact(
+    session: AsyncSession, *, org_id: str, email: str | None, phone: str | None,
+    source: str | None = None, contact_handle: str | None = None, exclude_lead_id: str | None = None,
+) -> None:
+    duplicate = await find_matching_lead(session, org_id=org_id, email=email, phone=phone,
+                                         source=source, contact_handle=contact_handle,
+                                         exclude_lead_id=exclude_lead_id)
     if duplicate is None:
         return
 

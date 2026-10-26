@@ -281,20 +281,39 @@ async def meta_inbound(org_id: str, channel: str, request: Request, hook: str = 
     expected = "sha256=" + hmac.new((credentials or {}).get("app_secret", "").encode(), raw, hashlib.sha256).hexdigest()
     connection = await channels.get_connection(session, org_id, channel)
     hook_ok = bool(connection and connection.webhook_token and hmac.compare_digest(hook, connection.webhook_token))
-    if not credentials or not hook_ok or not hmac.compare_digest(expected, signature):
+    if not credentials or not credentials.get("app_secret") or not hook_ok or not hmac.compare_digest(expected, signature):
         raise HTTPException(status_code=403, detail="Invalid provider signature.")
     await _check_org(session, org_id)
     try:
         payload = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError):
         raise HTTPException(status_code=400, detail="Invalid Meta event.")
+    if not isinstance(payload, dict) or not isinstance(payload.get("entry", []), list):
+        raise HTTPException(status_code=400, detail="Invalid Meta event.")
+    captured_leads = []
     for entry in payload.get("entry", []):
+        if not isinstance(entry, dict) or str(entry.get("id", "")) != str(credentials.get("sender_id", "")):
+            continue
+        if channel == "messenger":
+            from app.services.lead_capture_service import capture_meta_lead
+
+            changes = entry.get("changes") or []
+            if not isinstance(changes, list):
+                raise HTTPException(status_code=400, detail="Invalid Meta changes.")
+            for change in changes:
+                if isinstance(change, dict) and change.get("field") == "leadgen" and isinstance(change.get("value"), dict):
+                    lead_id = await capture_meta_lead(session, org_id=org_id, credentials=credentials, value=change["value"])
+                    if lead_id:
+                        captured_leads.append(lead_id)
         for event in entry.get("messaging", []):
             message = event.get("message") or {}
             sender = (event.get("sender") or {}).get("id")
             body = str(message.get("text") or "").strip()
             if sender and body and not message.get("is_echo"):
                 await record_inbound(session, org_id=org_id, channel=Channel(channel), handle=str(sender), body=body, external_id=str(message.get("mid") or "") or None)
+    if captured_leads:
+        await session.commit()
+        await events.publish(org_id, "lead.changed", {"lead_ids": list(dict.fromkeys(captured_leads))})
     return {"ok": True}
 
 

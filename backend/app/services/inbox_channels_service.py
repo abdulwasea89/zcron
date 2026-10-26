@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import re
 import smtplib
 from email.utils import parseaddr
 from typing import Any
@@ -149,7 +150,7 @@ def _validate(channel: str, source: dict[str, Any]) -> dict[str, Any]:
         "telegram": {"bot_token"},
         "line": {"access_token", "channel_secret"},
         "instagram": {"sender_id", "page_access_token", "app_secret", "verify_token"},
-        "messenger": {"sender_id", "page_access_token", "app_secret", "verify_token"},
+        "messenger": {"sender_id", "page_access_token", "app_secret", "verify_token", "lead_form_ids"},
         "wechat": {"app_id", "app_secret", "verify_token"},
         "web_chat": {"enabled"},
     }[channel]
@@ -203,8 +204,16 @@ def _validate(channel: str, source: dict[str, Any]) -> dict[str, Any]:
     elif channel in ("instagram", "messenger"):
         for key in ("sender_id", "page_access_token", "app_secret", "verify_token"):
             creds[key] = str(creds.get(key, "")).strip()
-        if not all(creds.values()):
+        if not all(creds[key] for key in ("sender_id", "page_access_token", "app_secret", "verify_token")):
             raise HTTPException(status_code=422, detail="Enter the account ID, page access token, app secret, and webhook verify token.")
+        if channel == "messenger":
+            forms = list(dict.fromkeys(item.strip() for item in str(creds.get("lead_form_ids", "")).split(",") if item.strip()))
+            if len(forms) > 20 or any(not re.fullmatch(r"\d{1,32}", item) for item in forms):
+                raise HTTPException(status_code=422, detail="Enter up to 20 numeric Facebook lead form IDs, separated by commas.")
+            if forms:
+                creds["lead_form_ids"] = ",".join(forms)
+            else:
+                creds.pop("lead_form_ids", None)
     elif channel == "wechat":
         for key in ("app_id", "app_secret", "verify_token"):
             creds[key] = str(creds.get(key, "")).strip()
