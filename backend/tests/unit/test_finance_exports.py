@@ -14,6 +14,7 @@ from app.core.constants import Role
 from app.core.tenancy import TenantContext
 from app.models.membership import OrganizationMember
 from app.models.payment import Payment
+from app.models.payment_refund import PaymentRefund
 from app.models.organization import Organization
 from app.models.receipt import ReceiptUpload
 from app.models.user import User
@@ -66,6 +67,49 @@ async def test_streamed_accounting_export_is_tenant_scoped_and_audited(monkeypat
     assert rows[1][7:11] == ["100.30", "0.00", "0.20", "100.10"]
     assert audits[0]["organization_id"] == "org"
     assert audits[0]["action"] == "finance.payments_exported"
+
+
+@pytest.mark.asyncio
+async def test_refund_export_contains_dated_movements_and_is_audited(monkeypatch):
+    refund = PaymentRefund(
+        id="refund-1", organization_id="org", payment_id="payment-1", amount="12.50",
+        currency="USD", source="admin", actor_user_id="actor",
+    )
+    payment = Payment(
+        id="payment-1", organization_id="org", member_id="member-1", stripe_charge_id="ch_1",
+    )
+    audits = []
+
+    async def get(*_args):
+        return Organization(id="org", name="Gym", timezone="UTC")
+
+    class Rows:
+        async def __aiter__(self):
+            yield refund, payment
+
+    async def stream(query):
+        sql = str(query)
+        assert "payment_refunds.organization_id" in sql
+        assert "payments.organization_id" in sql
+        return Rows()
+
+    async def audit(*_args, **kwargs):
+        audits.append(kwargs)
+
+    monkeypatch.setattr(finance, "record_audit", audit)
+    request = SimpleNamespace(headers={}, client=None)
+    response = await finance.export_refunds(
+        request, date(2026, 1, 1), date(2026, 1, 31),
+        TenantContext("actor", "org", Role.OWNER),
+        SimpleNamespace(get=get, stream=stream),
+    )
+    rows = list(csv.reader(io.StringIO("".join(
+        [part async for part in response.body_iterator]
+    ).lstrip("\ufeff"))))
+    assert rows[0][0:3] == ["refund_id", "occurred_at_utc", "payment_id"]
+    assert rows[1][0:4] == ["refund-1", rows[1][1], "payment-1", "member-1"]
+    assert rows[1][8:10] == ["12.50", "ch_1"]
+    assert audits[0]["action"] == "finance.refunds_exported"
 
 
 @pytest.mark.asyncio

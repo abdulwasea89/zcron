@@ -179,6 +179,49 @@ async def export_payments(
     })
 
 
+@router.get("/refunds.csv")
+async def export_refunds(
+    request: Request,
+    date_from: date, date_to: date,
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_REVENUE_ANALYTICS)),
+    session: AsyncSession = Depends(get_session),
+):
+    """Export dated refund movements for bookkeeping reconciliation."""
+    org = await session.get(Organization, ctx.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Gym not found.")
+    start, end = period_bounds(date_from, date_to, org.timezone or "UTC")
+    statement = select(PaymentRefund, Payment).join(
+        Payment, Payment.id == PaymentRefund.payment_id,
+    ).where(
+        PaymentRefund.organization_id == ctx.org_id,
+        Payment.organization_id == ctx.org_id,
+        PaymentRefund.occurred_at >= start,
+        PaymentRefund.occurred_at < end,
+    ).order_by(PaymentRefund.occurred_at, PaymentRefund.id).execution_options(yield_per=500)
+    await record_audit(
+        session, action="finance.refunds_exported", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="payment_refund", ip_address=get_client_ip(request),
+        metadata={"date_from": str(date_from), "date_to": str(date_to)},
+    )
+
+    async def content():
+        yield "\ufeff" + csv_row(["refund_id", "occurred_at_utc", "payment_id", "member_id", "kind",
+                                  "method", "source", "currency", "refund_amount", "stripe_charge_id",
+                                  "actor_user_id"])
+        rows = await session.stream(statement)
+        async for refund, payment in rows:
+            yield csv_row([refund.id, refund.occurred_at, payment.id, payment.member_id,
+                           payment.kind.value, payment.method.value, refund.source, refund.currency,
+                           Decimal(str(refund.amount)).quantize(Decimal("0.01")),
+                           payment.stripe_charge_id, refund.actor_user_id])
+
+    return StreamingResponse(content(), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="refunds-{date_from}-{date_to}.csv"',
+        "Cache-Control": "no-store",
+    })
+
+
 @router.get("/payments/{payment_id}/evidence.zip")
 async def payment_evidence(
     payment_id: str, request: Request,

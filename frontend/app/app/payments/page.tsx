@@ -132,6 +132,7 @@ export default function PaymentsPage() {
         <Input type="date" label="Accounting export from" value={exportFrom} onChange={(event) => setExportFrom(event.target.value)} />
         <Input type="date" label="Through" value={exportTo} min={exportFrom} onChange={(event) => setExportTo(event.target.value)} />
         <Button variant="secondary" disabled={!exportFrom || !exportTo || exportTo < exportFrom} onClick={() => window.location.assign(`/api/download/finance/payments.csv?date_from=${exportFrom}&date_to=${exportTo}`)}>Download accounting CSV</Button>
+        <Button variant="secondary" disabled={!exportFrom || !exportTo || exportTo < exportFrom} onClick={() => window.location.assign(`/api/download/finance/refunds.csv?date_from=${exportFrom}&date_to=${exportTo}`)}>Download refunds CSV</Button>
         <p className="w-full text-xs text-muted-foreground">Uses the gym’s timezone. Refund columns show lifetime totals for each payment; this export is a current ledger snapshot.</p>
       </section>
       <Sheet open={!!refundFor} onOpenChange={(open) => { if (!open) setRefundFor(null); }}>
