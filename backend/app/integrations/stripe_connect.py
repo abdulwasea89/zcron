@@ -8,6 +8,7 @@ objects so member signup/payment runs without a real Stripe account.
 from __future__ import annotations
 
 import uuid
+from io import BytesIO
 from dataclasses import dataclass
 
 from app.core.config import settings
@@ -250,6 +251,27 @@ class StripeConnect:
             idempotency_key=idempotency_key, stripe_account=connected_account_id,
         )
         return _dispute_dict(result)
+
+    async def upload_dispute_evidence_file(
+        self, *, connected_account_id: str, filename: str, content: bytes, idempotency_key: str,
+    ) -> dict | None:
+        if not self.live or _stripe is None:
+            return None
+        file = BytesIO(content)
+        file.name = filename
+        result = _stripe.File.create(
+            purpose="dispute_evidence", file=file, idempotency_key=idempotency_key,
+            stripe_account=connected_account_id,
+        )
+        return {"id": result.id, "purpose": result.purpose, "filename": result.filename}
+
+    async def retrieve_dispute_evidence_file(
+        self, *, connected_account_id: str, file_id: str,
+    ) -> dict | None:
+        if not self.live or _stripe is None:
+            return None
+        result = _stripe.File.retrieve(file_id, stripe_account=connected_account_id)
+        return {"id": result.id, "purpose": result.purpose}
 
     async def retrieve_payment_intent(
         self, *, connected_account_id: str, idempotency_key: str

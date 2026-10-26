@@ -7,9 +7,10 @@ import json
 import zipfile
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from pathlib import PurePath
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Numeric, case, cast, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +38,8 @@ from app.services import idempotency_service
 from app.schemas.disputes import DisputeEvidenceRequest
 
 router = APIRouter()
+
+DISPUTE_FILE_LIMIT = 5 * 1024 * 1024
 
 
 def operating_totals(receipts, refunds, legacy_refunds, expenses) -> dict:
@@ -196,6 +199,16 @@ async def submit_dispute_evidence(
     }
     if not evidence:
         raise HTTPException(status_code=422, detail="Add at least one evidence field.")
+    file_id = evidence.get("uncategorized_file")
+    if file_id:
+        try:
+            evidence_file = await connect_stripe.retrieve_dispute_evidence_file(
+                connected_account_id=org.stripe_connect_account_id, file_id=file_id,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="Could not verify the evidence file with Stripe.") from exc
+        if evidence_file is None or evidence_file.get("purpose") != "dispute_evidence":
+            raise HTTPException(status_code=422, detail="Choose an evidence file uploaded to this gym’s Stripe account.")
     claim = await idempotency_service.claim(
         session, key=idempotency_key, endpoint=f"finance.dispute-evidence:{ctx.org_id}:{dispute_id}",
         body={"evidence": evidence, "submit": data.submit}, organization_id=ctx.org_id,
@@ -242,6 +255,73 @@ async def submit_dispute_evidence(
         organization_id=ctx.org_id, actor_user_id=ctx.user_id, entity_type="payment_dispute",
         entity_id=dispute_id, ip_address=get_client_ip(request),
         metadata={"evidence_fields": sorted(evidence), "status": updated["status"]},
+    )
+    await idempotency_service.complete(session, claim.record, code=200, body=json.dumps(result))
+    return result
+
+
+@router.post("/disputes/{dispute_id}/evidence-file")
+async def upload_dispute_evidence_file(
+    dispute_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+    ctx: TenantContext = Depends(require_capability(Capability.PROCESS_REFUNDS)),
+    session: AsyncSession = Depends(get_session),
+):
+    """Upload one PDF or image to the gym's connected Stripe account."""
+    org = await session.get(Organization, ctx.org_id)
+    if org is None or not org.stripe_connect_account_id:
+        raise HTTPException(status_code=409, detail="Connect a Stripe account before uploading dispute evidence.")
+    dispute = await connect_stripe.retrieve_dispute(
+        connected_account_id=org.stripe_connect_account_id, dispute_id=dispute_id,
+    )
+    if dispute is None:
+        raise HTTPException(status_code=503, detail="Stripe dispute access is unavailable.")
+    if dispute["status"] not in {"needs_response", "warning_needs_response"}:
+        raise HTTPException(status_code=409, detail="This dispute is no longer accepting evidence.")
+
+    content = await file.read(DISPUTE_FILE_LIMIT + 1)
+    if not content:
+        raise HTTPException(status_code=422, detail="Choose a PDF, PNG, or JPEG evidence file.")
+    if len(content) > DISPUTE_FILE_LIMIT:
+        raise HTTPException(status_code=413, detail="Evidence files must be 5 MB or smaller.")
+    if content.startswith(b"%PDF-"):
+        extension = ".pdf"
+    elif content.startswith(b"\x89PNG\r\n\x1a\n"):
+        extension = ".png"
+    elif content.startswith(b"\xff\xd8\xff"):
+        extension = ".jpg"
+    else:
+        raise HTTPException(status_code=422, detail="Upload a valid PDF, PNG, or JPEG evidence file.")
+
+    digest = hashlib.sha256(content).hexdigest()
+    claim = await idempotency_service.claim(
+        session, key=idempotency_key, endpoint=f"finance.dispute-evidence-file:{ctx.org_id}:{dispute_id}",
+        body={"sha256": digest}, organization_id=ctx.org_id, user_id=ctx.user_id,
+    )
+    if not claim.claimed:
+        cached = json.loads(claim.cached_response or "{}")
+        if claim.record.status == IdempotencyStatus.FAILED:
+            raise HTTPException(status_code=claim.cached_code or 409,
+                                detail=cached.get("detail", "The evidence upload failed."))
+        return cached
+
+    filename = PurePath((file.filename or "evidence").replace("\\", "/")).stem[:100] + extension
+    try:
+        uploaded = await connect_stripe.upload_dispute_evidence_file(
+            connected_account_id=org.stripe_connect_account_id, filename=filename,
+            content=content, idempotency_key=idempotency_key,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Could not upload the evidence file to Stripe.") from exc
+    if uploaded is None:
+        raise HTTPException(status_code=503, detail="Stripe dispute access is unavailable.")
+    result = {"id": uploaded["id"], "filename": uploaded["filename"]}
+    await record_audit(
+        session, action="finance.dispute_evidence_file_uploaded", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="payment_dispute", entity_id=dispute_id,
+        ip_address=get_client_ip(request), metadata={"filename": filename, "size_bytes": len(content)},
     )
     await idempotency_service.complete(session, claim.record, code=200, body=json.dumps(result))
     return result

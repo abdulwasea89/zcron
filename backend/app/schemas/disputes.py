@@ -17,4 +17,5 @@ class DisputeEvidenceRequest(BaseModel):
     cancellation_policy: str | None = Field(default=None, max_length=10_000)
     cancellation_policy_disclosure: str | None = Field(default=None, max_length=10_000)
     uncategorized_text: str | None = Field(default=None, max_length=10_000)
+    uncategorized_file: str | None = Field(default=None, max_length=255)
     submit: bool = False

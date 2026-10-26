@@ -346,16 +346,47 @@ const DISPUTE_FIELDS = [
 
 function DisputeEvidenceForm({ dispute, onDone }: { dispute: StripeDispute; onDone: () => void }) {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [fileId, setFileId] = useState("");
+  const [fileName, setFileName] = useState("");
   const [submitNow, setSubmitNow] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+
+  async function attachFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError("");
+    setUploading(true);
+    setFileId("");
+    setFileName("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const uploaded = await api.post<{ id: string; filename: string }>(
+        `/finance/disputes/${encodeURIComponent(dispute.id)}/evidence-file`,
+        form,
+        { "Idempotency-Key": crypto.randomUUID() },
+      );
+      setFileId(uploaded.id);
+      setFileName(uploaded.filename);
+      toast.success("Evidence file attached to this draft.");
+    } catch (cause) {
+      const message = cause instanceof ApiError ? cause.message : "Could not upload the evidence file.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await api.post(`/finance/disputes/${encodeURIComponent(dispute.id)}/evidence`, { ...values, submit: submitNow }, { "Idempotency-Key": crypto.randomUUID() });
+      await api.post(`/finance/disputes/${encodeURIComponent(dispute.id)}/evidence`, { ...values, uncategorized_file: fileId || undefined, submit: submitNow }, { "Idempotency-Key": crypto.randomUUID() });
       toast.success(submitNow ? "Evidence submitted to Stripe." : "Evidence saved to Stripe. Review and submit it before the deadline.");
       onDone();
     } catch (cause) {
@@ -374,12 +405,21 @@ function DisputeEvidenceForm({ dispute, onDone }: { dispute: StripeDispute; onDo
         <span>{label}</span>
         <textarea className="min-h-20 w-full border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand" value={values[name] || ""} onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))} maxLength={name === "customer_name" || name === "customer_email_address" || name === "service_date" ? 500 : 10000} />
       </label>)}
+      <div className="space-y-2">
+        <span className="block text-sm font-medium">Supporting file</span>
+        <input type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" onChange={(event) => void attachFile(event)} disabled={uploading || loading} aria-label="Upload dispute evidence file" className="block w-full text-sm text-muted-foreground file:mr-3 file:border file:border-border file:bg-background file:px-3 file:py-2 file:text-foreground" />
+        {fileName && <div className="flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
+          <span>Attached: {fileName}</span>
+          <button type="button" className="text-brand hover:underline" onClick={() => { setFileId(""); setFileName(""); }}>Remove</button>
+        </div>}
+        <p className="text-xs text-muted-foreground">PDF, PNG, or JPEG up to 5 MB. Uploaded directly to this gym’s Stripe account.</p>
+      </div>
       <label className="flex items-start gap-2 text-sm">
         <input type="checkbox" checked={submitNow} onChange={(event) => setSubmitNow(event.target.checked)} className="mt-1" />
         <span>Submit evidence to the card network now. Leave unchecked to save it in Stripe for review.</span>
       </label>
     </SheetBody>
-    <SheetFooter><Button type="submit" loading={loading}>{submitNow ? "Submit evidence" : "Save evidence"}</Button></SheetFooter>
+    <SheetFooter><Button type="submit" loading={loading || uploading} disabled={uploading}>{submitNow ? "Submit evidence" : "Save evidence"}</Button></SheetFooter>
   </form>;
 }
 
