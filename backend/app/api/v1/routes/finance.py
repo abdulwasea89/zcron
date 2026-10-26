@@ -9,17 +9,18 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Numeric, case, cast, func
+from sqlalchemy import Numeric, case, cast, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.api.deps import get_client_ip, get_session, require_capability
 from app.core.permissions import Capability
-from app.core.constants import PaymentKind, PaymentStatus
+from app.core.constants import IdempotencyStatus, PaymentKind, PaymentStatus
 from app.core.security import now_utc
 from app.core.tenancy import TenantContext
+from app.integrations.stripe_connect import connect_stripe
 from app.models.attendance import Attendance
 from app.models.audit_log import AuditLog
 from app.models.membership import OrganizationMember
@@ -32,6 +33,8 @@ from app.models.receipt import ReceiptUpload
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.services.audit_service import record_audit
+from app.services import idempotency_service
+from app.schemas.disputes import DisputeEvidenceRequest
 
 router = APIRouter()
 
@@ -127,6 +130,121 @@ def period_bounds(start: date, end: date, zone_name: str) -> tuple[datetime, dat
         zone = ZoneInfo("UTC")
     return tuple(datetime.combine(day, time.min, zone).astimezone(timezone.utc).replace(tzinfo=None)
                  for day in (start, end + timedelta(days=1)))
+
+
+@router.get("/disputes")
+async def list_disputes(
+    request: Request,
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_REVENUE_ANALYTICS)),
+    session: AsyncSession = Depends(get_session),
+):
+    """List recent disputes from the gym's own Stripe Connect account."""
+    org = await session.get(Organization, ctx.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Gym not found.")
+    if not org.stripe_connect_account_id:
+        raise HTTPException(status_code=409, detail="Connect a Stripe account to review disputes.")
+    disputes = await connect_stripe.list_disputes(connected_account_id=org.stripe_connect_account_id)
+    references = [
+        (row.get("charge_id"), row.get("payment_intent_id")) for row in disputes
+    ]
+    predicates = [
+        (Payment.stripe_charge_id == charge_id) | (Payment.stripe_payment_intent_id == intent_id)
+        for charge_id, intent_id in references if charge_id or intent_id
+    ]
+    payment_by_ref = {}
+    if predicates:
+        payments = (await session.execute(select(Payment).where(
+            Payment.organization_id == ctx.org_id, or_(*predicates),
+        ))).scalars().all()
+        for payment in payments:
+            if payment.stripe_charge_id:
+                payment_by_ref[payment.stripe_charge_id] = payment.id
+            if payment.stripe_payment_intent_id:
+                payment_by_ref[payment.stripe_payment_intent_id] = payment.id
+    output = [{
+        **dispute,
+        "amount": format(Decimal(dispute["amount"]) / 100, ".2f"),
+        "currency": str(dispute["currency"]).upper(),
+        "payment_id": payment_by_ref.get(dispute.get("charge_id")) or
+                      payment_by_ref.get(dispute.get("payment_intent_id")),
+    } for dispute in disputes]
+    await record_audit(
+        session, action="finance.disputes_viewed", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="payment_dispute", ip_address=get_client_ip(request),
+        metadata={"count": len(output)},
+    )
+    return output
+
+
+@router.post("/disputes/{dispute_id}/evidence")
+async def submit_dispute_evidence(
+    dispute_id: str,
+    data: DisputeEvidenceRequest,
+    request: Request,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+    ctx: TenantContext = Depends(require_capability(Capability.PROCESS_REFUNDS)),
+    session: AsyncSession = Depends(get_session),
+):
+    """Stage or submit evidence to Stripe from the gym's Connect account."""
+    org = await session.get(Organization, ctx.org_id)
+    if org is None or not org.stripe_connect_account_id:
+        raise HTTPException(status_code=409, detail="Connect a Stripe account before responding to disputes.")
+    evidence = {
+        key: value for key, value in data.model_dump(exclude={"submit"}, exclude_none=True).items()
+        if str(value).strip()
+    }
+    if not evidence:
+        raise HTTPException(status_code=422, detail="Add at least one evidence field.")
+    claim = await idempotency_service.claim(
+        session, key=idempotency_key, endpoint=f"finance.dispute-evidence:{ctx.org_id}:{dispute_id}",
+        body={"evidence": evidence, "submit": data.submit}, organization_id=ctx.org_id,
+        user_id=ctx.user_id,
+    )
+    if not claim.claimed:
+        cached = json.loads(claim.cached_response or "{}")
+        if claim.record.status == IdempotencyStatus.FAILED:
+            raise HTTPException(status_code=claim.cached_code or 409,
+                                detail=cached.get("detail", "The dispute evidence request failed."))
+        return cached
+    try:
+        dispute = await connect_stripe.retrieve_dispute(
+            connected_account_id=org.stripe_connect_account_id, dispute_id=dispute_id,
+        )
+    except Exception as exc:
+        await idempotency_service.fail(session, claim.record, code=502,
+                                       body='{"detail":"Could not reach Stripe to load this dispute."}')
+        raise HTTPException(status_code=502, detail="Could not reach Stripe to load this dispute.") from exc
+    if dispute is None:
+        await idempotency_service.fail(session, claim.record, code=503,
+                                       body='{"detail":"Stripe dispute access is unavailable."}')
+        raise HTTPException(status_code=503, detail="Stripe dispute access is unavailable.")
+    if dispute["status"] not in {"needs_response", "warning_needs_response"}:
+        await idempotency_service.fail(session, claim.record, code=409,
+                                       body='{"detail":"This dispute is no longer accepting evidence."}')
+        raise HTTPException(status_code=409, detail="This dispute is no longer accepting evidence.")
+    try:
+        updated = await connect_stripe.submit_dispute_evidence(
+            connected_account_id=org.stripe_connect_account_id, dispute_id=dispute_id,
+            evidence=evidence, submit=data.submit, idempotency_key=idempotency_key,
+        )
+    except Exception as exc:
+        await idempotency_service.fail(session, claim.record, code=502,
+                                       body='{"detail":"Could not save dispute evidence with Stripe."}')
+        raise HTTPException(status_code=502, detail="Could not save dispute evidence with Stripe.") from exc
+    if updated is None:
+        await idempotency_service.fail(session, claim.record, code=503,
+                                       body='{"detail":"Stripe dispute access is unavailable."}')
+        raise HTTPException(status_code=503, detail="Stripe dispute access is unavailable.")
+    result = {"id": dispute_id, "status": updated["status"], "submitted": data.submit}
+    await record_audit(
+        session, action="finance.dispute_evidence_submitted" if data.submit else "finance.dispute_evidence_staged",
+        organization_id=ctx.org_id, actor_user_id=ctx.user_id, entity_type="payment_dispute",
+        entity_id=dispute_id, ip_address=get_client_ip(request),
+        metadata={"evidence_fields": sorted(evidence), "status": updated["status"]},
+    )
+    await idempotency_service.complete(session, claim.record, code=200, body=json.dumps(result))
+    return result
 
 
 def csv_row(values: list) -> str:

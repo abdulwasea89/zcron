@@ -225,6 +225,32 @@ class StripeConnect:
         )
         return {"id": refund.id, "status": refund.status, "amount": refund.amount}
 
+    async def list_disputes(self, *, connected_account_id: str) -> list[dict]:
+        """Return recent disputes belonging to this connected gym account."""
+        if not self.live or _stripe is None:
+            return []
+        result = _stripe.Dispute.list(limit=100, stripe_account=connected_account_id)
+        return [_dispute_dict(item) for item in result.data]
+
+    async def retrieve_dispute(self, *, connected_account_id: str, dispute_id: str) -> dict | None:
+        if not self.live or _stripe is None:
+            return None
+        result = _stripe.Dispute.retrieve(dispute_id, stripe_account=connected_account_id)
+        return _dispute_dict(result)
+
+    async def submit_dispute_evidence(
+        self, *, connected_account_id: str, dispute_id: str, evidence: dict[str, str],
+        submit: bool, idempotency_key: str,
+    ) -> dict | None:
+        """Stage or submit evidence through the connected account's Stripe API."""
+        if not self.live or _stripe is None:
+            return None
+        result = _stripe.Dispute.modify(
+            dispute_id, evidence=evidence, submit=submit,
+            idempotency_key=idempotency_key, stripe_account=connected_account_id,
+        )
+        return _dispute_dict(result)
+
     async def retrieve_payment_intent(
         self, *, connected_account_id: str, idempotency_key: str
     ) -> ConnectPaymentResult | None:
@@ -240,3 +266,20 @@ class StripeConnect:
 
 
 connect_stripe = StripeConnect()
+
+
+def _dispute_dict(dispute) -> dict:
+    details = getattr(dispute, "evidence_details", None)
+    return {
+        "id": dispute.id,
+        "charge_id": dispute.charge if isinstance(dispute.charge, str) else getattr(dispute.charge, "id", None),
+        "payment_intent_id": dispute.payment_intent if isinstance(getattr(dispute, "payment_intent", None), str) else getattr(getattr(dispute, "payment_intent", None), "id", None),
+        "amount": dispute.amount,
+        "currency": dispute.currency,
+        "reason": dispute.reason,
+        "status": dispute.status,
+        "created": dispute.created,
+        "evidence_due_by": getattr(details, "due_by", None),
+        "has_evidence": bool(getattr(details, "has_evidence", False)),
+        "submission_count": int(getattr(details, "submission_count", 0) or 0),
+    }

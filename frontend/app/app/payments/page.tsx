@@ -24,6 +24,21 @@ import { api, ApiError } from "@/lib/api";
 import { money, statusTone, titleCase } from "@/lib/format";
 import type { PaymentOut } from "@/lib/types";
 
+type StripeDispute = {
+  id: string;
+  charge_id: string | null;
+  payment_intent_id: string | null;
+  amount: string;
+  currency: string;
+  reason: string;
+  status: string;
+  created: number;
+  evidence_due_by: number | null;
+  has_evidence: boolean;
+  submission_count: number;
+  payment_id: string | null;
+};
+
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentOut[] | null>(null);
   const [error, setError] = useState("");
@@ -35,6 +50,9 @@ export default function PaymentsPage() {
   const [exportFrom, setExportFrom] = useState(() => new Date().toISOString().slice(0, 7) + "-01");
   const [exportTo, setExportTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [refundFor, setRefundFor] = useState<PaymentOut | null>(null);
+  const [disputes, setDisputes] = useState<StripeDispute[]>([]);
+  const [disputesError, setDisputesError] = useState("");
+  const [disputeFor, setDisputeFor] = useState<StripeDispute | null>(null);
 
   async function load() {
     setError("");
@@ -46,8 +64,18 @@ export default function PaymentsPage() {
     }
   }
 
+  async function loadDisputes() {
+    setDisputesError("");
+    try {
+      setDisputes(await api.get<StripeDispute[]>("/finance/disputes"));
+    } catch {
+      setDisputesError("Could not load Stripe disputes. Check the gym’s Stripe connection and try again.");
+    }
+  }
+
   useEffect(() => {
     queueMicrotask(() => void load());
+    queueMicrotask(() => void loadDisputes());
   }, []);
 
   useRealtimeEvent(["payment.recorded"], () => void load());
@@ -125,6 +153,57 @@ export default function PaymentsPage() {
       />
 
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+
+      <section className="mb-5 border border-border" aria-label="Card disputes">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold">Card disputes</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Review evidence deadlines and respond through the gym’s Stripe account.</p>
+          </div>
+          <Button variant="secondary" onClick={() => void loadDisputes()}>Refresh</Button>
+        </div>
+        {disputesError ? <div className="p-4"><Alert>{disputesError}</Alert></div> : disputes.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-muted-foreground">No recent Stripe disputes found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className={TABLE}>
+              <thead><tr className={THEAD_ROW}>
+                <th className={`${TH} ${CELL_FIRST}`}>Opened</th>
+                <th className={`${TH} ${CELL}`}>Reason</th>
+                <th className={`${TH} ${CELL}`}>Amount</th>
+                <th className={`${TH} ${CELL}`}>Status / deadline</th>
+                <th className={`${TH} ${CELL_LAST} text-right`}>Action</th>
+              </tr></thead>
+              <tbody>{disputes.map((dispute) => {
+                const canRespond = ["needs_response", "warning_needs_response"].includes(dispute.status);
+                return <tr key={dispute.id} className={TR}>
+                  <td className={`${TD} ${CELL_FIRST} py-2.5`}>{new Date(dispute.created * 1000).toLocaleDateString()}</td>
+                  <td className={`${TD} ${CELL} py-2.5`}>{titleCase(dispute.reason.replaceAll("_", " "))}</td>
+                  <td className={`${TD} ${CELL} py-2.5 tabular-nums`}>{money(Number(dispute.amount), dispute.currency)}</td>
+                  <td className={`${TD} ${CELL} py-2.5`}>
+                    <div><Badge tone={statusTone(dispute.status)}>{titleCase(dispute.status.replaceAll("_", " "))}</Badge></div>
+                    {dispute.evidence_due_by && <div className="mt-1 text-xs text-muted-foreground">Due {new Date(dispute.evidence_due_by * 1000).toLocaleDateString()}</div>}
+                  </td>
+                  <td className={`${TD} ${CELL_LAST} py-2.5 text-right`}>
+                    {dispute.payment_id && <a className="mr-3 text-xs font-medium text-brand hover:underline" href={`/api/download/finance/payments/${encodeURIComponent(dispute.payment_id)}/evidence.zip`}>Payment evidence</a>}
+                    {canRespond && <Button variant="secondary" onClick={() => setDisputeFor(dispute)}>Respond</Button>}
+                  </td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <Sheet open={!!disputeFor} onOpenChange={(open) => { if (!open) setDisputeFor(null); }}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Dispute evidence</SheetTitle>
+            <SheetDescription>{disputeFor ? `${money(Number(disputeFor.amount), disputeFor.currency)} · ${titleCase(disputeFor.reason.replaceAll("_", " "))}` : "Provide the relevant facts for this payment dispute."}</SheetDescription>
+          </SheetHeader>
+          {disputeFor && <DisputeEvidenceForm dispute={disputeFor} onDone={() => { setDisputeFor(null); void loadDisputes(); }} />}
+        </SheetContent>
+      </Sheet>
 
       {/* A refund is work you do against the ledger behind this sheet, so it rides
           in a sheet: the payments table stays in view while you fill it in. */}
@@ -249,6 +328,59 @@ export default function PaymentsPage() {
       </div>
     </>
   );
+}
+
+const DISPUTE_FIELDS = [
+  ["customer_name", "Customer name"],
+  ["customer_email_address", "Customer email"],
+  ["customer_communication", "Customer communication"],
+  ["product_description", "Membership or service provided"],
+  ["service_date", "Service date"],
+  ["access_activity_log", "Access and attendance record"],
+  ["refund_policy", "Refund policy"],
+  ["refund_policy_disclosure", "How the refund policy was disclosed"],
+  ["cancellation_policy", "Cancellation policy"],
+  ["cancellation_policy_disclosure", "How the cancellation policy was disclosed"],
+  ["uncategorized_text", "Additional relevant details"],
+] as const;
+
+function DisputeEvidenceForm({ dispute, onDone }: { dispute: StripeDispute; onDone: () => void }) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [submitNow, setSubmitNow] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await api.post(`/finance/disputes/${encodeURIComponent(dispute.id)}/evidence`, { ...values, submit: submitNow }, { "Idempotency-Key": crypto.randomUUID() });
+      toast.success(submitNow ? "Evidence submitted to Stripe." : "Evidence saved to Stripe. Review and submit it before the deadline.");
+      onDone();
+    } catch (cause) {
+      const message = cause instanceof ApiError ? cause.message : "Could not save dispute evidence.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+    <SheetBody className="space-y-4">
+      {error && <Alert>{error}</Alert>}
+      {DISPUTE_FIELDS.map(([name, label]) => <label key={name} className="block space-y-1.5 text-sm">
+        <span>{label}</span>
+        <textarea className="min-h-20 w-full border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand" value={values[name] || ""} onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))} maxLength={name === "customer_name" || name === "customer_email_address" || name === "service_date" ? 500 : 10000} />
+      </label>)}
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" checked={submitNow} onChange={(event) => setSubmitNow(event.target.checked)} className="mt-1" />
+        <span>Submit evidence to the card network now. Leave unchecked to save it in Stripe for review.</span>
+      </label>
+    </SheetBody>
+    <SheetFooter><Button type="submit" loading={loading}>{submitNow ? "Submit evidence" : "Save evidence"}</Button></SheetFooter>
+  </form>;
 }
 
 function RefundForm({
