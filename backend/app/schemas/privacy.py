@@ -33,8 +33,24 @@ class DataSubjectRequestOut(BaseModel):
     note: str | None
     resolution_note: str | None
     erasure_redacted_at: datetime | None
+    review_checks: dict = Field(default_factory=dict)
     created_at: datetime
     resolved_at: datetime | None
+
+
+class PrivacyReviewUpdate(BaseModel):
+    item: Literal["identity", "linked_records", "processors", "retention_backups"]
+    outcome: Literal["verified", "not_applicable"]
+    note: str = Field(min_length=10, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_evidence(self):
+        self.note = self.note.strip()
+        if len(self.note) < 10:
+            raise ValueError("Describe what was checked, including a reference or retention reason.")
+        if self.item == "identity" and self.outcome != "verified":
+            raise ValueError("Requester identity and authority must be verified.")
+        return self
 
 
 class MemberMarketingConsentUpdate(BaseModel):

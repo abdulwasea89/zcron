@@ -122,6 +122,14 @@ async def test_erasure_redacts_profile_but_keeps_financial_evidence(client, monk
     )
     assert premature.status_code == 409
 
+    for item in ("identity", "linked_records", "processors", "retention_backups"):
+        evidence = await client.put(
+            f"/api/v1/privacy/data-requests/{created.json()['id']}/review",
+            headers={**headers, "Idempotency-Key": f"privacy-review-{item}"},
+            json={"item": item, "outcome": "verified", "note": f"Reviewed {item}; reference TEST-123."},
+        )
+        assert evidence.status_code == 200, evidence.text
+
     review = await client.post(
         f"/api/v1/privacy/data-requests/{created.json()['id']}/decision",
         headers={**headers, "Idempotency-Key": "privacy-erasure-review-1"},

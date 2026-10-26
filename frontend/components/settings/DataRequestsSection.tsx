@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
@@ -12,8 +12,62 @@ type DataRequest = {
   request_type: "access" | "export" | "correction" | "erasure"; status: "open" | "in_review" | "completed" | "rejected";
   note: string | null; resolution_note: string | null; created_at: string; resolved_at: string | null;
   erasure_redacted_at: string | null;
+  review_checks: Partial<Record<ReviewItem, ReviewCheck>>;
 };
 type MemberConsent = { whatsapp: boolean; whatsapp_updated_at: string | null; member_id: string; email: boolean; email_updated_at: string | null; sms: boolean; sms_updated_at: string | null; in_app: boolean; in_app_updated_at: string | null };
+
+const REVIEW_ITEMS = {
+  identity: "Requester identity and authority",
+  linked_records: "Linked records and attachments",
+  processors: "External processors and recurring charges",
+  retention_backups: "Retention reasons, expiry, and backups",
+};
+type ReviewItem = keyof typeof REVIEW_ITEMS;
+type ReviewCheck = { outcome: "verified" | "not_applicable"; note: string; reviewed_by: string; reviewed_at: string };
+
+function PrivacyReviewChecklist({ request, onSaved }: { request: DataRequest; onSaved: (updated: DataRequest) => void }) {
+  const [item, setItem] = useState<ReviewItem>("identity");
+  const [note, setNote] = useState(request.review_checks.identity?.note || "");
+  const [outcome, setOutcome] = useState("verified");
+  const [busy, setBusy] = useState(false);
+  const retryKey = useRef("");
+  const closed = request.status === "completed" || request.status === "rejected";
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    retryKey.current ||= crypto.randomUUID();
+    try {
+      const updated = await api.put<DataRequest>(`/privacy/data-requests/${request.id}/review`, {
+        item, outcome, note: note.trim(),
+      }, { "Idempotency-Key": retryKey.current });
+      onSaved(updated); retryKey.current = ""; toast.success("Review evidence saved.");
+    } catch (error) { toast.error((error as ApiError).message || "Could not save review evidence."); }
+    finally { setBusy(false); }
+  }
+  return <details className="mt-3 rounded-md border border-border p-3">
+    <summary className="cursor-pointer text-xs font-medium">Erasure review · {Object.keys(request.review_checks).length}/4 checks recorded</summary>
+    <dl className="mt-3 space-y-3 text-xs">{Object.entries(REVIEW_ITEMS).map(([key, label]) => {
+      const check = request.review_checks[key as ReviewItem];
+      return <div key={key}><dt className="font-medium">{label} · {check ? check.outcome.replaceAll("_", " ") : "Pending"}</dt>
+        {check && <dd className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{check.note}<span className="mt-1 block">Recorded {new Date(check.reviewed_at).toLocaleString()}</span></dd>}
+      </div>;
+    })}</dl>
+    {!closed && <form onSubmit={(event) => void save(event)} className="mt-4 space-y-3">
+      <p className="text-xs leading-5 text-muted-foreground">Record what you actually verified, reference numbers, retained categories and reasons, and review/expiry dates. Avoid passwords, tokens, or copies of identity documents. Provider and backup actions must be performed separately.</p>
+      <Select label="Review item" disabled={busy} value={item} onChange={(event) => {
+        const next = event.target.value as ReviewItem; setItem(next);
+        setNote(request.review_checks[next]?.note || ""); setOutcome(request.review_checks[next]?.outcome || "verified"); retryKey.current = "";
+      }}>{Object.entries(REVIEW_ITEMS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select>
+      <Select label="Outcome" disabled={busy} value={outcome} onChange={(event) => { setOutcome(event.target.value); retryKey.current = ""; }}>
+        <option value="verified">Verified / action completed</option>{item !== "identity" && <option value="not_applicable">Not applicable — explain why</option>}
+      </Select>
+      <label className="block text-xs font-medium">Evidence or review reference
+        <textarea required minLength={10} maxLength={1000} rows={3} disabled={busy} value={note} onChange={(event) => { setNote(event.target.value); retryKey.current = ""; }} className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm" />
+      </label>
+      <Button type="submit" variant="secondary" disabled={busy || note.trim().length < 10} loading={busy}>Save review evidence</Button>
+    </form>}
+  </details>;
+}
 
 const REQUEST_LABEL: Record<DataRequest["request_type"], string> = {
   access: "Access", export: "Export", correction: "Correction", erasure: "Erasure",
@@ -172,7 +226,7 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
 
       <div>
         <h3 className="mb-1 text-sm font-semibold">Request log</h3>
-        <p className="mb-3 text-xs text-muted-foreground">Erasure starts by redacting the workspace profile, revoking access, and stopping renewals. Review linked records, processors, backups, and retention rules before closing the request. Payment and attendance remain for accounting; shared identities need manual review.</p>
+        <p className="mb-3 text-xs text-muted-foreground">Erasure starts by redacting the workspace profile, revoking access, and stopping renewals. Review linked records, processors, backups, and retention rules before closing the request. Payment and attendance remain for accounting. Shared account identities are preserved for other workspaces. Verify requester authority before redaction and record all four reviews before closure.</p>
         {loading ? <p className="py-4 text-sm text-muted-foreground">Loading requests…</p> : requests.length ? (
           <ul className="divide-y divide-border">
             {requests.map((request) => <li key={request.id} className="py-3">
@@ -185,11 +239,12 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
                   {(request.request_type === "export" || request.request_type === "access") && <Button variant="secondary" disabled={busy !== null} onClick={() => void downloadExport(request)}>Download export</Button>}
-                  {request.status === "open" && <Button variant="secondary" disabled={busy !== null} onClick={() => void decide(request, "in_review")}>{request.request_type === "erasure" ? "Begin erasure review" : "Start review"}</Button>}
-                  {request.status !== "completed" && request.status !== "rejected" && <Button disabled={busy !== null} onClick={() => void decide(request, "completed")}>Mark handled</Button>}
+                  {request.status === "open" && <Button variant="secondary" disabled={busy !== null || (request.request_type === "erasure" && request.review_checks.identity?.outcome !== "verified")} onClick={() => void decide(request, "in_review")}>{request.request_type === "erasure" ? "Begin erasure review" : "Start review"}</Button>}
+                  {request.status !== "completed" && request.status !== "rejected" && <Button disabled={busy !== null || (request.request_type === "erasure" && (!request.erasure_redacted_at || Object.keys(REVIEW_ITEMS).some((item) => !request.review_checks[item as ReviewItem])))} onClick={() => void decide(request, "completed")}>Mark handled</Button>}
                   {request.status !== "completed" && request.status !== "rejected" && <Button variant="secondary" disabled={busy !== null} onClick={() => void decide(request, "rejected")}>Reject</Button>}
                 </div>
               </div>
+              {request.request_type === "erasure" && <PrivacyReviewChecklist request={request} onSaved={(updated) => setRequests((current) => current.map((row) => row.id === updated.id ? updated : row))} />}
             </li>)}
           </ul>
         ) : <p className="py-4 text-sm text-muted-foreground">No privacy requests recorded.</p>}

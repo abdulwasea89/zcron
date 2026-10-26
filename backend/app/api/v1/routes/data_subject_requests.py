@@ -27,10 +27,11 @@ from app.schemas.privacy import (
     DataSubjectRequestOut,
     MemberMarketingConsentOut,
     MemberMarketingConsentUpdate,
+    PrivacyReviewUpdate,
 )
 from app.services import idempotency_service
 from app.services.audit_service import record_audit
-from app.services.privacy_service import erase_member_from_workspace, has_shared_identity
+from app.services.privacy_service import erase_member_from_workspace
 
 router = APIRouter()
 
@@ -54,14 +55,14 @@ def _out(request: DataSubjectRequest) -> DataSubjectRequestOut:
         id=request.id, member_id=request.member_id, member_name=request.member_name,
         member_email=request.member_email, request_type=request.request_type, status=request.status,
         note=request.note, resolution_note=request.resolution_note,
-        erasure_redacted_at=request.erasure_redacted_at,
+        erasure_redacted_at=request.erasure_redacted_at, review_checks=request.review_checks,
         created_at=request.created_at, resolved_at=request.resolved_at,
     )
 
 
 @router.get("/data-requests", response_model=list[DataSubjectRequestOut])
 async def list_data_requests(
-    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_PRIVATE_MEMBER_PROFILE)),
     session: AsyncSession = Depends(get_session),
 ):
     rows = await session.execute(
@@ -76,7 +77,7 @@ async def list_data_requests(
 @router.post("/data-requests", response_model=DataSubjectRequestOut, status_code=201)
 async def create_data_request(
     data: DataSubjectRequestCreate,
-    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_PRIVATE_MEMBER_PROFILE)),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -113,35 +114,51 @@ async def create_data_request(
     return result
 
 
-@router.post("/data-requests/{request_id}/decision", response_model=DataSubjectRequestOut)
-async def decide_data_request(
-    request_id: str,
-    data: DataSubjectRequestDecision,
-    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+@router.put("/data-requests/{request_id}/review", response_model=DataSubjectRequestOut)
+async def record_privacy_review(
+    request_id: str, data: PrivacyReviewUpdate,
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_PRIVATE_MEMBER_PROFILE)),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     request = (await session.execute(select(DataSubjectRequest).where(
         DataSubjectRequest.id == request_id, DataSubjectRequest.organization_id == ctx.org_id,
-    ))).scalar_one_or_none()
+    ).with_for_update())).scalar_one_or_none()
     if request is None:
         raise HTTPException(status_code=404, detail="Data request not found.")
-    if request.request_type == "erasure" and data.status in {"in_review", "completed"}:
-        if data.status == "completed" and request.erasure_redacted_at is None:
-            raise HTTPException(status_code=409, detail="Begin erasure review and redact the workspace profile before closing this request.")
-        member = (await session.execute(select(OrganizationMember).where(
-            OrganizationMember.id == request.member_id,
-            OrganizationMember.organization_id == ctx.org_id,
-        ))).scalar_one_or_none()
-        if member is not None:
-            user = await session.get(User, member.user_id)
-            if user is None:
-                raise HTTPException(status_code=404, detail="Member account not found.")
-            if await has_shared_identity(session, org_id=ctx.org_id, user_id=user.id):
-                raise HTTPException(
-                    status_code=409,
-                    detail="This account is used in another workspace. Manual identity review is required before erasure can be completed.",
-                )
+    claim = await idempotency_service.claim(session, key=idempotency_key or "",
+        endpoint=f"privacy.data_request.review:{request_id}", body=data.model_dump(),
+        organization_id=ctx.org_id, user_id=ctx.user_id)
+    if not claim.claimed:
+        return DataSubjectRequestOut.model_validate_json(claim.cached_response or "{}")
+    if request.status in {"completed", "rejected"}:
+        raise HTTPException(status_code=409, detail="This request is already closed.")
+    request.review_checks = {**request.review_checks, data.item: {
+        "outcome": data.outcome, "note": data.note, "reviewed_by": ctx.user_id,
+        "reviewed_at": now_utc().isoformat() + "Z",
+    }}
+    session.add(request)
+    await record_audit(session, action="privacy.request_review_recorded", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="data_subject_request", entity_id=request.id,
+        metadata={"item": data.item, "outcome": data.outcome})
+    result = _out(request)
+    await idempotency_service.complete(session, claim.record, code=200, body=result.model_dump_json())
+    return result
+
+
+@router.post("/data-requests/{request_id}/decision", response_model=DataSubjectRequestOut)
+async def decide_data_request(
+    request_id: str,
+    data: DataSubjectRequestDecision,
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_PRIVATE_MEMBER_PROFILE)),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    request = (await session.execute(select(DataSubjectRequest).where(
+        DataSubjectRequest.id == request_id, DataSubjectRequest.organization_id == ctx.org_id,
+    ).with_for_update())).scalar_one_or_none()
+    if request is None:
+        raise HTTPException(status_code=404, detail="Data request not found.")
     claim = await idempotency_service.claim(
         session, key=idempotency_key or "", endpoint=f"privacy.data_request.decision:{request_id}",
         body=data.model_dump(), organization_id=ctx.org_id, user_id=ctx.user_id,
@@ -150,6 +167,15 @@ async def decide_data_request(
         return DataSubjectRequestOut.model_validate_json(claim.cached_response or "{}")
     if request.status in {"completed", "rejected"}:
         raise HTTPException(status_code=409, detail="This request is already closed.")
+    if request.request_type == "erasure":
+        if data.status in {"in_review", "completed"} and request.review_checks.get("identity", {}).get("outcome") != "verified":
+            raise HTTPException(status_code=409, detail="Record verified requester identity and authority before erasure.")
+        if data.status == "completed":
+            if request.erasure_redacted_at is None:
+                raise HTTPException(status_code=409, detail="Begin erasure review and redact the workspace profile before closing this request.")
+            if any(request.review_checks.get(item, {}).get("outcome") not in {"verified", "not_applicable"}
+                   for item in ("linked_records", "processors", "retention_backups")):
+                raise HTTPException(status_code=409, detail="Record linked-record, processor, and retention/backup review before closing erasure.")
     if request.request_type == "erasure" and data.status == "in_review" and request.erasure_redacted_at is None:
         member = (await session.execute(select(OrganizationMember).where(
             OrganizationMember.id == request.member_id,

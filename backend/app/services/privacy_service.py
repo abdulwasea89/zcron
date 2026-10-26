@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import secrets
+from fastapi import HTTPException
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.constants import MemberStatus, SubscriptionStatus
+from app.core.constants import MemberStatus, Role, SubscriptionStatus
 from app.core.security import hash_password, now_utc
 from app.models.membership import OrganizationMember
 from app.models.staff import Task
@@ -34,6 +35,10 @@ async def erase_member_from_workspace(
     session: AsyncSession, *, org_id: str, member: OrganizationMember, user: User, actor_id: str,
 ) -> None:
     """Redact tenant profile data and revoke access while retaining ledger rows."""
+    if member.organization_id != org_id or member.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    if member.role != Role.MEMBER:
+        raise HTTPException(status_code=409, detail="Staff accounts require a separate access and employment-record review.")
     member.banned = True
     member.member_status = MemberStatus.BANNED
     member.display_name = "Erased member"

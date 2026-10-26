@@ -125,6 +125,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "member_tag": "VARCHAR",
         },
         "data_subject_requests": {
+            "review_checks": "JSON NOT NULL DEFAULT '{}'",
             "member_name": "VARCHAR NOT NULL DEFAULT ''",
             "member_email": "VARCHAR NOT NULL DEFAULT ''",
             "erasure_redacted_at": "DATETIME",

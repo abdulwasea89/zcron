@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlmodel import Field
+from sqlalchemy import Column, JSON
 
 from app.models.base import TimestampModel, UUIDModel
 
@@ -22,6 +23,7 @@ class DataSubjectRequest(UUIDModel, TimestampModel, table=True):
     note: str | None = None
     resolution_note: str | None = None
     erasure_redacted_at: datetime | None = None
+    review_checks: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     created_by: str = Field(foreign_key="users.id")
     resolved_by: str | None = Field(default=None, foreign_key="users.id")
     resolved_at: datetime | None = None
