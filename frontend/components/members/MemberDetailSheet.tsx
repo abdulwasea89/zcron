@@ -344,7 +344,7 @@ export function MemberDetailSheet({
                       <SheetInfoRow label="Started">{new Date(sub.started_at).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</SheetInfoRow>
                       {sub.current_period_end && <SheetInfoRow label="Renews / ends">{new Date(sub.current_period_end).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</SheetInfoRow>}
                       {sub.classes_remaining != null && <SheetInfoRow label="Visit credits">{sub.classes_remaining}{sub.credits_allowance ? ` of ${sub.credits_allowance}` : " remaining"}</SheetInfoRow>}
-                      {data.family_owner && <SheetInfoRow label="Family plan payer">{data.family_owner.name}</SheetInfoRow>}
+                      {data.family_owner && <SheetInfoRow label={data.family_owner.billing_mode === "independent" ? "Household contact" : "Family plan payer"}>{data.family_owner.name}</SheetInfoRow>}
                     </> : <SheetInfoRow label="Membership plan"><span className="text-muted-foreground">No current plan</span></SheetInfoRow>}
                   </dl>
                 </section>
@@ -404,7 +404,7 @@ export function MemberDetailSheet({
             {data && m && <>
               <MemberProfileCard key={m.member_id} memberId={m.member_id} profile={data.profile} canManage={canManage} onSaved={() => load(m.member_id)} />
               <MemberTagsCard key={`tags:${m.member_id}`} memberId={m.member_id} tags={m.tags ?? []} canManage={canManage} onSaved={() => load(m.member_id)} />
-              <FamilyPlanCard detail={data} canManage={canManage} onSaved={() => load(m.member_id)} />
+              <FamilyPlanCard key={data.member.member_id} detail={data} canManage={canManage} onSaved={() => load(m.member_id)} />
               {m.role === "member" && <Card>
                 <CardHeader title="Trainers" subtitle="Staff assigned to this member" action={canManage ? <Button variant="secondary" onClick={() => void openAssign()}>Assign trainer</Button> : undefined} />
                 {data.trainer_assignments.length === 0 ? <p className="px-5 pb-5 text-sm text-muted-foreground">No trainer assigned.</p> : <ul className="divide-y divide-foreground/[0.08]">{data.trainer_assignments.map((trainer) => <li key={trainer.trainer_member_id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm"><span>{trainer.trainer_name}</span>{canManage && <button type="button" onClick={() => void unassignTrainer(trainer.trainer_member_id)} className="text-xs text-muted-foreground hover:text-danger">Remove</button>}</li>)}</ul>}

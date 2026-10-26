@@ -168,8 +168,8 @@ export interface MemberDetailOut {
   payments: PaymentOut[];
   pending_payments: PendingPaymentItem[];
   trainer_assignments: TrainerAssignment[];
-  family_owner: { member_id: string; name: string } | null;
-  family_members: { member_id: string; name: string }[];
+  family_owner: { member_id: string; name: string; billing_mode: "shared_plan" | "independent" } | null;
+  family_members: { member_id: string; name: string; billing_mode: "shared_plan" | "independent" }[];
 }
 
 export interface MemberProfile {

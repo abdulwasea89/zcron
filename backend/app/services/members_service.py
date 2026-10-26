@@ -850,7 +850,7 @@ async def member_detail(
             .order_by(Subscription.created_at.desc())
         )
     ).scalars().first()
-    if member.family_owner_member_id:
+    if member.family_owner_member_id and member.family_billing_mode == "shared_plan":
         from app.services.family_service import covered_subscription
 
         subscription = await covered_subscription(session, org_id, member)

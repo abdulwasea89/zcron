@@ -216,6 +216,7 @@ async def update_plan(
             select(func.count()).select_from(OrganizationMember).where(
                 OrganizationMember.organization_id == org_id,
                 OrganizationMember.family_owner_member_id == owner_id,
+                OrganizationMember.family_billing_mode == "shared_plan",
             )
         )).scalar_one()
         if linked and (plan.audience != "family" or not plan.family_capacity or linked + 1 > plan.family_capacity):

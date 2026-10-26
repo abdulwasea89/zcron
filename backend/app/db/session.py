@@ -92,6 +92,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
         },
         "payments": {"payer_contributions": "JSON NOT NULL DEFAULT '[]'", "tax_included": "BOOLEAN NOT NULL DEFAULT 0"},
         "organization_members": {
+            "family_billing_mode": "VARCHAR NOT NULL DEFAULT 'shared_plan'",
             "marketing_whatsapp_consent": "BOOLEAN NOT NULL DEFAULT 0",
             "marketing_whatsapp_consent_at": "DATETIME",
             "marketing_email_consent": "BOOLEAN NOT NULL DEFAULT 0",

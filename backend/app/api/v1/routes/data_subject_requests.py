@@ -324,6 +324,7 @@ async def export_member_data(
             "emergency_contact": user.emergency_contact,
         },
         "membership": {"id": member.id, "role": member.role.value, "status": member.member_status.value,
+                       "family_owner_member_id": member.family_owner_member_id, "family_billing_mode": member.family_billing_mode,
                        "display_name": member.display_name, "phone": member.phone, "joined_at": member.joined_at,
                        "emergency_contact": member.emergency_contact, "goals": member.goals, "tags": member.tags,
                        "health_notes": member.health_notes, "id_document_type": member.id_document_type,

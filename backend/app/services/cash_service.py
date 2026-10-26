@@ -119,7 +119,8 @@ async def log_cash_payment(
     session.add(payment)
 
     member.member_status = MemberStatus.ACTIVE
-    member.family_owner_member_id = None  # a new purchase replaces family coverage
+    if member.family_billing_mode == "shared_plan":
+        member.family_owner_member_id = None  # A purchase replaces coverage, not an independently billed household link.
     if member.joined_at is None:
         member.joined_at = now_utc()
     session.add(member)

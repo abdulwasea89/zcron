@@ -247,13 +247,14 @@ async def member_detail(
         owner = await session.get(OrganizationMember, member.family_owner_member_id)
         if owner and owner.organization_id == ctx.org_id:
             owner_user = await session.get(User, owner.user_id)
-            family_owner = FamilyMemberOut(member_id=owner.id, name=owner.display_name or (owner_user.full_name or owner_user.email if owner_user else "Member"))
+            family_owner = FamilyMemberOut(member_id=owner.id, name=owner.display_name or (owner_user.full_name or owner_user.email if owner_user else "Member"), billing_mode=member.family_billing_mode)
     family_rows = await families.family_members(session, ctx.org_id, member.id)
     family_members = []
     for family_member in family_rows:
         family_user = await session.get(User, family_member.user_id)
         family_members.append(FamilyMemberOut(
             member_id=family_member.id,
+            billing_mode=family_member.family_billing_mode,
             name=family_member.display_name or (family_user.full_name or family_user.email if family_user else "Member"),
         ))
 
@@ -356,14 +357,22 @@ async def add_family_member(
     data: FamilyLinkRequest,
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
     session: AsyncSession = Depends(get_session),
+    idempotency_key: str = Header(default="", alias="Idempotency-Key"),
 ):
     if ctx.role not in {Role.OWNER, Role.MANAGER}:
         raise HTTPException(status_code=403, detail="Owner or manager access required.")
+    claim = await idempotency_service.claim(session, key=idempotency_key,
+        endpoint=f"members.family.add:{member_id}", body={"member_id": data.member_id, "billing_mode": data.billing_mode},
+        organization_id=ctx.org_id, user_id=ctx.user_id)
+    if not claim.claimed:
+        return Message.model_validate_json(claim.cached_response or "{}")
     await families.set_family_member(
         session, org_id=ctx.org_id, owner_id=member_id,
-        dependent_id=data.member_id, attach=True, actor_id=ctx.user_id,
+        dependent_id=data.member_id, attach=True, actor_id=ctx.user_id, billing_mode=data.billing_mode,
     )
-    return Message(message="Member added to family plan.")
+    output = Message(message="Member linked to household.")
+    await idempotency_service.complete(session, claim.record, code=200, body=output.model_dump_json())
+    return output
 
 
 @router.delete("/{member_id}/family/{dependent_id}", response_model=Message, dependencies=[Depends(require_writable_org)])
@@ -372,14 +381,22 @@ async def remove_family_member(
     dependent_id: str,
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
     session: AsyncSession = Depends(get_session),
+    idempotency_key: str = Header(default="", alias="Idempotency-Key"),
 ):
     if ctx.role not in {Role.OWNER, Role.MANAGER}:
         raise HTTPException(status_code=403, detail="Owner or manager access required.")
+    claim = await idempotency_service.claim(session, key=idempotency_key,
+        endpoint=f"members.family.remove:{member_id}", body={"member_id": dependent_id},
+        organization_id=ctx.org_id, user_id=ctx.user_id)
+    if not claim.claimed:
+        return Message.model_validate_json(claim.cached_response or "{}")
     await families.set_family_member(
         session, org_id=ctx.org_id, owner_id=member_id,
         dependent_id=dependent_id, attach=False, actor_id=ctx.user_id,
     )
-    return Message(message="Member removed from family plan.")
+    output = Message(message="Member removed from household.")
+    await idempotency_service.complete(session, claim.record, code=200, body=output.model_dump_json())
+    return output
 
 
 @router.patch("/{member_id}/profile", response_model=MemberProfileOut)

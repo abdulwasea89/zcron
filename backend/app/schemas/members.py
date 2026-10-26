@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_serializer, field_validator
 
@@ -282,10 +282,12 @@ class MemberSubscriptionOut(BaseModel):
 class FamilyMemberOut(BaseModel):
     member_id: str
     name: str
+    billing_mode: str = "shared_plan"
 
 
 class FamilyLinkRequest(BaseModel):
     member_id: str
+    billing_mode: Literal["shared_plan", "independent"] = "shared_plan"
 
 
 class PendingPaymentItem(BaseModel):
