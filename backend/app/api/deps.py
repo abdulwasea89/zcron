@@ -11,7 +11,7 @@ from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.constants import Role, SaasStatus
+from app.core.constants import MemberStatus, Role, SaasStatus
 from app.core.permissions import Capability, role_has
 from app.core.security import ACCESS, safe_decode
 from app.core.tenancy import ORG_HEADER, TenantContext
@@ -97,6 +97,9 @@ async def get_tenant(
     role = payload.get("role")
     if not user_id or not org_id or not role:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing scope")
+    user = await session.get(User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     # Header must match JWT org. Missing header is allowed only if it equals JWT.
     if x_organization_id is not None and x_organization_id != org_id:
@@ -113,7 +116,7 @@ async def get_tenant(
             )
         )
     ).scalar_one_or_none()
-    if membership is None or membership.banned:
+    if membership is None or membership.banned or membership.member_status == MemberStatus.BANNED:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to organization")
 
     org = await session.get(Organization, org_id)
@@ -133,15 +136,20 @@ async def get_tenant(
     session_id = payload.get("session_id")
     if session_id:
         auth_session = await session.get(AuthSession, session_id)
-        if auth_session is None or auth_session.revoked:
+        if (auth_session is None or auth_session.revoked or auth_session.user_id != user_id
+                or auth_session.organization_id != org_id):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session revoked")
 
     try:
-        role_enum = Role(role)
+        Role(role)
+        # Role changes must take effect before existing access tokens expire.
+        role_enum = Role(membership.role)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid role")
 
-    return TenantContext(user_id=user_id, org_id=org_id, role=role_enum)
+    context = TenantContext(user_id=user_id, org_id=org_id, role=role_enum)
+    request.state.tenant = context
+    return context
 
 
 def require_role(*roles: Role):

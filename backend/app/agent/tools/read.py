@@ -17,6 +17,8 @@ from datetime import date
 from langchain_core.tools import tool
 
 from app.agent.context import current_context
+from app.core.permissions import Capability, role_has
+from app.services.audit_service import record_audit
 from app.agent.tools._serialize import (
     as_tool_result,
     member_row,
@@ -132,7 +134,12 @@ async def list_payroll_runs() -> str:
     action to find the run id."""
 
     ctx = current_context()
+    if not role_has(ctx.role, Capability.RUN_PAYROLL):
+        return as_tool_result({"status": "not_permitted", "detail": "Payroll data is available to the gym owner."})
     rows = await payroll.list_runs(ctx.session, org_id=ctx.org_id)
+    await record_audit(ctx.session, action="privacy.data_accessed", organization_id=ctx.org_id,
+                       actor_user_id=ctx.user_id, entity_type="payroll",
+                       metadata={"source": "assistant", "tool": "list_payroll_runs", "role": ctx.role.value})
     return as_tool_result([payroll_run_row(r) for r in rows[:_MAX_ROWS]])
 
 

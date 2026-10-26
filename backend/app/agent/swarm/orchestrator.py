@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from collections.abc import Callable
@@ -36,6 +37,8 @@ from typing import Any
 
 from app.agent.context import AgentContext
 from app.agent.model import build_chat_model
+from app.core.permissions import Capability, role_has
+from app.services.audit_service import record_audit
 from app.agent.swarm.roster import BY_ID, DOMAIN_NAMES, DOMAINS, roster_brief
 from app.agent.swarm.types import (
     DETAIL_MAX,
@@ -257,13 +260,23 @@ async def _run_one(
 
     started = time.monotonic()
     try:
-        finding = await specialist.run(ctx, ask, assignment.question)
-    except Exception as exc:  # noqa: BLE001
+        allowed = role_has(ctx.role, Capability.USE_ASSISTANT) and (
+            specialist.domain != "payroll" or role_has(ctx.role, Capability.RUN_PAYROLL)
+        )
+        if allowed:
+            finding = await specialist.run(ctx, ask, assignment.question)
+            await record_audit(ctx.session, action="privacy.data_accessed", organization_id=ctx.org_id,
+                               actor_user_id=ctx.user_id, entity_type=specialist.domain,
+                               metadata={"source": "assistant", "specialist": specialist.id, "role": ctx.role.value})
+        else:
+            finding = Finding(agent_id=specialist.id, status=STATUS_SKIPPED,
+                              summary="Your role does not have access to this information.")
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("Assistant specialist failed: %s", specialist.id)
         finding = Finding(
             agent_id=specialist.id,
             status=STATUS_FAILED,
-            summary=f"This agent could not complete: {type(exc).__name__}.",
-            detail=f"{type(exc).__name__}: {exc}",
+            summary="This analysis could not complete. Please try again.",
         )
     writer(
         {

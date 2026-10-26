@@ -1,7 +1,7 @@
 """Tool catalogue for the assistant agent.
 
-Read tools are always available; write tools gate themselves by the caller's
-capability and pause for confirmation (ADR 018). New tools are added to the
+Sensitive read tools enforce capabilities; write tools also pause for
+confirmation (ADR 018). New tools are added to the
 lists in ``read``/``write`` and flow through here.
 """
 

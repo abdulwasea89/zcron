@@ -12,6 +12,7 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
+from starlette.requests import Request
 
 from app.core.config import settings
 
@@ -325,12 +326,15 @@ def _upgrade_sqlite_plan_variants_schema(connection) -> None:
         )
 
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_session(request: Request = None) -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency: yield a session, commit on success, rollback on error."""
 
     async with async_session_maker() as session:
         try:
             yield session
+            from app.services.data_access_service import record_read_access
+
+            await record_read_access(session, request)
             await session.commit()
         except Exception:
             await session.rollback()
