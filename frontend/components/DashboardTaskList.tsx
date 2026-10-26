@@ -26,10 +26,7 @@ export function DashboardTaskList({
   const [openTasks, setOpenTasks] = useState(tasks);
   const [completing, setCompleting] = useState<string | null>(null);
   const [addingTaskFor, setAddingTaskFor] = useState<string | null>(null);
-  const [taskCreatedFor, setTaskCreatedFor] = useState<Set<string>>(new Set());
-  const [hiddenAttention, setHiddenAttention] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
-  const [savingAttention, setSavingAttention] = useState(false);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setOpenTasks(tasks));
@@ -37,51 +34,9 @@ export function DashboardTaskList({
   }, [tasks]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const frame = window.requestAnimationFrame(() => {
-      try {
-        const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
-        setTaskCreatedFor(new Set(Array.isArray(saved.taskCreatedFor) ? saved.taskCreatedFor : []));
-      } catch { /* Ignore invalid or blocked browser storage. */ }
-    });
-    let active = true;
-    api.get<{ keys: string[] }>("/analytics/dashboard/hidden-attention")
-      .then((data) => { if (active) setHiddenAttention(new Set(data.keys)); })
-      .catch(() => { if (active) toast.error("Could not load hidden priorities. All alerts remain visible."); });
-    return () => { active = false; window.cancelAnimationFrame(frame); };
+    const frame = requestAnimationFrame(() => setShowAll(false));
+    return () => cancelAnimationFrame(frame);
   }, [storageKey]);
-
-  function rememberTask(key: string) {
-    setTaskCreatedFor((current) => new Set(current).add(key));
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
-      const values = Array.isArray(saved.taskCreatedFor) ? saved.taskCreatedFor as string[] : [];
-      window.localStorage.setItem(storageKey, JSON.stringify({
-        taskCreatedFor: [...new Set([...values, key])].slice(-200),
-      }));
-    } catch { /* Keep task creation usable when browser storage is unavailable. */ }
-  }
-
-  async function hideAttention(key: string) {
-    setSavingAttention(true);
-    try {
-      const data = await api.post<{ keys: string[] }>("/analytics/dashboard/hidden-attention", { key });
-      setHiddenAttention(new Set(data.keys));
-      toast.success("Hidden for your account until this alert changes. The underlying work remains open.");
-    } catch (error) {
-      toast.error((error as ApiError).message || "Could not hide this priority.");
-    } finally { setSavingAttention(false); }
-  }
-
-  async function restoreDismissed() {
-    setSavingAttention(true);
-    try {
-      await api.del("/analytics/dashboard/hidden-attention");
-      setHiddenAttention(new Set());
-    } catch (error) {
-      toast.error((error as ApiError).message || "Could not restore hidden priorities.");
-    } finally { setSavingAttention(false); }
-  }
 
   async function complete(task: TaskOut) {
     setCompleting(task.id);
@@ -111,7 +66,6 @@ export function DashboardTaskList({
         overdue: false,
         dueToday: true,
       }, ...current]);
-      rememberTask(item.key);
       toast.success("Follow-up task added to the team queue.");
     } catch (error) {
       toast.error((error as ApiError).message || "Could not create follow-up task.");
@@ -133,7 +87,7 @@ export function DashboardTaskList({
       personName: undefined,
       task,
     })),
-    ...attention.filter((item) => !taskCreatedFor.has(item.key) && !hiddenAttention.has(item.key)).map((item) => ({ ...item, id: `attention:${item.key}`, task: null })),
+    ...attention.map((item) => ({ ...item, id: `attention:${item.key}`, task: null })),
   ].sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label));
   const visibleItems = showAll ? items : items.slice(0, 6);
 
@@ -164,11 +118,13 @@ export function DashboardTaskList({
                 >{addingTaskFor === item.key ? "Adding…" : "Add task"}</button>}
                 {!item.task && <button
                   type="button"
-                  disabled={savingAttention}
-                  onClick={() => void hideAttention(item.key)}
-                  className="text-muted-foreground no-underline hover:text-foreground hover:underline"
-                  aria-label={`Hide ${item.label} for your account until this alert changes`}
-                >Hide for today</button>}
+                  onClick={() => {
+                    const action = dashboardWork(item);
+                    if (action) setWork(action);
+                    else router.push(item.href);
+                  }}
+                  className="text-brand no-underline hover:underline"
+                >Open</button>}
                 {item.task && <button
                   type="button"
                   aria-label={`Mark ${item.task.title} complete`}
@@ -190,7 +146,6 @@ export function DashboardTaskList({
       )}
       <div className="flex gap-3 border-t border-border pt-2 text-[11px]">
         {items.length > 6 && <button type="button" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)} className="font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">{showAll ? "Show fewer" : `Show all ${items.length}`}</button>}
-        {hiddenAttention.size > 0 && <button type="button" disabled={savingAttention} onClick={() => void restoreDismissed()} className="font-medium text-muted-foreground hover:text-foreground hover:underline">Restore hidden</button>}
         <Link href="/app/tasks" className="font-medium text-brand no-underline hover:underline">All tasks ↗</Link>
         {attention.length > 0 && <Link href="/app/approvals" className="font-medium text-brand no-underline hover:underline">Review queue ↗</Link>}
       </div>
