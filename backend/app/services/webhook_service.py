@@ -21,6 +21,7 @@ are acknowledged and ignored so Stripe stops retrying.
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -259,7 +260,7 @@ async def _payment_by_intent(session: AsyncSession, intent_id: str | None) -> Pa
         return None
     return (
         await session.execute(
-            select(Payment).where(Payment.stripe_payment_intent_id == intent_id)
+            select(Payment).where(Payment.stripe_payment_intent_id == intent_id).with_for_update()
         )
     ).scalar_one_or_none()
 
@@ -277,6 +278,14 @@ async def _connect_payment_succeeded(session: AsyncSession, obj: dict, account_i
     org = await session.get(Organization, payment.organization_id)
     if not org or not account_id or org.stripe_connect_account_id != account_id:
         return {"ignored": "payment_intent.succeeded", "reason": "connected account mismatch"}
+    if payment.status in {PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED}:
+        return {"ignored": "payment_intent.succeeded", "reason": "payment already refunded"}
+    expected_amount = int((Decimal(str(payment.amount)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if (obj.get("status") != "succeeded" or type(obj.get("amount_received")) is not int
+            or obj["amount_received"] != expected_amount
+            or not isinstance(obj.get("currency"), str)
+            or obj["currency"].lower() != payment.currency.lower()):
+        raise HTTPException(status_code=409, detail="Payment event does not match the recorded amount and currency.")
     replay = payment.status == PaymentStatus.SUCCEEDED
     if not replay:
         payment.status = PaymentStatus.SUCCEEDED
@@ -357,6 +366,10 @@ async def _connect_payment_failed(session: AsyncSession, obj: dict, account_id: 
     org = await session.get(Organization, payment.organization_id)
     if not org or not account_id or org.stripe_connect_account_id != account_id:
         return {"ignored": "payment_intent.payment_failed", "reason": "connected account mismatch"}
+    if payment.status in {PaymentStatus.SUCCEEDED, PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED}:
+        return {"ignored": "payment_intent.payment_failed", "reason": "payment already settled"}
+    if payment.status == PaymentStatus.FAILED:
+        return {"handled": "payment_intent.payment_failed", "replay": True}
     payment.status = PaymentStatus.FAILED
     error = obj.get("last_payment_error") or {}
     payment.stripe_failure_code = error.get("code")

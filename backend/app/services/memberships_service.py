@@ -554,11 +554,13 @@ async def confirm_web_signup_payment(session: AsyncSession, *, org_id: str, user
         Payment.organization_id == org_id, Payment.member_id == member.id,
         Payment.stripe_payment_intent_id == payment_intent_id,
         Payment.note == "web_member_signup",
-    ))).scalar_one_or_none()
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if payment is None:
         raise HTTPException(status_code=404, detail="Signup payment not found.")
     if payment.status == PaymentStatus.SUCCEEDED and payment.subscription_id:
         return {"status": "active", "payment_id": payment.id}
+    if payment.status in {PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED}:
+        raise HTTPException(status_code=409, detail="This payment has been refunded and cannot be confirmed again.")
     org = await session.get(Organization, org_id)
     if org is None or not org.stripe_connect_account_id:
         raise HTTPException(status_code=409, detail="Gym payment account is unavailable.")
