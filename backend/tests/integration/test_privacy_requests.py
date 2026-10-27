@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.constants import Channel, MessageDirection, SenderKind
+from app.models.inbox import InboxConversation, InboxMessage
+from app.models.membership import OrganizationMember
 from tests.integration.test_member_detail import _member_id, _provision, _signup_and_pay
 
 
 @pytest.mark.asyncio
-async def test_owner_can_record_review_export_and_resolve_member_data_request(client, monkeypatch):
+async def test_owner_can_record_review_export_and_resolve_member_data_request(client, db, monkeypatch):
     from app.services import organizations_service
     monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
     monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
@@ -14,6 +17,19 @@ async def test_owner_can_record_review_export_and_resolve_member_data_request(cl
     email = "privacy-member@example.com"
     await _signup_and_pay(client, org_code, plan_id, email)
     member_id = await _member_id(client, headers, email)
+    member = await db.get(OrganizationMember, member_id)
+    conversation = InboxConversation(
+        organization_id=member.organization_id, member_id=member_id,
+        channel=Channel.EMAIL, contact_handle=email,
+    )
+    db.add(conversation)
+    await db.flush()
+    db.add(InboxMessage(
+        organization_id=member.organization_id, conversation_id=conversation.id,
+        direction=MessageDirection.INBOUND, sender_kind=SenderKind.CONTACT,
+        channel=Channel.EMAIL, body="Please update my contact details.",
+    ))
+    await db.commit()
 
     consent = await client.get(f"/api/v1/privacy/members/{member_id}/consent", headers=headers)
     assert consent.status_code == 200, consent.text
@@ -48,6 +64,7 @@ async def test_owner_can_record_review_export_and_resolve_member_data_request(cl
     assert export.status_code == 200, export.text
     assert export.json()["account"]["email"] == email
     assert export.json()["subscriptions"]
+    assert export.json()["messages"][0]["body"] == "Please update my contact details."
     session = await client.post("/api/v1/classes", headers=headers, json={
         "title": "Privacy export class", "starts_at": "2026-12-01T10:00:00",
     })

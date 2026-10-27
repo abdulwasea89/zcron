@@ -15,6 +15,7 @@ from app.core.tenancy import TenantContext
 from app.models.attendance import Attendance
 from app.models.class_session import ClassBooking, ClassSession
 from app.models.data_subject_request import DataSubjectRequest
+from app.models.inbox import InboxConversation, InboxMessage
 from app.models.membership import OrganizationMember
 from app.models.payment import Payment
 from app.models.subscription import Subscription
@@ -328,6 +329,17 @@ async def export_member_data(
     training_logs = (await session.execute(select(TrainerSessionLog).where(
         TrainerSessionLog.organization_id == ctx.org_id, TrainerSessionLog.client_member_id == member.id,
     ).order_by(TrainerSessionLog.performed_at.desc()).limit(5000))).scalars().all()
+    inbox_messages = (await session.execute(
+        select(InboxMessage, InboxConversation.channel)
+        .join(InboxConversation, InboxConversation.id == InboxMessage.conversation_id)
+        .where(
+            InboxMessage.organization_id == ctx.org_id,
+            InboxConversation.organization_id == ctx.org_id,
+            InboxConversation.member_id == member.id,
+        )
+        .order_by(InboxMessage.created_at.desc())
+        .limit(5000)
+    )).all()
     return {
         "account": {
             "email": user.email, "full_name": user.full_name, "phone": user.phone,
@@ -359,6 +371,10 @@ async def export_member_data(
                             "class_title": class_session.title, "starts_at": class_session.starts_at,
                             "ends_at": class_session.ends_at}
                            for booking, class_session in class_bookings],
+        "messages": [{"at": message.created_at, "direction": message.direction.value,
+                      "channel": channel.value, "body": message.body,
+                      "delivery_status": message.delivery_status}
+                     for message, channel in inbox_messages],
         "payments": [{"created_at": item.created_at, "amount": item.amount, "currency": item.currency,
                       "tax_amount": item.tax_amount, "tax_included": item.tax_included,
                       "status": item.status.value, "method": item.method.value, "kind": item.kind.value}
