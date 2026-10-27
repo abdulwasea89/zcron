@@ -8,6 +8,7 @@ import secrets
 import hmac
 import hashlib
 import time
+from string import Formatter
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request
@@ -50,6 +51,39 @@ _AD_CHANNELS = {"google_ads": "lead_google_ads", "tiktok": "lead_tiktok"}
 class TikTokCredentials(BaseModel):
     client_key: str = Field(min_length=1, max_length=200)
     client_secret: str = Field(min_length=1, max_length=500)
+
+
+class LeadFollowupEmail(BaseModel):
+    subject: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("subject", "body")
+    @classmethod
+    def trim_template_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Template text cannot be blank.")
+        return value
+
+    @model_validator(mode="after")
+    def allow_only_name_variable(self):
+        try:
+            fields = [field for _, field, _, _ in Formatter().parse(self.subject + self.body) if field]
+        except ValueError as exc:
+            raise ValueError("Use only the {name} placeholder.") from exc
+        if any(field != "name" for field in fields):
+            raise ValueError("Use only the {name} placeholder.")
+        return self
+
+
+class LeadFollowupTemplatesIn(BaseModel):
+    templates: dict[str, LeadFollowupEmail]
+
+    @model_validator(mode="after")
+    def require_schedule_days(self):
+        if set(self.templates) != {"0", "1", "3", "7"}:
+            raise ValueError("Provide email templates for days 0, 1, 3, and 7.")
+        return self
 
 
 async def _ad_connection(session: AsyncSession, org_id: str, provider: str):
@@ -427,6 +461,39 @@ async def speed_report(
     session: AsyncSession = Depends(get_session),
 ):
     return await leads_service.lead_speed_report(session, org_id=ctx.org_id, days=days)
+
+
+@router.get("/followup-templates")
+async def get_followup_templates(
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
+    session: AsyncSession = Depends(get_session),
+):
+    from app.workers.lead_followups import _EMAILS, configured_followup_email
+
+    org = await session.get(Organization, ctx.org_id)
+    config = org.lead_followup_templates if org else None
+    return {str(day): dict(zip(("subject", "body"), configured_followup_email(day, config))) for day in _EMAILS}
+
+
+@router.put("/followup-templates", dependencies=[Depends(require_writable_org)])
+async def update_followup_templates(
+    data: LeadFollowupTemplatesIn,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
+    session: AsyncSession = Depends(get_session),
+):
+    org = await session.get(Organization, ctx.org_id, with_for_update=True)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    templates = {day: value.model_dump() for day, value in data.templates.items()}
+    if org.lead_followup_templates != templates:
+        org.lead_followup_templates = templates
+        session.add(org)
+        await record_audit(
+            session, action="lead.followup_templates_updated", organization_id=ctx.org_id,
+            actor_user_id=ctx.user_id, entity_type="organization", entity_id=ctx.org_id,
+            metadata={"days": sorted(templates, key=int)},
+        )
+    return templates
 
 
 @router.post("", response_model=LeadOut, status_code=201)

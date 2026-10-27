@@ -105,7 +105,10 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "dashboard_hidden_attention": "JSON NOT NULL DEFAULT '[]'",
             "tags": "JSON NOT NULL DEFAULT '[]'",
         },
-        "organizations": {"audit_chain_head": "VARCHAR(64)"},
+        "organizations": {
+            "audit_chain_head": "VARCHAR(64)",
+            "lead_followup_templates": "JSON NOT NULL DEFAULT '{}'",
+        },
         "audit_logs": {"previous_hash": "VARCHAR(64)", "entry_hash": "VARCHAR(64)"},
         "leads": {
             "sms_followup_consent": "BOOLEAN NOT NULL DEFAULT 0",

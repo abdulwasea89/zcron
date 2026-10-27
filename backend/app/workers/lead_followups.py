@@ -9,6 +9,7 @@ from app.core.constants import NotificationKind
 from app.core.security import now_utc
 from app.integrations.email import send_email_safe
 from app.models.lead import Lead, LeadFollowUp
+from app.models.organization import Organization
 from app.services.notifications_service import create_notification, notify_org_owners
 
 _EMAILS = {
@@ -31,7 +32,14 @@ _EMAILS = {
 }
 
 
+def configured_followup_email(day: int, templates: dict | None = None) -> tuple[str, str]:
+    subject, body = _EMAILS[day]
+    custom = (templates or {}).get(str(day), {})
+    return custom.get("subject", subject), custom.get("body", body)
+
+
 async def run_due_lead_followups(session: AsyncSession, *, org_id: str) -> dict:
+    org = await session.get(Organization, org_id)
     due_rows = (
         await session.execute(
             select(LeadFollowUp, Lead)
@@ -54,11 +62,11 @@ async def run_due_lead_followups(session: AsyncSession, *, org_id: str) -> dict:
             skipped += 1
             continue
         if lead.email_followup_consent and lead.email and not (followup.day == 0 and followup.email_status == "sent"):
-            subject, template = _EMAILS[followup.day]
+            subject, template = configured_followup_email(followup.day, org.lead_followup_templates if org else None)
             followup.email_attempted_at = now_utc()
             followup.email_attempts += 1
             sent = await send_email_safe(
-                lead.email, subject, template.format(name=lead.name.split()[0]),
+                lead.email, subject, template.replace("{name}", lead.name.split()[0]),
             )
             followup.email_status = "sent" if sent else "failed"
             followup.email_sent_at = now_utc() if sent else None

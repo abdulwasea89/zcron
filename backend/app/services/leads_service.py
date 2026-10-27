@@ -18,6 +18,7 @@ from app.models.membership import OrganizationMember
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.staff import Task
+from app.models.organization import Organization
 from app.core.constants import Role
 from app.core.security import now_utc
 from app.schemas.leads import LeadCreate, LeadUpdate
@@ -312,15 +313,18 @@ async def create_lead(session: AsyncSession, *, org_id: str, actor_id: str | Non
         )
         session.add(followup)
         if day == 0 and lead.email_followup_consent and lead.email:
-            from app.workers.lead_followups import _EMAILS
+            from app.workers.lead_followups import configured_followup_email
 
-            subject, template = _EMAILS[0]
+            org = await session.get(Organization, org_id)
+            subject, template = configured_followup_email(
+                0, org.lead_followup_templates if org else None,
+            )
             followup.email_attempted_at = now_utc()
             followup.email_attempts = 1
             sent = await send_email_safe(
                 lead.email,
                 subject,
-                template.format(name=lead.name.split()[0]),
+                template.replace("{name}", lead.name.split()[0]),
             )
             followup.email_status = "sent" if sent else "failed"
             followup.email_sent_at = now_utc() if sent else None
