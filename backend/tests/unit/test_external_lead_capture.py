@@ -1,5 +1,7 @@
 import asyncio
 import json
+import hashlib
+import hmac
 from types import SimpleNamespace
 
 import pytest
@@ -38,6 +40,33 @@ def test_tiktok_relay_requires_contact_and_maps_source():
     assert capture.tiktok_lead_fields({"name": "Form lead", "email": "f@example.com", "source": "web_form"}).source == "web_form"
     with pytest.raises(HTTPException, match="must provide"):
         capture.tiktok_lead_fields({"name": "No contact"})
+
+
+def test_tiktok_native_event_maps_fields_from_content():
+    lead = capture.tiktok_lead_fields({"content": json.dumps({
+        "lead_id": "tt-1",
+        "field_data": [
+            {"field_name": "Full Name", "field_value": "Sam Rivera"},
+            {"field_name": "Email", "field_value": "sam@example.com"},
+        ],
+    })})
+    assert lead.name == "Sam Rivera" and lead.email == "sam@example.com"
+    assert lead.source == "tiktok"
+
+
+def test_tiktok_signature_checks_raw_body_timestamp_and_client_key(monkeypatch):
+    now = 1_800_000_000
+    monkeypatch.setattr(leads_route.time, "time", lambda: now)
+    raw = b'{"client_key":"app-key"}'
+    secret = "client-secret"
+    signature = hmac.new(secret.encode(), str(now).encode() + b"." + raw, hashlib.sha256).hexdigest()
+    payload = {"client_key": "app-key"}
+    credentials = {"client_key": "app-key", "client_secret": secret}
+
+    assert leads_route._verify_tiktok_signature(raw, payload, f"t={now},s={signature}", credentials)
+    assert not leads_route._verify_tiktok_signature(raw + b" ", payload, f"t={now},s={signature}", credentials)
+    assert not leads_route._verify_tiktok_signature(raw, {"client_key": "other"}, f"t={now},s={signature}", credentials)
+    assert not leads_route._verify_tiktok_signature(raw, payload, f"t={now - 301},s={signature}", credentials)
 
 
 @pytest.mark.asyncio

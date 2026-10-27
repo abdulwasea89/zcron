@@ -6,6 +6,8 @@ import json
 import re
 import secrets
 import hmac
+import hashlib
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request
@@ -45,6 +47,11 @@ router = APIRouter()
 _AD_CHANNELS = {"google_ads": "lead_google_ads", "tiktok": "lead_tiktok"}
 
 
+class TikTokCredentials(BaseModel):
+    client_key: str = Field(min_length=1, max_length=200)
+    client_secret: str = Field(min_length=1, max_length=500)
+
+
 async def _ad_connection(session: AsyncSession, org_id: str, provider: str):
     channel = _AD_CHANNELS.get(provider)
     if channel is None:
@@ -70,8 +77,49 @@ async def list_capture_integrations(
                 if connection and settings.inbox_public_webhook_base_url else None
             ),
             "secret": connection.webhook_token if connection else None,
+            "native_configured": bool(
+                provider == "tiktok" and connection and
+                _capture_credentials(connection).get("client_key") and
+                _capture_credentials(connection).get("client_secret")
+            ),
         }
     return output
+
+
+def _capture_credentials(connection: InboxChannelConnection) -> dict:
+    # Older relay connections stored an empty JSON object before credentials were encrypted.
+    if connection.credentials_ciphertext == "{}":
+        return {}
+    from app.services.inbox_channels_service import decrypt_credentials
+    return decrypt_credentials(connection)
+
+
+def _verify_tiktok_signature(raw: bytes, payload: dict, signature: str, credentials: dict) -> bool:
+    parts = dict(part.split("=", 1) for part in signature.split(",") if "=" in part)
+    timestamp, supplied = parts.get("t", ""), parts.get("s", "")
+    if not timestamp.isdigit() or abs(time.time() - int(timestamp)) > 300:
+        return False
+    expected = hmac.new(credentials["client_secret"].encode(), timestamp.encode() + b"." + raw, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(supplied, expected) and payload.get("client_key") == credentials.get("client_key")
+
+
+@router.put("/capture-integrations/tiktok/credentials")
+async def configure_tiktok_credentials(
+    body: TikTokCredentials,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
+    session: AsyncSession = Depends(get_session),
+):
+    connection = await _ad_connection(session, ctx.org_id, "tiktok")
+    if connection is None:
+        raise HTTPException(status_code=409, detail="Enable TikTok lead capture before configuring its app credentials.")
+    from app.services.inbox_channels_service import encrypt_credentials
+    credentials = _capture_credentials(connection)
+    credentials.update(client_key=body.client_key.strip(), client_secret=body.client_secret.strip())
+    connection.credentials_ciphertext = encrypt_credentials(credentials)
+    await record_audit(session, action="lead.capture_tiktok_app_configured",
+                       organization_id=ctx.org_id, actor_user_id=ctx.user_id,
+                       entity_type="lead_capture_integration", entity_id="tiktok")
+    return {"native_configured": True}
 
 
 @router.put("/capture-integrations/{provider}")
@@ -121,7 +169,7 @@ async def disconnect_capture_integration(
                            metadata={"provider": provider})
 
 
-async def _provider_payload(request: Request) -> dict:
+async def _provider_body(request: Request) -> tuple[bytes, dict]:
     if int(request.headers.get("content-length", "0") or 0) > 65536:
         raise HTTPException(status_code=413, detail="Lead payload is too large.")
     raw = bytearray()
@@ -130,12 +178,17 @@ async def _provider_payload(request: Request) -> dict:
         if len(raw) > 65536:
             raise HTTPException(status_code=413, detail="Lead payload is too large.")
     try:
-        payload = json.loads(bytes(raw))
+        body = bytes(raw)
+        payload = json.loads(body)
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=400, detail="Invalid lead payload.") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Lead payload must be a JSON object.")
-    return payload
+    return body, payload
+
+
+async def _provider_payload(request: Request) -> dict:
+    return (await _provider_body(request))[1]
 
 
 @router.post("/webhooks/google_ads/{org_id}")
@@ -160,14 +213,27 @@ async def google_ads_lead_webhook(org_id: str, request: Request, session: AsyncS
 async def tiktok_lead_webhook(
     org_id: str, request: Request, session: AsyncSession = Depends(get_session),
 ):
-    payload = await _provider_payload(request)
+    raw, payload = await _provider_body(request)
     connection = await _ad_connection(session, org_id, "tiktok")
-    if not connection or not hmac.compare_digest(request.headers.get("x-acron-lead-token", ""), connection.webhook_token or ""):
+    if not connection:
+        raise HTTPException(status_code=403, detail="TikTok lead capture is not configured.")
+    credentials = _capture_credentials(connection)
+    signature = request.headers.get("tiktok-signature", "")
+    if signature and credentials.get("client_secret"):
+        if not _verify_tiktok_signature(raw, payload, signature, credentials):
+            raise HTTPException(status_code=403, detail="Invalid TikTok signature.")
+        if isinstance(payload.get("content"), str):
+            try:
+                payload["content"] = json.loads(payload["content"])
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=400, detail="Invalid TikTok event content.") from exc
+    elif not hmac.compare_digest(request.headers.get("x-acron-lead-token", ""), connection.webhook_token or ""):
         raise HTTPException(status_code=403, detail="Invalid lead provider token.")
     from app.services.lead_capture_service import capture_provider_lead, tiktok_lead_fields
     data = tiktok_lead_fields(payload)
-    value = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    lead_id = str(value.get("lead_id") or value.get("id") or "")
+    value = payload.get("content") if isinstance(payload.get("content"), dict) else payload
+    value = value.get("data") if isinstance(value.get("data"), dict) else value
+    lead_id = str(value.get("lead_id") or value.get("id") or payload.get("event_id") or "")
     captured_id = await capture_provider_lead(session, org_id=org_id, provider="tiktok", lead_id=lead_id, data=data)
     await session.commit()
     from app.realtime import events

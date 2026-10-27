@@ -124,11 +124,30 @@ def google_lead_fields(payload: dict) -> LeadCreate:
 
 
 def tiktok_lead_fields(payload: dict) -> LeadCreate:
-    """Accept the normalized name/email/phone shape supported by webhook relays."""
-    value = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    """Map normalized relay fields or TikTok's serialized webhook content."""
+    value = payload.get("content", payload)
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            if isinstance(decoded, dict):
+                value = decoded
+        except json.JSONDecodeError:
+            pass
+    value = value.get("data") if isinstance(value.get("data"), dict) else value
+    fields = value.get("field_data") or value.get("user_column_data") or []
+    if isinstance(fields, list):
+        mapped = {}
+        for field in fields:
+            if isinstance(field, dict):
+                key = str(field.get("field_name") or field.get("column_id") or field.get("name") or "").lower()
+                val = field.get("field_value", field.get("string_value", field.get("value")))
+                if key and isinstance(val, (str, int, float)):
+                    mapped[key] = str(val)
+        value = {**value, **mapped}
     try:
-        lead = LeadCreate(name=value.get("name") or value.get("full_name") or "TikTok prospect",
-                          email=value.get("email"), phone=value.get("phone") or value.get("phone_number"),
+        lead = LeadCreate(name=value.get("name") or value.get("full_name") or value.get("full name") or "TikTok prospect",
+                          email=value.get("email") or value.get("email address"),
+                          phone=value.get("phone") or value.get("phone_number") or value.get("phone number"),
                           goal=value.get("goal"), source=value.get("source") or LeadSource.TIKTOK)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail="TikTok lead fields are invalid.") from exc
