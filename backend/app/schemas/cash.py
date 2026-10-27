@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.constants import PaymentMethod
 
@@ -20,7 +20,7 @@ class CashPaymentLog(BaseModel):
 
     member_id: str
     plan_id: str
-    amount: float
+    amount: float = Field(ge=0, allow_inf_nan=False)
     method: PaymentMethod = PaymentMethod.CASH
     note: str | None = None
     promo_code: str | None = None
@@ -28,9 +28,9 @@ class CashPaymentLog(BaseModel):
 
     @model_validator(mode="after")
     def validate_payer_shares(self):
+        if self.method not in {PaymentMethod.CASH, PaymentMethod.BANK_TRANSFER, PaymentMethod.MOBILE_WALLET}:
+            raise ValueError("Choose cash, bank transfer, or mobile wallet for an offline payment.")
         if self.payer_shares:
-            if self.method not in {PaymentMethod.CASH, PaymentMethod.BANK_TRANSFER, PaymentMethod.MOBILE_WALLET}:
-                raise ValueError("Family shares require an offline payment method.")
             ids = [share.member_id for share in self.payer_shares]
             if len(set(ids)) != len(ids):
                 raise ValueError("Choose each payer only once.")
@@ -82,13 +82,30 @@ class CashMemberOut(BaseModel):
 
 class ReconciliationRequest(BaseModel):
     business_date: date
-    counted_total: float
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    opening_float: float = Field(default=0, ge=0, le=999999999999.99, allow_inf_nan=False)
+    counted_total: float = Field(ge=0, le=999999999999.99, allow_inf_nan=False)
     notes: str | None = None
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value):
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator("opening_float", "counted_total")
+    @classmethod
+    def validate_cents(cls, value):
+        amount = Decimal(str(value))
+        if amount != amount.quantize(Decimal("0.01")):
+            raise ValueError("Cash count must have at most two decimal places.")
+        return value
 
 
 class ReconciliationOut(BaseModel):
     id: str
     business_date: date
+    currency: str
+    opening_float: float
     system_total: float
     counted_total: float
     discrepancy: float

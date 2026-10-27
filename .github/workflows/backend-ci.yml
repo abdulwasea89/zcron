@@ -70,6 +70,8 @@ jobs:
         run: npm ci
       - name: Lint frontend
         run: npm run lint
+      - name: Verify offline payment queue
+        run: node --experimental-strip-types lib/offline-mutations.test.mjs
       - name: Type-check frontend
         run: npx tsc --noEmit --incremental false
       - name: Build production frontend

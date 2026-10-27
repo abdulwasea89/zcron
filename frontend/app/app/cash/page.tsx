@@ -19,14 +19,8 @@ import { api, ApiError } from "@/lib/api";
 import { enqueueOfflineMutation } from "@/lib/offline-mutations";
 import { FamilyPaymentShares, type FamilyShare } from "@/components/members/FamilyPaymentShares";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { money, roleLabel, titleCase } from "@/lib/format";
-import type { CashMemberItem, CashPaymentOut, PlanOut, ReconciliationOut } from "@/lib/types";
-
-function localDate() {
-  const now = new Date();
-  const offset = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
-}
+import { dateKeyInTimeZone, money, roleLabel, titleCase } from "@/lib/format";
+import type { CashMemberItem, CashPaymentOut, OrganizationOut, PlanOut, ReconciliationOut } from "@/lib/types";
 
 type CashHistoryItem = {
   id: string;
@@ -524,7 +518,7 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
       setSelected(null); selectMemberId(""); setQuery(""); setResults([]);
       setPlanId(""); setAmount(""); setNote(""); setPromoCode("");
     } catch (e) {
-      const networkOrServerFailure = !(e instanceof ApiError) || e.status >= 500;
+      const networkOrServerFailure = !(e instanceof ApiError) || e.status === 0 || e.status >= 500;
       if (networkOrServerFailure && currentUser?.org_id) {
         try {
           await enqueueOfflineMutation({
@@ -682,7 +676,9 @@ function LogPayment({ onSaved }: { onSaved: () => void }) {
 /* ─── Reconcile ─── */
 
 function Reconcile() {
-  const [businessDate, setBusinessDate] = useState(localDate);
+  const [businessDate, setBusinessDate] = useState("");
+  const [currency, setCurrency] = useState("");
+  const [openingFloat, setOpeningFloat] = useState("0");
   const [counted, setCounted] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
@@ -690,10 +686,22 @@ function Reconcile() {
   const [loading, setLoading] = useState(false);
   const hasDiscrepancy = result ? Math.abs(result.discrepancy) > 0.009 : false;
 
+  useEffect(() => {
+    let active = true;
+    void api.get<OrganizationOut>("/organizations/me").then((org) => {
+      if (!active) return;
+      setCurrency(org.default_currency.toUpperCase());
+      try { setBusinessDate(dateKeyInTimeZone(new Date(), org.timezone || "UTC")); }
+      catch { setBusinessDate(dateKeyInTimeZone(new Date(), "UTC")); }
+    }).catch(() => { if (active) setError("Could not load the gym's currency and timezone."); });
+    return () => { active = false; };
+  }, []);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const countedTotal = Number(counted);
-    if (!Number.isFinite(countedTotal) || countedTotal < 0) {
+    const opening = Number(openingFloat);
+    if (!Number.isFinite(countedTotal) || countedTotal < 0 || !Number.isFinite(opening) || opening < 0) {
       setError("Enter the cash total counted in the drawer.");
       return;
     }
@@ -704,6 +712,8 @@ function Reconcile() {
     try {
       const output = await api.post<ReconciliationOut>("/cash/reconcile", {
         business_date: businessDate,
+        currency: currency.trim().toUpperCase(),
+        opening_float: opening,
         counted_total: countedTotal,
         notes: notes.trim() || null,
       });
@@ -721,12 +731,14 @@ function Reconcile() {
         {error && <Alert onDismiss={() => setError("")}>{error}</Alert>}
         <div className="rounded-xl border border-[var(--warning-border)] bg-[var(--warning-bg)] p-3.5 text-sm text-[var(--warning)]">
           <p className="font-semibold">Count physical cash first</p>
-          <p className="mt-1 text-xs leading-5 text-[var(--warning)]">We compare your count with cash payments recorded for this date and preserve any difference in the audit trail.</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--warning)]">Enter the opening float and the actual closing count. The comparison includes cash received and refunded on the gym business day; reconcile each currency separately.</p>
         </div>
         <Input label="Business date" type="date" required value={businessDate} onChange={(e) => setBusinessDate(e.target.value)} />
+        <Input label="Currency" required minLength={3} maxLength={3} pattern="[A-Za-z]{3}" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} hint="Use a three-letter currency code, such as USD." />
+        <Input label="Opening float" type="number" min="0" step="0.01" inputMode="decimal" required value={openingFloat} onChange={(e) => setOpeningFloat(e.target.value)} hint="Cash already in the drawer at the start of the day." />
         <Input label="Cash counted" type="number" min="0" step="0.01" inputMode="decimal" required value={counted} onChange={(e) => setCounted(e.target.value)} placeholder="0.00" hint="Enter the actual amount in the cash drawer." />
         <Input label="Reconciliation notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional handover or discrepancy context" />
-        <Button type="submit" loading={loading} className="w-full">
+        <Button type="submit" loading={loading} disabled={!businessDate || !currency} className="w-full">
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
           </svg>
@@ -752,9 +764,10 @@ function Reconcile() {
               </Badge>
             </div>
             <dl className="mt-4 space-y-2.5 border-y border-current/10 py-3 text-sm">
-              <AmountRow label="Recorded cash" value={money(result.system_total)} />
-              <AmountRow label="Cash counted" value={money(result.counted_total)} />
-              <AmountRow label="Difference" value={money(result.discrepancy)} emphasis />
+              <AmountRow label="Recorded net cash" value={money(result.system_total, result.currency)} />
+              <AmountRow label="Opening float" value={money(result.opening_float, result.currency)} />
+              <AmountRow label="Cash counted" value={money(result.counted_total, result.currency)} />
+              <AmountRow label="Difference" value={money(result.discrepancy, result.currency)} emphasis />
             </dl>
             {result.alert_triggered && (
               <p className="mt-3 text-xs font-medium text-[var(--danger)]">

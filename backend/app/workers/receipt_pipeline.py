@@ -18,6 +18,7 @@ pipeline runs without a Celery broker. In production it would be a Celery task.
 from __future__ import annotations
 
 import json
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 from sqlmodel import select
@@ -39,6 +40,7 @@ from app.models.plan import MembershipPlan
 from app.models.receipt import ReceiptUpload
 from app.models.subscription import Subscription
 from app.models.user import User
+from app.schemas.promotions import PriceQuoteOut
 from app.services.audit_service import record_audit
 
 # Claim window: a receipt date must be within this many days of "now".
@@ -149,16 +151,14 @@ def _score(*, ocr_signal: float, is_duplicate: bool, cross: dict, flags: list[st
 
 async def _activate_via_receipt(
     session: AsyncSession, *, org: Organization, receipt: ReceiptUpload,
-    plan: MembershipPlan | None, verified_amount: float | None = None,
+    plan: MembershipPlan | None, verified_amount: float, quote: PriceQuoteOut | None = None,
 ) -> None:
-    """On auto-approve, create payment + subscription and activate the member."""
+    """Create the payment and membership after staff confirm settlement."""
 
     member = await session.get(OrganizationMember, receipt.member_id)
-    if member is None:
-        return
-    # OCR text is untrusted member-provided content. For a selected plan, book
-    # its authoritative current price; never let the screenshot set the ledger.
-    amount = plan.price if plan else (verified_amount or 0.0)
+    if member is None or member.organization_id != org.id:
+        raise HTTPException(status_code=404, detail="Member not found in this workspace.")
+    amount = verified_amount
     currency = plan.currency if plan else org.default_currency
 
     payment = Payment(
@@ -173,6 +173,12 @@ async def _activate_via_receipt(
         ),
         status=PaymentStatus.SUCCEEDED,
         amount=amount,
+        tax_amount=quote.tax_amount if quote else 0,
+        tax_included=quote.tax_included if quote else False,
+        plan_price_amount=quote.plan_price if quote else None,
+        joining_fee_amount=quote.joining_fee if quote else 0,
+        discount_amount=quote.discount_amount if quote else 0,
+        promo_code=quote.promo_code if quote else None,
         currency=currency,
         note="Staff approved payment proof; settlement checked externally",
         receipt_id=receipt.id,

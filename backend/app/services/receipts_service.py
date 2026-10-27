@@ -9,6 +9,7 @@ Every action is audited (Security Rule #10).
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,7 @@ from app.models.plan import MembershipPlan
 from app.models.receipt import ReceiptUpload
 from app.models.user import User
 from app.realtime import events
+from app.services.pricing_service import quote_member_payment
 from app.workers import receipt_pipeline
 
 
@@ -108,7 +110,7 @@ async def review(
     reason: str | None, reviewer_user_id: str, settlement_confirmed: bool = False,
     verified_amount: float | None = None,
 ) -> ReceiptUpload:
-    receipt = await session.get(ReceiptUpload, receipt_id)
+    receipt = await session.get(ReceiptUpload, receipt_id, with_for_update=True, populate_existing=True)
     if receipt is None or receipt.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Receipt not found.")
     if receipt.status not in {ReceiptStatus.PENDING_REVIEW}:
@@ -122,14 +124,22 @@ async def review(
                 detail="Confirm that funds settled in the bank or wallet before approving.",
             )
         org = await session.get(Organization, org_id)
+        if org is None:
+            raise HTTPException(status_code=404, detail="Workspace not found.")
         plan = await session.get(MembershipPlan, receipt.plan_id) if receipt.plan_id else None
-        if plan is None and (verified_amount is None or verified_amount <= 0):
+        if receipt.plan_id and (plan is None or plan.organization_id != org_id):
+            raise HTTPException(status_code=409, detail="The receipt plan is unavailable in this workspace.")
+        amount = Decimal(str(verified_amount)) if verified_amount is not None else None
+        if amount is None or not amount.is_finite() or amount <= 0 or amount > 1_000_000_000 or amount != amount.quantize(Decimal("0.01")):
             raise HTTPException(
                 status_code=422,
-                detail="Enter the amount you verified in the bank or wallet before approving this receipt.",
+                detail="Enter the settled amount in the bank or wallet, with at most two decimal places.",
             )
+        quote = await quote_member_payment(session, org_id=org_id, member_id=receipt.member_id, plan=plan) if plan else None
+        if quote and amount != Decimal(str(quote.total)):
+            raise HTTPException(status_code=422, detail=f"The settled amount must match the current quote: {quote.currency} {quote.total:.2f}.")
         await receipt_pipeline._activate_via_receipt(
-            session, org=org, receipt=receipt, plan=plan, verified_amount=verified_amount
+            session, org=org, receipt=receipt, plan=plan, verified_amount=float(amount), quote=quote,
         )
         receipt.status = ReceiptStatus.APPROVED
         await _notify(session, receipt, "Receipt approved", "Your payment receipt was approved; "
@@ -164,7 +174,7 @@ async def reverse_auto_approval(
 ) -> ReceiptUpload:
     """Admin reverses an auto-approval found bad on audit (Section 10.5/10.7)."""
 
-    receipt = await session.get(ReceiptUpload, receipt_id)
+    receipt = await session.get(ReceiptUpload, receipt_id, with_for_update=True, populate_existing=True)
     if receipt is None or receipt.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Receipt not found.")
     if not receipt.auto_approved or receipt.status != ReceiptStatus.AUTO_APPROVED:

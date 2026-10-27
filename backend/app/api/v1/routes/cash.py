@@ -186,10 +186,12 @@ async def reconcile(
 ):
     rec, alert = await cash.reconcile(
         session, org_id=ctx.org_id, business_date=data.business_date,
-        counted_total=data.counted_total, performed_by=ctx.user_id, notes=data.notes,
+        counted_total=data.counted_total, opening_float=data.opening_float,
+        performed_by=ctx.user_id, notes=data.notes, currency=data.currency,
     )
     return ReconciliationOut(
-        id=rec.id, business_date=rec.business_date, system_total=rec.system_total,
+        id=rec.id, business_date=rec.business_date, currency=rec.currency, opening_float=rec.opening_float,
+        system_total=rec.system_total,
         counted_total=rec.counted_total, discrepancy=rec.discrepancy,
         performed_by=rec.performed_by, alert_triggered=alert,
     )

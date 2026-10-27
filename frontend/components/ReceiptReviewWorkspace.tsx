@@ -5,7 +5,6 @@ import { useRealtimeEvent } from "@/components/Realtime";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, Badge, Button, Card, CardHeader, EmptyState, Input, Spinner } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
-import { money } from "@/lib/format";
 import type { ReceiptReviewItem } from "@/lib/types";
 
 export function ReceiptReviewWorkspace() {
@@ -115,8 +114,8 @@ function ReceiptCard({
           </div>
         </div>
         <div>
-          <div className="text-[10px] font-semibold text-muted-foreground">Amount</div>
-          <div className="mt-2 tabular-nums font-medium text-[var(--foreground)]">{receipt.extracted_amount === null ? "—" : money(receipt.extracted_amount)}</div>
+          <div className="text-[10px] font-semibold text-muted-foreground">Amount read from image</div>
+          <div className="mt-2 tabular-nums font-medium text-[var(--foreground)]">{receipt.extracted_amount === null ? "—" : receipt.extracted_amount.toFixed(2)}</div>
         </div>
         <div>
           <div className="text-[10px] font-semibold text-muted-foreground">Payee</div>
@@ -174,8 +173,7 @@ function ReceiptCard({
           />
           <span>I verified this transaction in the organization’s bank or wallet and confirmed the funds settled.</span>
         </label>
-        {!receipt.plan_id && (
-          <div className="mb-4">
+        <div className="mb-4">
             <Input
               label="Amount confirmed in bank or wallet"
               type="number"
@@ -186,8 +184,8 @@ function ReceiptCard({
               onChange={(event) => setVerifiedAmount(event.target.value)}
               placeholder="Enter the settled amount"
             />
-          </div>
-        )}
+          {receipt.plan_id && <p className="mt-1 text-xs text-muted-foreground">The confirmed amount must match the current membership quote, including any joining fee and tax.</p>}
+        </div>
         <Input
           label="Reason (required to reject / request info)"
           value={reason}
@@ -197,7 +195,7 @@ function ReceiptCard({
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             loading={busy}
-            disabled={!settlementConfirmed || (!receipt.plan_id && !(Number(verifiedAmount) > 0))}
+            disabled={!settlementConfirmed || !(Number(verifiedAmount) > 0)}
             onClick={() => review("approve")}
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>

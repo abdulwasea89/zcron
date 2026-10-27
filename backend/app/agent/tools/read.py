@@ -18,6 +18,7 @@ from langchain_core.tools import tool
 
 from app.agent.context import current_context
 from app.core.permissions import Capability, role_has
+from app.models.organization import Organization
 from app.services.audit_service import record_audit
 from app.agent.tools._serialize import (
     as_tool_result,
@@ -167,9 +168,12 @@ async def get_cash_status(business_date: str = "") -> str:
     ISO ``YYYY-MM-DD`` to check another day."""
 
     ctx = current_context()
-    day = date.fromisoformat(business_date) if business_date else date.today()
+    org = await ctx.session.get(Organization, ctx.org_id)
+    if org is None:
+        return as_tool_result({"error": "Workspace not found."})
+    day = date.fromisoformat(business_date) if business_date else attendance._local_today(org.timezone)
     total = await cash._system_cash_total(ctx.session, org_id=ctx.org_id, business_date=day)
-    return as_tool_result({"business_date": day.isoformat(), "cash_total": total})
+    return as_tool_result({"business_date": day.isoformat(), "currency": org.default_currency, "cash_total": total})
 
 
 @tool

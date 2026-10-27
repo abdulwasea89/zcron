@@ -9,10 +9,12 @@ staff member's name, and 3 discrepancies in 30 days alerts the owner
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import Numeric, cast, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -32,6 +34,7 @@ from app.models.cash import CashReconciliation
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
 from app.models.payment import Payment
+from app.models.payment_refund import PaymentRefund
 from app.models.plan import MembershipPlan
 from app.models.subscription import Subscription
 from app.models.user import User
@@ -45,8 +48,8 @@ from app.utils.pdf import render_receipt_pdf
 # 3 discrepancies within 30 days triggers an owner alert (Section 11.2).
 DISCREPANCY_ALERT_THRESHOLD = 3
 DISCREPANCY_WINDOW_DAYS = 30
-# Cents tolerance below which a reconciliation isn't counted as a discrepancy.
-DISCREPANCY_TOLERANCE = 0.01
+# Reconciliations are rounded to cents; any non-zero cent is a discrepancy.
+DISCREPANCY_TOLERANCE = 0.009
 
 
 async def log_cash_payment(
@@ -255,37 +258,67 @@ async def search_members(
     return [(m, u) for m, u in rows]
 
 
-async def _system_cash_total(session: AsyncSession, *, org_id: str, business_date: date) -> float:
-    """Sum of successful cash-method payments logged on ``business_date``."""
-
-    start = datetime.combine(business_date, time.min)
-    end = datetime.combine(business_date, time.max)
-    total = (
-        await session.execute(
-            select(func.coalesce(func.sum(Payment.amount), 0.0)).where(
-                Payment.organization_id == org_id,
-                Payment.method == PaymentMethod.CASH,
-                Payment.status == PaymentStatus.SUCCEEDED,
-                Payment.paid_at >= start,
-                Payment.paid_at <= end,
-            )
-        )
-    ).scalar_one()
-    return float(total or 0.0)
+async def _system_cash_total(
+    session: AsyncSession, *, org_id: str, business_date: date, currency: str | None = None,
+) -> float:
+    """Cash received less recorded cash refunds on the gym's local business day."""
+    org = await session.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    if business_date == date.max:
+        raise HTTPException(status_code=422, detail="Choose an earlier business date.")
+    currency = (currency or org.default_currency).upper()
+    try:
+        zone = ZoneInfo(org.timezone or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = ZoneInfo("UTC")
+    start, end = (
+        datetime.combine(day, time.min, zone).astimezone(timezone.utc).replace(tzinfo=None)
+        for day in (business_date, business_date + timedelta(days=1))
+    )
+    money_type = Numeric(18, 2)
+    paid_at = func.coalesce(Payment.paid_at, Payment.created_at)
+    gross = (await session.execute(select(func.coalesce(func.sum(cast(Payment.amount, money_type)), 0)).where(
+        Payment.organization_id == org_id, Payment.currency == currency,
+        Payment.method == PaymentMethod.CASH,
+        Payment.status.in_([PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED]),
+        paid_at >= start, paid_at < end,
+    ))).scalar_one()
+    refunds = (await session.execute(select(func.coalesce(func.sum(PaymentRefund.amount), 0)).join(
+        Payment, Payment.id == PaymentRefund.payment_id,
+    ).where(
+        PaymentRefund.organization_id == org_id, Payment.organization_id == org_id,
+        PaymentRefund.currency == currency, Payment.method == PaymentMethod.CASH,
+        PaymentRefund.occurred_at >= start, PaymentRefund.occurred_at < end,
+    ))).scalar_one()
+    has_refund_ledger = select(PaymentRefund.id).where(
+        PaymentRefund.organization_id == org_id, PaymentRefund.payment_id == Payment.id,
+    ).exists()
+    legacy = (await session.execute(select(func.coalesce(func.sum(cast(Payment.refunded_amount, money_type)), 0)).where(
+        Payment.organization_id == org_id, Payment.currency == currency, Payment.method == PaymentMethod.CASH,
+        Payment.refunded_at >= start, Payment.refunded_at < end, ~has_refund_ledger,
+    ))).scalar_one()
+    return float(Decimal(str(gross)) - Decimal(str(refunds)) - Decimal(str(legacy)))
 
 
 async def reconcile(
     session: AsyncSession, *, org_id: str, business_date: date, counted_total: float,
-    performed_by: str, notes: str | None,
+    performed_by: str, notes: str | None, currency: str | None = None, opening_float: float = 0,
 ) -> tuple[CashReconciliation, bool]:
     """Record end-of-day count. Returns (reconciliation, alert_triggered)."""
 
-    system_total = await _system_cash_total(session, org_id=org_id, business_date=business_date)
-    discrepancy = round(counted_total - system_total, 2)
+    org = await session.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    currency = (currency or org.default_currency).upper()
+    system_total = await _system_cash_total(session, org_id=org_id, business_date=business_date, currency=currency)
+    discrepancy = float((Decimal(str(counted_total)) - Decimal(str(opening_float)) - Decimal(str(system_total))).quantize(Decimal("0.01")))
 
     rec = CashReconciliation(
         organization_id=org_id,
         business_date=business_date,
+        currency=currency,
+        opening_float=opening_float,
         system_total=system_total,
         counted_total=counted_total,
         discrepancy=discrepancy,
@@ -299,12 +332,12 @@ async def reconcile(
     if abs(discrepancy) > DISCREPANCY_TOLERANCE:
         await record_audit(session, action="cash.reconciliation_discrepancy", organization_id=org_id,
                            actor_user_id=performed_by, entity_type="cash_reconciliation",
-                           entity_id=rec.id, new_values={"discrepancy": discrepancy})
+                           entity_id=rec.id, new_values={"discrepancy": discrepancy, "currency": currency})
         alert = await _maybe_alert_owner(session, org_id=org_id, staff_user_id=performed_by)
     else:
         await record_audit(session, action="cash.reconciliation", organization_id=org_id,
                            actor_user_id=performed_by, entity_type="cash_reconciliation",
-                           entity_id=rec.id)
+                           entity_id=rec.id, metadata={"currency": currency})
     return rec, alert
 
 

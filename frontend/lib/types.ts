@@ -413,6 +413,8 @@ export interface CashPaymentOut {
 export interface ReconciliationOut {
   id: string;
   business_date: string;
+  currency: string;
+  opening_float: number;
   system_total: number;
   counted_total: number;
   discrepancy: number;

@@ -79,6 +79,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
     inspector = inspect(connection)
     tables = set(inspector.get_table_names())
     additions = {
+        "cash_reconciliations": {"currency": "VARCHAR", "opening_float": "FLOAT NOT NULL DEFAULT 0"},
         "idempotency_keys": {"original_key": "VARCHAR"},
         "tasks": {
             "category": "VARCHAR NOT NULL DEFAULT 'general'",

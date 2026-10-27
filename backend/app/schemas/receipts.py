@@ -42,4 +42,4 @@ class ReceiptReviewAction(BaseModel):
     action: str  # approve | reject | request_info
     reason: str | None = None
     settlement_confirmed: bool = False
-    verified_amount: float | None = Field(default=None, gt=0, le=1_000_000_000)
+    verified_amount: float | None = Field(default=None, gt=0, le=1_000_000_000, allow_inf_nan=False)

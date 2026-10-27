@@ -14,6 +14,8 @@ class CashReconciliation(UUIDModel, TimestampModel, table=True):
 
     organization_id: str = Field(index=True, foreign_key="organizations.id")
     business_date: date = Field(index=True)
+    currency: str | None = None
+    opening_float: float = 0.0
     system_total: float = 0.0
     counted_total: float = 0.0
     discrepancy: float = 0.0

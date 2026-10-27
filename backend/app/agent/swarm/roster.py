@@ -886,15 +886,9 @@ async def _cash_recon(ctx: AgentContext) -> Finding:
     )
     if total == 0:
         return _skip("risk_cash_recon", "No end-of-day cash reconciliation has been run.")
-    worst = await _total(
-        session,
-        CashReconciliation.discrepancy,
-        CashReconciliation.organization_id == org,
-        CashReconciliation.discrepancy < 0,
-    )
     return _done(
         "risk_cash_recon",
-        f"{off} of {total} reconciliations found a discrepancy; shortfalls total {worst}. Three "
+        f"{off} of {total} reconciliations found a discrepancy. Three "
         "discrepancies in 30 days for one staff member triggers an owner alert.",
     )
 
