@@ -126,20 +126,24 @@ class EmailDeliveryError(Exception):
     """
 
 
-async def send_email(
+@dataclass(frozen=True)
+class EmailSendResult:
+    accepted: bool
+    provider_message_id: str | None = None
+
+
+async def send_email_tracked(
     to: str, subject: str, body: str, attachments: list[str] | None = None,
     smtp_config: dict | None = None,
-) -> bool:
-    """Send an email. Returns True only if a real provider accepted it.
+) -> EmailSendResult:
+    """Send an email and retain a provider ID when the sender supplies one.
 
     Raises ``EmailDeliveryError`` when a configured provider rejects the message
     (e.g. Resend's unverified-domain 403). Callers that must not fail on a
     delivery error (background fan-out) can catch it; user-facing flows let it
     propagate so the UI shows the real reason.
 
-    Stub mode (no provider configured) returns False: the message is only
-    captured in the in-memory outbox, so reporting True would tell an admin an
-    email went out when nothing left the process.
+    Stub mode captures the message locally and returns an unaccepted result.
     """
 
     record = SentEmail(to=to, subject=subject, body=body, attachments=attachments or [])
@@ -151,7 +155,7 @@ async def send_email(
         try:
             await asyncio.to_thread(_send_smtp_sync, to, subject, body, smtp_config)
             logger.info("Email sent via SMTP to=%s subject=%s", to, subject)
-            return True
+            return EmailSendResult(True)
         except Exception as exc:
             logger.warning("SMTP send failed: to=%s error=%s", to, exc)
             raise EmailDeliveryError(str(exc)) from exc
@@ -165,17 +169,35 @@ async def send_email(
                 "html": _html_from_text(body),
             }
             result = await asyncio.to_thread(_send_sync, params)
-            logger.info("Email sent to=%s subject=%s id=%s", to, subject, result.get("id", "?"))
-            return True
+            provider_id = str(result.get("id") or "") or None
+            logger.info("Email sent to=%s subject=%s id=%s", to, subject, provider_id or "?")
+            return EmailSendResult(True, provider_id)
         except Exception as exc:
             # Do NOT swallow silently — that made failed invites look successful.
             logger.warning("Resend send failed: to=%s error=%s", to, exc)
             raise EmailDeliveryError(str(exc)) from exc
 
-    # Stub mode (no provider configured): capture in the outbox + log. Returns
-    # False — nothing left the process, so callers must not report delivery.
+    # Stub mode only captures the message locally; nothing leaves the process.
     logger.info("[email-stub] to=%s subject=%s body=%s", to, subject, body)
-    return False
+    return EmailSendResult(False)
+
+
+async def send_email(
+    to: str, subject: str, body: str, attachments: list[str] | None = None,
+    smtp_config: dict | None = None,
+) -> bool:
+    """Send an email; preserve the boolean contract for existing callers."""
+    return (await send_email_tracked(to, subject, body, attachments, smtp_config)).accepted
+
+
+async def send_email_tracked_safe(
+    to: str, subject: str, body: str, attachments: list[str] | None = None,
+) -> EmailSendResult:
+    """Best-effort tracked send for background delivery workflows."""
+    try:
+        return await send_email_tracked(to, subject, body, attachments)
+    except EmailDeliveryError:
+        return EmailSendResult(False)
 
 
 async def send_email_safe(

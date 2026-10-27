@@ -36,7 +36,7 @@ from app.core.constants import (
     Role,
 )
 from app.core.security import now_utc
-from app.integrations.email import send_email_safe as send_email
+from app.integrations.email import send_email_tracked_safe as send_campaign_email
 from app.integrations.inbox_channels import deliver as deliver_inbox_message
 from app.models.attendance import Attendance
 from app.models.campaign import Campaign, CampaignDelivery
@@ -329,7 +329,11 @@ async def _deliver_member(
         in_app_sent = True
 
     if wants_email and user is not None and user.email_verified:
-        email_sent = bool(await send_email(user.email, campaign.subject, campaign.body))
+        email_result = await send_campaign_email(user.email, campaign.subject, campaign.body)
+        email_sent = email_result.accepted
+        delivery.provider_message_id = email_result.provider_message_id
+        if email_result.provider_message_id:
+            delivery.delivery_status = "sent"
         if not email_sent:
             delivery.error = "Email provider did not accept this message."
 

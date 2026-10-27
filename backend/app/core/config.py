@@ -133,6 +133,7 @@ class Settings(BaseSettings):
     smtp_from: str = os.getenv("SMTP_FROM", "")
     smtp_use_tls: bool = os.getenv("SMTP_USE_TLS", "1") != "0"
     resend_api_key: str | None = os.getenv("RESEND_API_KEY")
+    resend_webhook_secret: str = os.getenv("RESEND_WEBHOOK_SECRET", "")
     # Inbox provider credentials are Fernet-encrypted per workspace; keep this
     # key stable and use the base URL when providers need inbound webhooks.
     inbox_public_webhook_base_url: str = os.getenv("INBOX_PUBLIC_WEBHOOK_BASE_URL", "")

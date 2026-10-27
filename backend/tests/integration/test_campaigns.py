@@ -26,11 +26,12 @@ MEMBER_PWD = "M3mberStr0ng!Pwd"
 def disable_external_stripe(monkeypatch):
     from app.services import organizations_service
     from app.services import campaign_service
+    from app.integrations.email import EmailSendResult
 
     async def accepted_email(*_args, **_kwargs):
-        return True
+        return EmailSendResult(True, str(uuid.uuid4()))
 
-    monkeypatch.setattr(campaign_service, "send_email", accepted_email)
+    monkeypatch.setattr(campaign_service, "send_campaign_email", accepted_email)
 
     monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
     monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
@@ -222,6 +223,22 @@ async def test_email_channel_suppresses_unverified_addresses(client, db):
     ).scalar_one()
     assert delivery.status.value == "suppressed"
     assert delivery.channel.value == "email"
+
+
+@pytest.mark.asyncio
+async def test_email_campaign_persists_resend_id_for_delivery_callbacks(client, db):
+    headers, org_id, org_code, plan_id = await _provision_gym(client)
+    await _signup_member(client, org_code, plan_id, headers, "tracked@camp.com")
+    campaign = await _create_campaign(client, headers, channel="email")
+
+    result = await client.post(f"/api/v1/campaigns/{campaign['id']}/send", headers=headers)
+
+    assert result.status_code == 200, result.text
+    delivery = (
+        await db.execute(select(CampaignDelivery).where(CampaignDelivery.organization_id == org_id))
+    ).scalar_one()
+    assert delivery.provider_message_id
+    assert delivery.delivery_status == "sent"
 
 
 @pytest.mark.asyncio

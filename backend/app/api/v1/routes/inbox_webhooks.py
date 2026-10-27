@@ -53,6 +53,58 @@ def _verify_twilio(request_url: str, signature: str, fields: dict[str, str], tok
     return hmac.compare_digest(expected, signature)
 
 
+def _verify_resend_signature(secret: str, msg_id: str, timestamp: str, signature: str, raw: bytes) -> bool:
+    if not secret or not msg_id or not timestamp or not signature:
+        return False
+    try:
+        timestamp_num = int(timestamp)
+        key = secret.removeprefix("whsec_")
+        key_bytes = base64.b64decode(key + "=" * (-len(key) % 4))
+        if abs(time.time() - timestamp_num) > 300:
+            return False
+        expected = base64.b64encode(
+            hmac.new(key_bytes, msg_id.encode() + b"." + timestamp.encode() + b"." + raw, hashlib.sha256).digest()
+        ).decode()
+    except (ValueError, UnicodeDecodeError):
+        return False
+    return any(
+        hmac.compare_digest(item.removeprefix("v1,"), expected)
+        for item in signature.split()
+    )
+
+
+def _apply_resend_campaign_status(delivery: CampaignDelivery, event_type: str, data: dict) -> bool:
+    if delivery.delivery_status in {"failed", "complained"}:
+        return False
+    before = (delivery.delivery_status, delivery.status, delivery.error)
+    if event_type == "email.sent":
+        if delivery.delivery_status in {"delayed", "delivered"}:
+            return False
+        delivery.delivery_status = "sent"
+    elif event_type == "email.delivery_delayed":
+        if delivery.delivery_status == "delivered":
+            return False
+        delivery.delivery_status = "delayed"
+    elif event_type == "email.delivered":
+        if delivery.delivery_status == "delivered":
+            return False
+        delivery.delivery_status = "delivered"
+        delivery.error = None
+    elif event_type in {"email.bounced", "email.failed", "email.suppressed"}:
+        if delivery.delivery_status == "delivered":
+            return False
+        delivery.delivery_status = "failed"
+        delivery.status = CampaignDeliveryStatus.FAILED
+        detail = data.get("bounce") or data.get("failed") or data.get("suppressed") or {}
+        delivery.error = str(detail.get("message") or "Resend could not deliver this email.")[:500]
+    elif event_type == "email.complained":
+        delivery.delivery_status = "complained"
+        delivery.error = "Recipient reported this email as spam."
+    else:
+        return False
+    return before != (delivery.delivery_status, delivery.status, delivery.error)
+
+
 async def _check_org(session: AsyncSession, org_id: str) -> None:
     if await session.get(Organization, org_id) is None:
         raise HTTPException(status_code=404, detail="Workspace not found.")
@@ -442,4 +494,52 @@ async def resend_inbound(org_id: str, request: Request, session: AsyncSession = 
         if conv and subject:
             conv.subject = subject
             session.add(conv)
+    return {"ok": True}
+
+
+@router.post("/webhooks/resend/status")
+async def resend_delivery_status(request: Request, session: AsyncSession = Depends(get_session)):
+    if not settings.resend_webhook_secret:
+        raise HTTPException(status_code=503, detail="Email delivery status webhook is not configured.")
+    raw = await request.body()
+    if not _verify_resend_signature(
+        settings.resend_webhook_secret, request.headers.get("svix-id", ""),
+        request.headers.get("svix-timestamp", ""), request.headers.get("svix-signature", ""), raw,
+    ):
+        raise HTTPException(status_code=403, detail="Invalid Resend webhook signature.")
+    try:
+        event = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Resend event.") from exc
+    data = event.get("data") or {}
+    email_id = str(data.get("email_id") or "")
+    if event.get("type") not in {
+        "email.sent", "email.delivery_delayed", "email.delivered", "email.bounced",
+        "email.failed", "email.suppressed", "email.complained",
+    } or not email_id:
+        return {"ok": True}
+
+    deliveries = (await session.execute(select(CampaignDelivery).where(
+        CampaignDelivery.provider_message_id == email_id,
+    ).with_for_update())).scalars().all()
+    for delivery in deliveries:
+        if _apply_resend_campaign_status(delivery, event["type"], data):
+            session.add(delivery)
+            await record_audit(
+                session, action="campaign.delivery_status_updated",
+                organization_id=delivery.organization_id, entity_type="campaign_delivery",
+                entity_id=delivery.id, metadata={"provider": "resend", "status": delivery.delivery_status},
+            )
+            if event["type"] == "email.complained":
+                member = await session.get(OrganizationMember, delivery.member_id)
+                if member and member.organization_id == delivery.organization_id and member.marketing_email_consent:
+                    member.marketing_email_consent = False
+                    member.marketing_email_consent_at = now_utc()
+                    session.add(member)
+                    await record_audit(
+                        session, action="privacy.member_marketing_consent_updated",
+                        organization_id=delivery.organization_id, entity_type="member", entity_id=member.id,
+                        old_values={"email": True}, new_values={"email": False},
+                        metadata={"source": "resend_complaint"},
+                    )
     return {"ok": True}
