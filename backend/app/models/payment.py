@@ -44,6 +44,7 @@ class Payment(UUIDModel, TimestampModel, table=True):
     stripe_payment_method_id: str | None = None
     stripe_failure_code: str | None = None
     stripe_failure_decline_code: str | None = None
+    provider_checked_at: datetime | None = Field(default=None, index=True)
     recurring_consent: bool = False
 
     # Cash / offline

@@ -48,7 +48,7 @@ async def list_payments(
     return list((await session.execute(stmt.order_by(Payment.created_at.desc()))).scalars())
 
 
-async def verify_card_payment(session: AsyncSession, *, org_id: str, payment_id: str, actor_id: str) -> dict:
+async def verify_card_payment(session: AsyncSession, *, org_id: str, payment_id: str, actor_id: str | None) -> dict:
     """Recheck a recorded card intent without guessing an unknown outcome."""
     payment = await session.get(Payment, payment_id, with_for_update=True, populate_existing=True)
     if payment is None or payment.organization_id != org_id:

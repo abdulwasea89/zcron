@@ -6,7 +6,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 
 | Priority | Feature | Status | Verification | Commit / push | Remaining limitations |
 |---:|---|---|---|---|---|
-| 1 | Member payments and receipts | In progress | Full backend suite: 611 passed, 2 optional PostgreSQL tests skipped; both PostgreSQL checks passed separately. GitHub production checks passed for `d2f260c`. Idempotency changes passed 26 focused tests and 26 integration tests. | `75ba0ee`, `f244301`, `5285336`, and `d2f260c` pushed; idempotency fix pending commit | Automatic recovery of stale idempotency claims is not implemented; live provider behavior remains unverified. |
+| 1 | Member payments and receipts | Complete (local checks; CI pending) | Full backend suite: 617 passed, 2 optional PostgreSQL tests skipped. Focused payment verification/recovery tests: 9 passed. Ruff passed and Alembic reports `p1q2r3s4t5u6` as the single head. GitHub production checks passed through `d2f260c`; this change's CI run is pending. | `75ba0ee`, `f244301`, `5285336`, `d2f260c`, and `edc271a` pushed; recovery change pending push | Live Stripe credentials and webhook delivery are not exercised. Stale claims without a durable payment/provider reference still require manual review. |
 | 2 | Member invoices and receivables | Not started | Not verified | — | To be assessed |
 | 3 | Refunds, credits, and disputes | Not started | Not verified | — | To be assessed |
 | 4 | Audit log | Not started | Not verified | — | To be assessed |
@@ -42,6 +42,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 - Priority 1: Connected-account payment events are checked against the recorded settled amount and currency. Delayed failure and success events cannot overwrite settled or refunded records; signup confirmation locks the payment and rejects refunded records.
 - Priority 1: Owners and managers can recheck a recorded pending or failed card payment against the gym's connected Stripe account. Only an amount- and currency-matched success is fulfilled; other outcomes remain visible without guessing.
 - Priority 1: Replayed failed idempotency claims return the recorded failure instead of being treated as successful operations.
+- Priority 1: A five-minute worker rechecks recorded pending card intents after ten minutes, at most every thirty minutes per payment. It uses the connected account, only settles exact amount/currency matches through the existing webhook fulfillment path, and leaves mismatches or uncertain provider results pending for review.
 
 ## Verification and scope
 

@@ -84,6 +84,13 @@ def reconcile_stuck_task() -> dict:
     return _run(_go())
 
 
+@celery_app.task(name="payments.verify_pending")
+def verify_pending_payments_task() -> dict:
+    from app.workers.pending_payment_recovery import recover_pending_payments
+
+    return _run(recover_pending_payments())
+
+
 @celery_app.task(name="memberships.expire_and_remind")
 def expire_and_remind_task() -> dict:
     from app.workers.notifications import (
@@ -257,6 +264,10 @@ celery_app.conf.beat_schedule = {
     "reconcile-stuck-payments": {
         "task": "payments.reconcile_stuck",
         "schedule": 120.0,  # every 2 minutes (Section 13.6)
+    },
+    "verify-pending-payments": {
+        "task": "payments.verify_pending",
+        "schedule": 300.0,
     },
     "expire-and-remind": {
         "task": "memberships.expire_and_remind",
