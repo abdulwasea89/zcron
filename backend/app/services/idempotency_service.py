@@ -15,6 +15,7 @@ the same key (Section 13.5) as a second layer.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 
 from fastapi import HTTPException, status
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
@@ -73,7 +74,15 @@ async def claim(
                 detail="Request already in progress. Retry shortly.",
             )
         if existing.status == IdempotencyStatus.FAILED:
-            return ClaimResult(False, existing, existing.response_body, existing.response_code)
+            detail = "The previous request failed. Review its status before retrying."
+            try:
+                body = json.loads(existing.response_body or "{}")
+                if isinstance(body, dict) and isinstance(body.get("detail"), (str, list, dict)):
+                    detail = body["detail"]
+            except (TypeError, ValueError):
+                pass
+            code = existing.response_code or 409
+            raise HTTPException(status_code=code if 400 <= code < 600 else 409, detail=detail)
         raise HTTPException(status_code=409, detail="Request status is unavailable. Retry shortly.")
 
     existing = (await session.execute(statement)).scalar_one_or_none()

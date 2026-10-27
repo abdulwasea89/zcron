@@ -6,7 +6,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 
 | Priority | Feature | Status | Verification | Commit / push | Remaining limitations |
 |---:|---|---|---|---|---|
-| 1 | Member payments and receipts | In progress | Full backend suite: 611 passed, 2 optional PostgreSQL tests skipped; both PostgreSQL checks passed separately. Offline queue checks passed. GitHub passed the frontend production build, type check, and smoke checks for `5285336`. | `75ba0ee`, `f244301`, and `5285336` pushed; backend CI test fixes pending commit | Automatic recovery of stale idempotency claims and live provider behavior remain unverified. The latest GitHub backend run predates the locally verified test fixes. |
+| 1 | Member payments and receipts | In progress | Full backend suite: 611 passed, 2 optional PostgreSQL tests skipped; both PostgreSQL checks passed separately. GitHub production checks passed for `d2f260c`. Idempotency changes passed 26 focused tests and 26 integration tests. | `75ba0ee`, `f244301`, `5285336`, and `d2f260c` pushed; idempotency fix pending commit | Automatic recovery of stale idempotency claims is not implemented; live provider behavior remains unverified. |
 | 2 | Member invoices and receivables | Not started | Not verified | — | To be assessed |
 | 3 | Refunds, credits, and disputes | Not started | Not verified | — | To be assessed |
 | 4 | Audit log | Not started | Not verified | — | To be assessed |
@@ -41,6 +41,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 - Priority 1: The stale-payment worker reports uncertain requests without marking them successful or failed. Verified provider lookup and recovery remain to be implemented.
 - Priority 1: Connected-account payment events are checked against the recorded settled amount and currency. Delayed failure and success events cannot overwrite settled or refunded records; signup confirmation locks the payment and rejects refunded records.
 - Priority 1: Owners and managers can recheck a recorded pending or failed card payment against the gym's connected Stripe account. Only an amount- and currency-matched success is fulfilled; other outcomes remain visible without guessing.
+- Priority 1: Replayed failed idempotency claims return the recorded failure instead of being treated as successful operations.
 
 ## Verification and scope
 

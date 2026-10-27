@@ -54,6 +54,23 @@ async def test_identical_keys_cannot_replay_another_gym_or_users_response():
         assert not anonymous.claimed and anonymous.cached_response == "private:None:None"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code,body,expected_code,expected_detail", [
+    (402, '{"detail":"Payment failed."}', 402, "Payment failed."),
+    (200, "invalid", 409, "The previous request failed. Review its status before retrying."),
+])
+async def test_failed_claim_never_replays_as_success(code, body, expected_code, expected_detail):
+    with store() as (db, session):
+        claim = await requests.claim(session, key="failed", endpoint="cash.log", body={"amount": 20},
+                                     organization_id="gym", user_id="owner")
+        await requests.fail(session, claim.record, code=code, body=body)
+        db.commit()
+        with pytest.raises(HTTPException) as error:
+            await requests.claim(session, key="failed", endpoint="cash.log", body={"amount": 20},
+                                 organization_id="gym", user_id="owner")
+        assert (error.value.status_code, error.value.detail) == (expected_code, expected_detail)
+
+
 def test_two_concurrent_requests_can_only_claim_once(tmp_path):
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
