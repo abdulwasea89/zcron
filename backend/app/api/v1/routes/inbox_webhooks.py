@@ -9,6 +9,7 @@ import json
 import re
 import time
 import xml.etree.ElementTree as ET
+from datetime import timedelta
 from email.utils import parseaddr
 from urllib.parse import parse_qsl
 
@@ -20,16 +21,19 @@ from sqlmodel import select
 from app.api.deps import get_session
 from app.core.config import settings
 from app.core.constants import CampaignDeliveryStatus, Channel
+from app.core.security import now_utc
 from app.models.campaign import CampaignDelivery
 from app.models.organization import Organization
 from app.models.inbox import InboxConversation, InboxMessage
 from app.models.lead import Lead
 from app.models.membership import OrganizationMember
 from app.core.constants import Role
+from app.models.staff import Task
 from app.realtime import events
 from app.services import inbox_channels_service as channels
 from app.services.inbox_service import record_inbound
 from app.services import idempotency_service, leads_service
+from app.services.audit_service import record_audit
 
 router = APIRouter()
 
@@ -227,7 +231,6 @@ async def twilio_voice_status(org_id: str, request: Request, session: AsyncSessi
     if status not in {"busy", "no-answer", "failed", "canceled"} or not caller.startswith("+") or not call_sid:
         return Response(content="<Response/>", media_type="application/xml")
 
-    # shortcut: only known lead callers create a callback task; add member callback cases when call logging supports members.
     lead = (await session.execute(select(Lead).where(
         Lead.organization_id == org_id,
         Lead.phone == caller,
@@ -254,6 +257,43 @@ async def twilio_voice_status(org_id: str, request: Request, session: AsyncSessi
                 output = LeadMissedCallOut(**result)
                 await idempotency_service.complete(
                     session, claim.record, code=200, body=output.model_dump_json(),
+                )
+    else:
+        member = (await session.execute(select(OrganizationMember).where(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.role == Role.MEMBER,
+            OrganizationMember.phone == caller,
+        ).order_by(OrganizationMember.created_at.desc()).limit(1))).scalar_one_or_none()
+        owner = (await session.execute(select(OrganizationMember).where(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.role == Role.OWNER,
+        ).limit(1))).scalar_one_or_none()
+        if member is not None and owner is not None:
+            claim = await idempotency_service.claim(
+                session, key=call_sid, endpoint=f"inbox.twilio_missed_call:{member.id}",
+                body={"call_sid": call_sid, "member_id": member.id},
+                organization_id=org_id, user_id=owner.user_id,
+            )
+            if claim.claimed:
+                task = Task(
+                    organization_id=org_id,
+                    title=f"Call {member.display_name or 'member'} back",
+                    description="Follow up after a missed call.",
+                    assignee_member_id=owner.id,
+                    created_by=owner.user_id,
+                    deadline=now_utc() + timedelta(hours=1),
+                    related_member_id=member.id,
+                )
+                session.add(task)
+                await session.flush()
+                await record_audit(
+                    session, action="member.missed_call_followup_created",
+                    organization_id=org_id, actor_user_id=owner.user_id,
+                    entity_type="member", entity_id=member.id,
+                    metadata={"task_id": task.id, "call_sid": call_sid},
+                )
+                await idempotency_service.complete(
+                    session, claim.record, code=200, body='{"ok":true}',
                 )
     return Response(content="<Response/>", media_type="application/xml")
 

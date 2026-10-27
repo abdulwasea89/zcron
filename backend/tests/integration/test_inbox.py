@@ -446,6 +446,44 @@ async def test_twilio_voice_missed_call_creates_one_followup(client, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_twilio_voice_missed_call_creates_member_callback_task(client, monkeypatch):
+    from app.api.v1.routes import inbox_webhooks
+    from app.services import inbox_channels_service, organizations_service
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
+    monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
+    monkeypatch.setattr(inbox_channels_service, "_verify_twilio", lambda *_args: None)
+    monkeypatch.setattr(inbox_channels_service.settings, "inbox_encryption_key", Fernet.generate_key().decode())
+    monkeypatch.setattr(inbox_webhooks, "_verify_twilio", lambda *_args: True)
+    monkeypatch.setattr(inbox_webhooks.settings, "inbox_public_webhook_base_url", "https://api.example.test")
+    headers, org_id, org_code = await _provision_gym(client, owner_email="owner-member-missed@inbox.com")
+    connected = await client.put(
+        "/api/v1/inbox/channels/sms", headers=headers,
+        json={"credentials": {
+            "account_sid": "AC123", "auth_token": "token", "from_number": "+14155550100",
+            "forward_to_number": "+14155550123",
+        }},
+    )
+    assert connected.status_code == 200, connected.text
+    member_id = await _signup_member(client, org_code, "member-missed@inbox.com")
+    profile = await client.patch(
+        f"/api/v1/members/{member_id}/profile", headers=headers,
+        json={"phone": "+14155550998"},
+    )
+    assert profile.status_code == 200, profile.text
+
+    callback = f"/api/v1/inbox/webhooks/{org_id}/twilio/voice/status"
+    payload = {"CallSid": "CA-member-voice-test", "Caller": "+14155550998", "DialCallStatus": "no-answer"}
+    first = await client.post(callback, data=payload)
+    replay = await client.post(callback, data=payload)
+    assert first.status_code == replay.status_code == 200
+    tasks = await client.get("/api/v1/staff/tasks", headers=headers)
+    matched = [task for task in tasks.json() if task["description"] == "Follow up after a missed call."]
+    assert len(matched) == 1
+
+
+@pytest.mark.asyncio
 async def test_unassigned_filter_and_stats(client):
     headers, _org_id, _code = await _provision_gym(client)
     await _ingest(client, headers, handle="+1", body="a")
