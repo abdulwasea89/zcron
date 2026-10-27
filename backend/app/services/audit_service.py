@@ -8,13 +8,35 @@ viewer page.
 from __future__ import annotations
 
 import json
+import hashlib
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
+from app.models.organization import Organization
 from app.models.user import User
+
+
+def audit_entry_digest(entry: AuditLog) -> str:
+    content = {
+        "id": entry.id,
+        "organization_id": entry.organization_id,
+        "actor_user_id": entry.actor_user_id,
+        "action": entry.action,
+        "entity_type": entry.entity_type,
+        "entity_id": entry.entity_id,
+        "old_values_json": entry.old_values_json,
+        "new_values_json": entry.new_values_json,
+        "ip_address": entry.ip_address,
+        "user_agent": entry.user_agent,
+        "metadata_json": entry.metadata_json,
+        "created_at": entry.created_at.isoformat(),
+        "previous_hash": entry.previous_hash,
+    }
+    canonical = json.dumps(content, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 async def record_audit(
@@ -31,6 +53,13 @@ async def record_audit(
     user_agent: str | None = None,
     metadata: dict | None = None,
 ) -> AuditLog:
+    previous_hash = None
+    organization = None
+    if organization_id and hasattr(session, "execute"):
+        organization = (await session.execute(
+            select(Organization).where(Organization.id == organization_id).with_for_update()
+        )).scalar_one_or_none()
+        previous_hash = organization.audit_chain_head if organization else None
     entry = AuditLog(
         action=action,
         organization_id=organization_id,
@@ -42,9 +71,36 @@ async def record_audit(
         ip_address=ip_address,
         user_agent=user_agent,
         metadata_json=json.dumps(metadata, default=str) if metadata else None,
+        previous_hash=previous_hash,
     )
+    if organization:
+        # shortcut: the head shares the database, add an external anchor to detect privileged database rewrites.
+        entry.entry_hash = audit_entry_digest(entry)
+        organization.audit_chain_head = entry.entry_hash
+        session.add(organization)
     session.add(entry)
     return entry
+
+
+def verify_audit_chain(entries: list[AuditLog], chain_head: str | None) -> dict[str, int | bool]:
+    chained = [entry for entry in entries if entry.entry_hash]
+    legacy = len(entries) - len(chained)
+    by_previous: dict[str | None, AuditLog] = {}
+    for entry in chained:
+        if entry.previous_hash in by_previous:
+            return {"valid": False, "checked": len(chained), "legacy": legacy}
+        by_previous[entry.previous_hash] = entry
+
+    previous = None
+    checked = 0
+    while previous in by_previous:
+        entry = by_previous[previous]
+        if entry.entry_hash != audit_entry_digest(entry):
+            return {"valid": False, "checked": checked + 1, "legacy": legacy}
+        previous = entry.entry_hash
+        checked += 1
+    valid = checked == len(chained) and previous == chain_head
+    return {"valid": valid, "checked": checked, "legacy": legacy}
 
 
 async def list_audit_logs(

@@ -3,15 +3,30 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, require_capability
 from app.core.permissions import Capability, role_has
 from app.core.tenancy import TenantContext
+from app.models.audit_log import AuditLog
+from app.models.organization import Organization
 from app.schemas.audit import AuditActionGroup, AuditLogOut, AuditLogPage
 from app.services import audit_service as audit
 
 router = APIRouter()
+
+
+@router.get("/integrity")
+async def audit_integrity(
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_AUDIT_LOG)),
+    session: AsyncSession = Depends(get_session),
+):
+    org = await session.get(Organization, ctx.org_id)
+    entries = (await session.execute(
+        select(AuditLog).where(AuditLog.organization_id == ctx.org_id)
+    )).scalars().all()
+    return audit.verify_audit_chain(entries, org.audit_chain_head if org else None)
 
 
 @router.get("", response_model=AuditLogPage)

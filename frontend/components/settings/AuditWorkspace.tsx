@@ -10,6 +10,7 @@ import { useRealtimeEvent } from "@/components/Realtime";
 import type { AuditLogOut, AuditLogPage, AuditActionGroup } from "@/lib/types";
 
 const PAGE_SIZE = 50;
+type AuditIntegrity = { valid: boolean; checked: number; legacy: number };
 
 function formatTime(iso: string): string {
   const d = new Date(iso + "Z");
@@ -33,6 +34,8 @@ export function AuditWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [totalPages, setTotalPages] = useState(0);
   const [page, setPage] = useState(1);
   const [error, setError] = useState("");
+  const [integrity, setIntegrity] = useState<AuditIntegrity | null>(null);
+  const [integrityError, setIntegrityError] = useState("");
 
   // Filters
   const [search, setSearch] = useState("");
@@ -86,7 +89,14 @@ export function AuditWorkspace({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => { queueMicrotask(() => void loadMeta()); }, [loadMeta]);
 
-  useRealtimeEvent(["audit.*"], () => load(page));
+  const verifyIntegrity = useCallback(async () => {
+    setIntegrityError("");
+    try { setIntegrity(await api.get<AuditIntegrity>("/audit/integrity")); }
+    catch (cause) { setIntegrityError((cause as ApiError).message || "Could not verify the audit chain."); }
+  }, []);
+
+  useEffect(() => { queueMicrotask(() => void verifyIntegrity()); }, [verifyIntegrity]);
+  useRealtimeEvent(["audit.*"], () => { void load(page); void verifyIntegrity(); });
 
   const availableActions = actionDomain
     ? actionGroups.find((g) => g.domain === actionDomain)?.actions ?? []
@@ -110,6 +120,12 @@ export function AuditWorkspace({ embedded = false }: { embedded?: boolean }) {
 
   const body = (
     <>
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-foreground/10 px-4 py-3" role="status">
+        <div><p className="text-sm font-medium">{integrity?.valid ? "Audit chain verified" : integrity ? "Audit chain integrity issue" : "Audit chain status unavailable"}</p><p className="mt-1 text-xs text-muted-foreground">{integrity ? `${integrity.checked} chained events checked · ${integrity.legacy} older events predate chain verification.` : integrityError || "Checking recorded event integrity…"}</p></div>
+        <Button variant="secondary" onClick={() => void verifyIntegrity()}>Verify now</Button>
+      </div>
+      {integrity && !integrity.valid && <Alert>The audit chain does not match its stored head. Review this with your platform administrator.</Alert>}
+      <p className="text-xs leading-5 text-muted-foreground">The chain detects changes or removals in recorded entries. It cannot stop someone with direct database write access from rewriting both the records and the stored chain head.</p>
       <div className="py-4">
         <div className="flex flex-wrap items-center gap-2">
           <div className="min-w-[200px] flex-1">

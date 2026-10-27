@@ -62,7 +62,14 @@ async def test_private_reads_audit_scope_without_search_values(path):
     req = request(path)
     req.state.tenant = TenantContext('actor', 'gym', Role.MANAGER)
     entries = []
-    await record_read_access(SimpleNamespace(add=entries.append), req)
+    class AuditSession:
+        def add(self, entry):
+            entries.append(entry)
+
+        async def execute(self, _statement):
+            return SimpleNamespace(scalar_one_or_none=lambda: None)
+
+    await record_read_access(AuditSession(), req)
     assert len(entries) == 1
     entry = entries[0]
     assert (entry.organization_id, entry.actor_user_id) == ('gym', 'actor')

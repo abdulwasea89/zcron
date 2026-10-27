@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from sqlalchemy import Column, String
 from sqlmodel import Field
 
 from app.models.base import TimestampModel, UUIDModel
@@ -20,3 +21,5 @@ class AuditLog(UUIDModel, TimestampModel, table=True):
     ip_address: str | None = None
     user_agent: str | None = None
     metadata_json: str | None = None
+    previous_hash: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
+    entry_hash: str | None = Field(default=None, sa_column=Column(String(64), nullable=True, index=True))
