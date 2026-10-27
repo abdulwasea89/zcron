@@ -6,7 +6,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 
 | Priority | Feature | Status | Verification | Commit / push | Remaining limitations |
 |---:|---|---|---|---|---|
-| 1 | Member payments and receipts | Complete (local checks; CI pending) | Full backend suite: 617 passed, 2 optional PostgreSQL tests skipped. Focused payment verification/recovery tests: 9 passed. Ruff passed and Alembic reports `p1q2r3s4t5u6` as the single head. GitHub production checks passed through `d2f260c`; this change's CI run is pending. | `75ba0ee`, `f244301`, `5285336`, `d2f260c`, and `edc271a` pushed; recovery change pending push | Live Stripe credentials and webhook delivery are not exercised. Stale claims without a durable payment/provider reference still require manual review. |
+| 1 | Member payments and receipts | Complete | Full backend suite: 617 passed, 2 optional PostgreSQL tests skipped. Focused payment verification/recovery tests: 9 passed. Ruff passed and Alembic reports `p1q2r3s4t5u6` as the single head. GitHub Production checks passed on Python 3.12, Python 3.13, and frontend for `2aa7b5c`. | `75ba0ee`, `f244301`, `5285336`, `d2f260c`, `edc271a`, and `2aa7b5c` pushed | Live Stripe credentials and webhook delivery are not exercised. Stale claims without a durable payment/provider reference still require manual review. |
 | 2 | Member invoices and receivables | Not started | Not verified | — | To be assessed |
 | 3 | Refunds, credits, and disputes | Not started | Not verified | — | To be assessed |
 | 4 | Audit log | Not started | Not verified | — | To be assessed |
