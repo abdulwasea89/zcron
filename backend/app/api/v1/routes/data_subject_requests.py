@@ -13,6 +13,7 @@ from app.core.permissions import Capability
 from app.core.security import now_utc
 from app.core.tenancy import TenantContext
 from app.models.attendance import Attendance
+from app.models.class_session import ClassBooking, ClassSession
 from app.models.data_subject_request import DataSubjectRequest
 from app.models.membership import OrganizationMember
 from app.models.payment import Payment
@@ -300,6 +301,18 @@ async def export_member_data(
     attendance = (await session.execute(select(Attendance).where(
         Attendance.organization_id == ctx.org_id, Attendance.member_id == member.id,
     ).order_by(Attendance.checked_in_at.desc()).limit(5000))).scalars().all()
+    class_bookings = (await session.execute(
+        select(ClassBooking, ClassSession)
+        .join(ClassSession, ClassSession.id == ClassBooking.class_session_id)
+        .where(
+            ClassBooking.organization_id == ctx.org_id,
+            ClassBooking.member_id == member.id,
+            ClassSession.organization_id == ctx.org_id,
+            ClassSession.category == "class",
+        )
+        .order_by(ClassSession.starts_at.desc())
+        .limit(5000)
+    )).all()
     payments = (await session.execute(select(Payment).where(
         Payment.organization_id == ctx.org_id, Payment.member_id == member.id,
     ).order_by(Payment.created_at.desc()).limit(5000))).scalars().all()
@@ -342,6 +355,10 @@ async def export_member_data(
                        }},
         "attendance": [{"checked_in_at": item.checked_in_at, "method": item.method.value,
                         "source": item.source.value, "note": item.note} for item in attendance],
+        "class_bookings": [{"status": booking.status.value, "booked_at": booking.created_at,
+                            "class_title": class_session.title, "starts_at": class_session.starts_at,
+                            "ends_at": class_session.ends_at}
+                           for booking, class_session in class_bookings],
         "payments": [{"created_at": item.created_at, "amount": item.amount, "currency": item.currency,
                       "tax_amount": item.tax_amount, "tax_included": item.tax_included,
                       "status": item.status.value, "method": item.method.value, "kind": item.kind.value}

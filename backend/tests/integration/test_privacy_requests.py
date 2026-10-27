@@ -48,6 +48,27 @@ async def test_owner_can_record_review_export_and_resolve_member_data_request(cl
     assert export.status_code == 200, export.text
     assert export.json()["account"]["email"] == email
     assert export.json()["subscriptions"]
+    session = await client.post("/api/v1/classes", headers=headers, json={
+        "title": "Privacy export class", "starts_at": "2026-12-01T10:00:00",
+    })
+    assert session.status_code == 201, session.text
+    login = await client.post("/api/v1/auth/login", json={
+        "org_code": org_code, "email": email, "password": "M3mberStr0ng!Pwd",
+    })
+    assert login.status_code == 200, login.text
+    member_headers = {
+        "Authorization": f"Bearer {login.json()['access_token']}",
+        "X-Organization-Id": login.json()["organization_id"],
+    }
+    booking = await client.post("/api/v1/classes/book", headers={
+        **member_headers, "Idempotency-Key": "privacy-class-booking",
+    }, json={"class_session_id": session.json()["id"]})
+    assert booking.status_code == 200, booking.text
+    export = await client.get(f"/api/v1/privacy/members/{member_id}/export", headers=headers)
+    assert export.status_code == 200, export.text
+    assert len(export.json()["class_bookings"]) == 1
+    assert export.json()["class_bookings"][0]["status"] == "booked"
+    assert export.json()["class_bookings"][0]["class_title"] == "Privacy export class"
 
     resolved = await client.post(
         f"/api/v1/privacy/data-requests/{request['id']}/decision",
