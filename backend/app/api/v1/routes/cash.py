@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from sqlalchemy import or_
 
-from app.api.deps import get_session, require_capability, require_writable_org
+from app.api.deps import get_client_ip, get_session, require_capability, require_writable_org
 from app.core.permissions import Capability
 from app.core.tenancy import IDEMPOTENCY_HEADER, TenantContext
 from app.core.constants import PaymentMethod, Role
@@ -30,6 +30,7 @@ from app.schemas.cash import (
 from app.services import cash_service as cash
 from app.services import idempotency_service
 from app.services.pricing_service import quote_member_payment
+from app.services.audit_service import record_audit
 from app.schemas.promotions import PriceQuoteOut
 from fastapi import HTTPException
 
@@ -157,12 +158,18 @@ async def cash_quote(
 @router.get("/payments/{payment_id}/receipt")
 async def cash_payment_receipt(
     payment_id: str,
+    request: Request,
     ctx: TenantContext = Depends(require_capability(Capability.LOG_CASH_PAYMENT)),
     session: AsyncSession = Depends(get_session),
 ):
     """Download the proof-of-payment receipt for an offline payment."""
     pdf_bytes, filename = await cash.render_receipt(
         session, org_id=ctx.org_id, payment_id=payment_id
+    )
+    await record_audit(
+        session, action="cash.payment_receipt_viewed", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="payment", entity_id=payment_id,
+        ip_address=get_client_ip(request), user_agent=request.headers.get("user-agent"),
     )
     return Response(
         content=pdf_bytes,

@@ -6,13 +6,13 @@ verdict + member-facing message. Admins work the review queue.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 from sqlmodel import select
 
-from app.api.deps import get_session, require_capability
+from app.api.deps import get_client_ip, get_session, require_capability
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
 from app.models.receipt import ReceiptUpload
@@ -20,6 +20,7 @@ from app.models.membership import OrganizationMember
 from app.models.user import User
 from app.schemas.receipts import ReceiptOut, ReceiptReviewAction, ReceiptReviewItem
 from app.services import receipts_service as receipts
+from app.services.audit_service import record_audit
 from app.workers import receipt_pipeline, spot_audit
 
 router = APIRouter()
@@ -82,6 +83,7 @@ async def review_queue(
 @router.get("/{receipt_id}/image")
 async def receipt_image(
     receipt_id: str,
+    request: Request,
     ctx: TenantContext = Depends(require_capability(Capability.APPROVE_CASH_RECEIPTS)),
     session: AsyncSession = Depends(get_session),
 ):
@@ -94,6 +96,11 @@ async def receipt_image(
     ).scalar_one_or_none()
     if receipt is None or receipt.organization_id != ctx.org_id or not receipt.image_data:
         raise HTTPException(status_code=404, detail="Receipt image not found.")
+    await record_audit(
+        session, action="receipt.image_viewed", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="receipt", entity_id=receipt.id,
+        ip_address=get_client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
     return Response(
         content=receipt.image_data,
         media_type=receipt.image_media_type or "application/octet-stream",
