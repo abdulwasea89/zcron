@@ -156,6 +156,23 @@ def tiktok_lead_fields(payload: dict) -> LeadCreate:
     return lead
 
 
+def external_form_lead_fields(payload: dict) -> LeadCreate:
+    """Read the documented, provider-neutral webhook shape without trusting consent flags."""
+    value = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    try:
+        lead = LeadCreate(
+            name=value.get("name") or value.get("full_name") or "Website prospect",
+            email=value.get("email"), phone=value.get("phone"), goal=value.get("goal"),
+            budget=value.get("budget"), preferred_times=value.get("preferred_times"),
+            preferences=value.get("preferences"), source=LeadSource.WEB_FORM,
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="External lead fields are invalid.") from exc
+    if not lead.email and not lead.phone:
+        raise HTTPException(status_code=422, detail="External lead form must provide an email address or phone number.")
+    return lead
+
+
 async def capture_provider_lead(session: AsyncSession, *, org_id: str, provider: str, lead_id: str, data: LeadCreate) -> str:
     if not re.fullmatch(r"[A-Za-z0-9._:-]{1,200}", lead_id):
         raise HTTPException(status_code=422, detail="Invalid provider lead identifier.")

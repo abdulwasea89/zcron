@@ -54,6 +54,17 @@ def test_tiktok_native_event_maps_fields_from_content():
     assert lead.source == "tiktok"
 
 
+def test_generic_form_maps_only_profile_fields_and_never_grants_followup_consent():
+    lead = capture.external_form_lead_fields({
+        "lead_id": "web-1", "name": "Jordan Lee", "email": "JORDAN@example.com",
+        "goal": "Strength", "sms_followup_consent": True, "email_followup_consent": True,
+    })
+    assert lead.source == "web_form" and lead.email == "jordan@example.com"
+    assert not lead.email_followup_consent and not lead.sms_followup_consent
+    with pytest.raises(HTTPException, match="must provide"):
+        capture.external_form_lead_fields({"name": "No contact"})
+
+
 def test_tiktok_signature_checks_raw_body_timestamp_and_client_key(monkeypatch):
     now = 1_800_000_000
     monkeypatch.setattr(leads_route.time, "time", lambda: now)
@@ -89,6 +100,36 @@ async def test_google_webhook_rejects_wrong_key_and_accepts_provider_test(monkey
     ) == {"ok": True, "test": True}
 
 
+@pytest.mark.asyncio
+async def test_external_form_webhook_requires_secret_and_uses_normalized_capture(monkeypatch):
+    org = SimpleNamespace(lead_capture_webhook_token="secret")
+
+    class Session:
+        async def get(self, *_args): return org
+        async def commit(self): pass
+
+    async def hit(*_args): return True, 0
+    async def capture_lead(*_args, **_kwargs): return "lead-1"
+    async def publish(*_args, **_kwargs): pass
+
+    monkeypatch.setattr(leads_route.rate_limiter, "hit", hit)
+    monkeypatch.setattr(capture, "capture_provider_lead", capture_lead)
+    monkeypatch.setattr("app.realtime.events.publish", publish)
+
+    def make_request(token):
+        body = json.dumps({"lead_id": "evt-1", "name": "Jordan", "email": "j@example.com"}).encode()
+        async def receive(): return {"type": "http.request", "body": body, "more_body": False}
+        return Request({
+            "type": "http", "method": "POST", "headers": [(b"x-acron-lead-token", token.encode())],
+            "client": ("127.0.0.1", 1234),
+        }, receive)
+
+    with pytest.raises(HTTPException) as error:
+        await leads_route.external_form_lead_webhook("gym", make_request("wrong"), Session())
+    assert error.value.status_code == 403
+    assert await leads_route.external_form_lead_webhook("gym", make_request("secret"), Session()) == {"ok": True}
+
+
 def test_external_lead_capture_is_idempotent_and_tenant_scoped():
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
@@ -122,5 +163,16 @@ def test_external_lead_capture_is_idempotent_and_tenant_scoped():
             assert first == replay == leads[0].id
             assert len(leads) == 1 and len(followups) == 4
             assert leads[0].source == "google" and leads[0].email_followup_consent is False
+
+            relay_data = capture.external_form_lead_fields({
+                "name": "Relay Lead", "email": "relay@example.com",
+            })
+            relay_id = asyncio.run(capture.capture_provider_lead(
+                session, org_id=org.id, provider="external_form", lead_id="relay-001", data=relay_data,
+            ))
+            db.commit()
+            relay = db.get(Lead, relay_id)
+            assert relay is not None and relay.source == "web_form"
+            assert relay.email_followup_consent is False and relay.sms_followup_consent is False
     finally:
         engine.dispose()

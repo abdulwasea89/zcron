@@ -119,6 +119,15 @@ async def list_capture_integrations(
                 _capture_credentials(connection).get("client_secret")
             ),
         }
+    org = await session.get(Organization, ctx.org_id)
+    output["external_form"] = {
+        "connected": bool(org and org.lead_capture_webhook_token),
+        "webhook_url": (
+            f"{settings.inbox_public_webhook_base_url.rstrip('/')}/api/v1/leads/webhooks/external_form/{ctx.org_id}"
+            if org and org.lead_capture_webhook_token and settings.inbox_public_webhook_base_url else None
+        ),
+        "secret": org.lead_capture_webhook_token if org else None,
+    }
     return output
 
 
@@ -164,6 +173,25 @@ async def connect_capture_integration(
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
     session: AsyncSession = Depends(get_session),
 ):
+    if provider == "external_form":
+        org = await session.get(Organization, ctx.org_id, with_for_update=True)
+        if org is None:
+            raise HTTPException(status_code=404, detail="Workspace not found.")
+        if not settings.inbox_public_webhook_base_url.startswith("https://"):
+            raise HTTPException(status_code=422, detail="Configure a public HTTPS API URL before enabling lead webhooks.")
+        rotated = bool(org.lead_capture_webhook_token)
+        org.lead_capture_webhook_token = secrets.token_urlsafe(32)
+        session.add(org)
+        await record_audit(
+            session, action="lead.capture_integration_connected", organization_id=ctx.org_id,
+            actor_user_id=ctx.user_id, entity_type="lead_capture_integration", entity_id=provider,
+            metadata={"provider": provider, "rotated": rotated},
+        )
+        return {
+            "connected": True,
+            "webhook_url": f"{settings.inbox_public_webhook_base_url.rstrip('/')}/api/v1/leads/webhooks/external_form/{ctx.org_id}",
+            "secret": org.lead_capture_webhook_token,
+        }
     connection = await _ad_connection(session, ctx.org_id, provider)
     if not settings.inbox_public_webhook_base_url.startswith("https://"):
         raise HTTPException(status_code=422, detail="Configure a public HTTPS API URL before enabling lead webhooks.")
@@ -196,6 +224,17 @@ async def disconnect_capture_integration(
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
     session: AsyncSession = Depends(get_session),
 ):
+    if provider == "external_form":
+        org = await session.get(Organization, ctx.org_id, with_for_update=True)
+        if org and org.lead_capture_webhook_token:
+            org.lead_capture_webhook_token = None
+            session.add(org)
+            await record_audit(
+                session, action="lead.capture_integration_disconnected", organization_id=ctx.org_id,
+                actor_user_id=ctx.user_id, entity_type="lead_capture_integration", entity_id=provider,
+                metadata={"provider": provider},
+            )
+        return
     connection = await _ad_connection(session, ctx.org_id, provider)
     if connection is not None:
         await session.delete(connection)
@@ -206,7 +245,11 @@ async def disconnect_capture_integration(
 
 
 async def _provider_body(request: Request) -> tuple[bytes, dict]:
-    if int(request.headers.get("content-length", "0") or 0) > 65536:
+    try:
+        content_length = int(request.headers.get("content-length", "0") or 0)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid content length.") from exc
+    if content_length > 65536:
         raise HTTPException(status_code=413, detail="Lead payload is too large.")
     raw = bytearray()
     async for chunk in request.stream():
@@ -241,6 +284,36 @@ async def google_ads_lead_webhook(org_id: str, request: Request, session: AsyncS
     captured_id = await capture_provider_lead(session, org_id=org_id, provider="google_ads", lead_id=lead_id, data=lead)
     await session.commit()
     from app.realtime import events
+    await events.publish(org_id, "lead.changed", {"lead_ids": [captured_id]})
+    return {"ok": True}
+
+
+@router.post("/webhooks/external_form/{org_id}")
+async def external_form_lead_webhook(
+    org_id: str, request: Request, session: AsyncSession = Depends(get_session),
+):
+    payload = await _provider_payload(request)
+    org = await session.get(Organization, org_id)
+    supplied = request.headers.get("x-acron-lead-token", "")
+    if not org or not org.lead_capture_webhook_token or not hmac.compare_digest(
+        supplied, org.lead_capture_webhook_token,
+    ):
+        raise HTTPException(status_code=403, detail="Invalid external lead token.")
+    allowed, _ = await rate_limiter.hit(
+        f"external-lead:{org_id}:{get_client_ip(request)}", 120, 60,
+    )
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Too many external lead submissions. Try again shortly.")
+    lead_id = str(payload.get("lead_id") or payload.get("event_id") or "")
+    from app.services.lead_capture_service import capture_provider_lead, external_form_lead_fields
+
+    lead = external_form_lead_fields(payload)
+    captured_id = await capture_provider_lead(
+        session, org_id=org_id, provider="external_form", lead_id=lead_id, data=lead,
+    )
+    await session.commit()
+    from app.realtime import events
+
     await events.publish(org_id, "lead.changed", {"lead_ids": [captured_id]})
     return {"ok": True}
 

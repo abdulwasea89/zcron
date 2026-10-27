@@ -81,6 +81,7 @@ class Organization(UUIDModel, TimestampModel, table=True):
     # Org-code abuse control (Section 7.2)
     signup_frozen: bool = False
     audit_chain_head: str | None = Field(default=None, max_length=64)
+    lead_capture_webhook_token: str | None = Field(default=None, max_length=64)
     lead_followup_templates: dict[str, dict[str, str]] = Field(
         default_factory=dict, sa_column=Column(JSON, nullable=False, default=dict),
     )

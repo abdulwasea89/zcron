@@ -108,6 +108,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
         "organizations": {
             "audit_chain_head": "VARCHAR(64)",
             "lead_followup_templates": "JSON NOT NULL DEFAULT '{}'",
+            "lead_capture_webhook_token": "VARCHAR(64)",
         },
         "audit_logs": {"previous_hash": "VARCHAR(64)", "entry_hash": "VARCHAR(64)"},
         "leads": {
