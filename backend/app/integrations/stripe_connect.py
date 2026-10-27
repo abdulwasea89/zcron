@@ -33,6 +33,7 @@ class ConnectPaymentResult:
     client_secret: str | None = None
     payment_method_type: str | None = None
     payment_method_id: str | None = None
+    amount_received: int | None = None
 
 
 @dataclass
@@ -211,6 +212,7 @@ class StripeConnect:
             client_secret=pi.client_secret,
             payment_method_type=getattr(details, "type", None),
             payment_method_id=pi.payment_method if isinstance(pi.payment_method, str) else None,
+            amount_received=getattr(pi, "amount_received", None),
         )
 
     async def refund(

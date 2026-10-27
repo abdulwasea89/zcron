@@ -53,6 +53,7 @@ export default function PaymentsPage() {
   const [disputes, setDisputes] = useState<StripeDispute[]>([]);
   const [disputesError, setDisputesError] = useState("");
   const [disputeFor, setDisputeFor] = useState<StripeDispute | null>(null);
+  const [checkingPayment, setCheckingPayment] = useState<string | null>(null);
 
   async function load() {
     setError("");
@@ -70,6 +71,22 @@ export default function PaymentsPage() {
       setDisputes(await api.get<StripeDispute[]>("/finance/disputes"));
     } catch {
       setDisputesError("Could not load Stripe disputes. Check the gym’s Stripe connection and try again.");
+    }
+  }
+
+  async function verifyPayment(payment: PaymentOut) {
+    setCheckingPayment(payment.id);
+    try {
+      const result = await api.post<{ payment_status: string; provider_status: string | null }>(
+        `/payments/${encodeURIComponent(payment.id)}/verify`,
+      );
+      await load();
+      if (result.payment_status === "succeeded") toast.success("Payment verified as successful.");
+      else toast.info(`Payment: ${titleCase(result.payment_status)}. Stripe: ${titleCase((result.provider_status ?? "unchanged").replaceAll("_", " "))}.`);
+    } catch (e) {
+      toast.error((e as ApiError).message || "Could not verify this payment.");
+    } finally {
+      setCheckingPayment(null);
     }
   }
 
@@ -312,6 +329,12 @@ export default function PaymentsPage() {
                     <td className={`${TD} ${CELL_LAST} py-2.5 text-right`}>
                       <button type="button" className="mr-3 text-xs font-medium text-brand hover:underline" onClick={() => { void navigator.clipboard.writeText(p.id).then(() => toast.success("Payment ID copied.")).catch(() => toast.error("Could not copy payment ID.")); }}>Copy ID</button>
                       <a href={`/api/download/finance/payments/${encodeURIComponent(p.id)}/evidence.zip`} className="mr-3 text-xs font-medium text-brand hover:underline" aria-label={`Download evidence for payment ${p.id}`}>Evidence</a>
+                      {p.method === "card" && ["pending", "failed"].includes(p.status) && <button type="button"
+                        className="mr-3 text-xs font-medium text-brand hover:underline disabled:opacity-50"
+                        disabled={checkingPayment !== null} onClick={() => void verifyPayment(p)}
+                        aria-label={`Verify payment ${p.id} with Stripe`}>
+                        {checkingPayment === p.id ? "Checking…" : "Check status"}
+                      </button>}
                       {refundable(p) && (
                         <Button variant="ghost" onClick={() => setRefundFor(p)}>
                           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>

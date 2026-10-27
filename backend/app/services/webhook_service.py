@@ -260,7 +260,8 @@ async def _payment_by_intent(session: AsyncSession, intent_id: str | None) -> Pa
         return None
     return (
         await session.execute(
-            select(Payment).where(Payment.stripe_payment_intent_id == intent_id).with_for_update()
+            select(Payment).where(Payment.stripe_payment_intent_id == intent_id)
+            .with_for_update().execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
 

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.api.deps import get_session, get_tenant, require_capability
+from app.api.deps import get_session, get_tenant, require_capability, require_writable_org
 from app.core.permissions import Capability
 from app.core.tenancy import IDEMPOTENCY_HEADER, TenantContext
 from app.models.membership import OrganizationMember
@@ -86,3 +86,12 @@ async def refund_payment(
     )
     return RefundOut(payment_id=payment.id, status=payment.status.value,
                      refunded_amount=payment.refunded_amount)
+
+
+@router.post("/{payment_id}/verify", dependencies=[Depends(require_writable_org)])
+async def verify_card_payment(
+    payment_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.PROCESS_REFUNDS)),
+    session: AsyncSession = Depends(get_session),
+):
+    return await payments.verify_card_payment(session, org_id=ctx.org_id, payment_id=payment_id, actor_id=ctx.user_id)

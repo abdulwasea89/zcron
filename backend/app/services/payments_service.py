@@ -48,6 +48,42 @@ async def list_payments(
     return list((await session.execute(stmt.order_by(Payment.created_at.desc()))).scalars())
 
 
+async def verify_card_payment(session: AsyncSession, *, org_id: str, payment_id: str, actor_id: str) -> dict:
+    """Recheck a recorded card intent without guessing an unknown outcome."""
+    payment = await session.get(Payment, payment_id, with_for_update=True, populate_existing=True)
+    if payment is None or payment.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Payment not found.")
+    if payment.method != PaymentMethod.CARD or not payment.stripe_payment_intent_id:
+        raise HTTPException(status_code=409, detail="This payment has no connected Stripe intent to check.")
+    if payment.status not in {PaymentStatus.PENDING, PaymentStatus.FAILED}:
+        await record_audit(session, action="payment.provider_verification", organization_id=org_id,
+                           actor_user_id=actor_id, entity_type="payment", entity_id=payment.id,
+                           metadata={"payment_status": payment.status.value, "provider_status": None})
+        return {"payment_status": payment.status.value, "provider_status": None}
+    org = await session.get(Organization, org_id)
+    if org is None or not org.stripe_connect_account_id:
+        raise HTTPException(status_code=409, detail="The gym's payment account is unavailable.")
+    try:
+        intent = await connect_stripe.inspect_member_intent(
+            connected_account_id=org.stripe_connect_account_id, intent_id=payment.stripe_payment_intent_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Could not verify the payment with Stripe.") from exc
+    if intent is None or intent.id != payment.stripe_payment_intent_id:
+        raise HTTPException(status_code=503, detail="Stripe did not return a verifiable payment.")
+    if intent.status == "succeeded":
+        from app.services.webhook_service import _connect_payment_succeeded
+
+        await _connect_payment_succeeded(session, {
+            "id": intent.id, "status": intent.status, "currency": intent.currency,
+            "amount_received": intent.amount_received, "latest_charge": intent.charge_id,
+        }, org.stripe_connect_account_id)
+    await record_audit(session, action="payment.provider_verification", organization_id=org_id,
+                       actor_user_id=actor_id, entity_type="payment", entity_id=payment.id,
+                       metadata={"payment_status": payment.status.value, "provider_status": intent.status})
+    return {"payment_status": payment.status.value, "provider_status": intent.status}
+
+
 async def refund(
     session: AsyncSession, *, org_id: str, payment_id: str, amount: float | None,
     reason: str | None, idempotency_key: str, actor_id: str,

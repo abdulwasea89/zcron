@@ -6,7 +6,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 
 | Priority | Feature | Status | Verification | Commit / push | Remaining limitations |
 |---:|---|---|---|---|---|
-| 1 | Member payments and receipts | In progress | 42 focused backend tests, PostgreSQL receipt concurrency and migration checks, two offline queue checks, frontend lint, and TypeScript passed; 24 focused payment and webhook checks passed for the next change. | `75ba0ee` pushed; webhook hardening pending commit | Automated stale-payment recovery, end-to-end integration, production build, and production providers still need verification. The broader unit run stalled; an isolated production build failed in the temporary environment. |
+| 1 | Member payments and receipts | In progress | 42 focused backend tests, PostgreSQL receipt concurrency and migration checks, two offline queue checks, frontend lint, and TypeScript passed; 17 pending-payment and webhook checks passed for the next change. | `75ba0ee` and `f244301` pushed; provider verification pending commit | Automatic recovery of stale idempotency claims, end-to-end integration, production build, and production providers still need verification. The broader unit run stalled; an isolated production build failed in the temporary environment. |
 | 2 | Member invoices and receivables | Not started | Not verified | — | To be assessed |
 | 3 | Refunds, credits, and disputes | Not started | Not verified | — | To be assessed |
 | 4 | Audit log | Not started | Not verified | — | To be assessed |
@@ -40,6 +40,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 - Priority 1: Cash reconciliation separates currencies, uses the gym's local business date, includes dated cash refunds, and accounts for the opening float. Existing reconciliation rows retain their original totals; their historical currency remains unspecified.
 - Priority 1: The stale-payment worker reports uncertain requests without marking them successful or failed. Verified provider lookup and recovery remain to be implemented.
 - Priority 1: Connected-account payment events are checked against the recorded settled amount and currency. Delayed failure and success events cannot overwrite settled or refunded records; signup confirmation locks the payment and rejects refunded records.
+- Priority 1: Owners and managers can recheck a recorded pending or failed card payment against the gym's connected Stripe account. Only an amount- and currency-matched success is fulfilled; other outcomes remain visible without guessing.
 
 ## Verification and scope
 
