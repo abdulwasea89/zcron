@@ -27,6 +27,16 @@ export function DashboardTaskList({
   const [completing, setCompleting] = useState<string | null>(null);
   const [addingTaskFor, setAddingTaskFor] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [hiddenKeys, setHiddenKeys] = useState<string[]>([]);
+  const [restoringHidden, setRestoringHidden] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    api.get<{ keys: string[] }>("/analytics/dashboard/hidden-attention")
+      .then((result) => { if (active) setHiddenKeys(result.keys); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [storageKey]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setOpenTasks(tasks));
@@ -74,6 +84,29 @@ export function DashboardTaskList({
     }
   }
 
+  async function hideAttention(key: string) {
+    try {
+      const result = await api.post<{ keys: string[] }>("/analytics/dashboard/hidden-attention", { key });
+      setHiddenKeys(result.keys);
+      toast.success("Hidden from your dashboard.");
+    } catch (error) {
+      toast.error((error as ApiError).message || "Could not hide this alert.");
+    }
+  }
+
+  async function restoreHidden() {
+    setRestoringHidden(true);
+    try {
+      await api.del("/analytics/dashboard/hidden-attention");
+      setHiddenKeys([]);
+      toast.success("Hidden alerts restored.");
+    } catch (error) {
+      toast.error((error as ApiError).message || "Could not restore hidden alerts.");
+    } finally {
+      setRestoringHidden(false);
+    }
+  }
+
   const items = [
     ...openTasks.map((task) => ({
       id: `task:${task.id}`,
@@ -87,7 +120,7 @@ export function DashboardTaskList({
       personName: undefined,
       task,
     })),
-    ...attention.map((item) => ({ ...item, id: `attention:${item.key}`, task: null })),
+    ...attention.filter((item) => !hiddenKeys.includes(item.key)).map((item) => ({ ...item, id: `attention:${item.key}`, task: null })),
   ].sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label));
   const visibleItems = showAll ? items : items.slice(0, 6);
 
@@ -116,6 +149,7 @@ export function DashboardTaskList({
                   className="text-brand no-underline hover:underline disabled:opacity-50"
                   aria-label={`Create follow-up task for ${item.label}`}
                 >{addingTaskFor === item.key ? "Adding…" : "Add task"}</button>}
+                {!item.task && <button type="button" onClick={() => void hideAttention(item.key)} className="text-muted-foreground hover:text-foreground" aria-label={`Hide ${item.label} from your dashboard`}>Hide</button>}
                 {!item.task && <button
                   type="button"
                   onClick={() => {
@@ -148,6 +182,7 @@ export function DashboardTaskList({
         {items.length > 6 && <button type="button" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)} className="font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">{showAll ? "Show fewer" : `Show all ${items.length}`}</button>}
         <Link href="/app/tasks" className="font-medium text-brand no-underline hover:underline">All tasks ↗</Link>
         {attention.length > 0 && <Link href="/app/approvals" className="font-medium text-brand no-underline hover:underline">Review queue ↗</Link>}
+        {hiddenKeys.length > 0 && <button type="button" disabled={restoringHidden} onClick={() => void restoreHidden()} className="font-medium text-brand hover:underline disabled:opacity-50">{restoringHidden ? "Restoring…" : `Restore hidden alerts (${hiddenKeys.length})`}</button>}
       </div>
       <DashboardWorkSheet work={work} onClose={() => { setWork(null); router.refresh(); }} />
     </div>
