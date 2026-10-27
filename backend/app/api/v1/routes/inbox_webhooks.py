@@ -20,7 +20,7 @@ from sqlmodel import select
 
 from app.api.deps import get_session
 from app.core.config import settings
-from app.core.constants import CampaignDeliveryStatus, Channel
+from app.core.constants import CampaignDeliveryStatus, Channel, MessageDirection
 from app.core.security import now_utc
 from app.models.campaign import CampaignDelivery
 from app.models.organization import Organization
@@ -103,6 +103,28 @@ def _apply_resend_campaign_status(delivery: CampaignDelivery, event_type: str, d
     else:
         return False
     return before != (delivery.delivery_status, delivery.status, delivery.error)
+
+
+def _apply_resend_inbox_status(message: InboxMessage, event_type: str, data: dict) -> bool:
+    if event_type == "email.delivered":
+        status, error = "delivered", None
+    elif event_type in {"email.bounced", "email.failed", "email.suppressed"}:
+        detail = data.get("bounce") or data.get("failed") or data.get("suppressed") or {}
+        status = "failed"
+        error = str(detail.get("message") or "Resend could not deliver this email.")[:240]
+    elif event_type == "email.complained":
+        status, error = "complained", "Recipient reported this email as spam."
+    else:
+        return False
+    if message.delivery_status in {"failed", "complained"}:
+        return False
+    if message.delivery_status == "delivered" and status != "complained":
+        return False
+    if message.delivery_status == status and message.delivery_error == error:
+        return False
+    message.delivery_status = status
+    message.delivery_error = error
+    return True
 
 
 async def _check_org(session: AsyncSession, org_id: str) -> None:
@@ -469,9 +491,51 @@ async def resend_inbound(org_id: str, request: Request, session: AsyncSession = 
         event = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError):
         raise HTTPException(status_code=400, detail="Invalid Resend event.")
-    if event.get("type") != "email.received":
-        return {"ok": True}
+    event_type = event.get("type")
     data = event.get("data") or {}
+    email_id = str(data.get("email_id") or "")
+    if event_type in {
+        "email.delivered", "email.bounced", "email.failed", "email.suppressed", "email.complained",
+    } and email_id:
+        messages = (await session.execute(select(InboxMessage).where(
+            InboxMessage.organization_id == org_id,
+            InboxMessage.direction == MessageDirection.OUTBOUND,
+            InboxMessage.external_id == email_id,
+        ).with_for_update())).scalars().all()
+        for message in messages:
+            if _apply_resend_inbox_status(message, event_type, data):
+                session.add(message)
+                await record_audit(
+                    session, action="inbox.delivery_status_updated", organization_id=org_id,
+                    entity_type="inbox_message", entity_id=message.id,
+                    metadata={"provider": "resend", "status": message.delivery_status},
+                )
+                await events.inbox_changed(org_id, conversation_id=message.conversation_id, action="delivery_status")
+        lead_status = "failed" if event_type in {"email.bounced", "email.failed", "email.suppressed"} else "delivered"
+        leads = (await session.execute(select(Lead).where(
+            Lead.organization_id == org_id,
+            Lead.first_contact_external_id == email_id,
+        ).with_for_update())).scalars().all()
+        for lead in leads:
+            if lead.first_contact_delivery_status == "failed" or (
+                lead.first_contact_delivery_status == "delivered" and lead_status == "failed"
+            ):
+                continue
+            if lead.first_contact_delivery_status != lead_status:
+                old_status = lead.first_contact_delivery_status
+                lead.first_contact_delivery_status = lead_status
+                session.add(lead)
+                await record_audit(
+                    session, action="lead.delivery_status_updated", organization_id=org_id,
+                    entity_type="lead", entity_id=lead.id,
+                    old_values={"delivery_status": old_status},
+                    new_values={"delivery_status": lead_status},
+                    metadata={"provider": "resend"},
+                )
+        return {"ok": True}
+
+    if event_type != "email.received":
+        return {"ok": True}
     email_id = str(data.get("email_id") or "")
     sender = parseaddr(str(data.get("from") or ""))[1].strip().lower()
     subject = str(data.get("subject") or "")[:300]

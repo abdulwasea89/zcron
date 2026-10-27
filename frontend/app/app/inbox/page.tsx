@@ -525,7 +525,7 @@ export default function InboxPage() {
                         <p className="whitespace-pre-wrap break-words">{m.body}</p>
                         <div className={`mt-1 flex items-center justify-end gap-2 text-[11px] ${out ? "text-brand-foreground/80" : "text-muted-foreground"}`}>
                           <span>{clockTime(m.created_at)}</span>
-                          {out && <span>{m.delivery_status === "delivered" ? "Delivered" : m.delivery_status === "sent" ? "Sent" : m.delivery_status === "sending" ? "Sending…" : m.delivery_status === "failed" ? "Not sent" : "Delivery unknown"}</span>}
+                          {out && <span>{m.delivery_status === "complained" ? "Complaint after delivery" : m.delivery_status === "delivered" ? "Delivered" : m.delivery_status === "sent" ? "Sent" : m.delivery_status === "sending" ? "Sending…" : m.delivery_status === "failed" ? "Not sent" : "Delivery unknown"}</span>}
                         </div>
                         {out && m.delivery_status === "failed" && (
                           <div className="mt-2 border-t border-current/20 pt-2 text-xs">
