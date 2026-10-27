@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
+import hmac
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request
@@ -17,6 +19,9 @@ from app.core.permissions import Capability
 from app.core.rate_limit import rate_limiter
 from app.core.tenancy import TenantContext
 from app.models.organization import Organization
+from app.models.inbox_channel import InboxChannelConnection
+from app.core.config import settings
+from app.core.security import now_utc
 from app.schemas.leads import (
     LeadBookingCreate,
     LeadBookingOut,
@@ -33,8 +38,141 @@ from app.schemas.leads import (
     TrialSlotOut,
 )
 from app.services import idempotency_service, leads_service
+from app.services.audit_service import record_audit
 
 router = APIRouter()
+
+_AD_CHANNELS = {"google_ads": "lead_google_ads", "tiktok": "lead_tiktok"}
+
+
+async def _ad_connection(session: AsyncSession, org_id: str, provider: str):
+    channel = _AD_CHANNELS.get(provider)
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Unsupported lead provider.")
+    return (await session.execute(select(InboxChannelConnection).where(
+        InboxChannelConnection.organization_id == org_id,
+        InboxChannelConnection.channel == channel,
+    ))).scalar_one_or_none()
+
+
+@router.get("/capture-integrations")
+async def list_capture_integrations(
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
+    session: AsyncSession = Depends(get_session),
+):
+    output = {}
+    for provider, channel in _AD_CHANNELS.items():
+        connection = await _ad_connection(session, ctx.org_id, provider)
+        output[provider] = {
+            "connected": connection is not None,
+            "webhook_url": (
+                f"{settings.inbox_public_webhook_base_url.rstrip('/')}/api/v1/leads/webhooks/{provider}/{ctx.org_id}"
+                if connection and settings.inbox_public_webhook_base_url else None
+            ),
+            "secret": connection.webhook_token if connection else None,
+        }
+    return output
+
+
+@router.put("/capture-integrations/{provider}")
+async def connect_capture_integration(
+    provider: str,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
+    session: AsyncSession = Depends(get_session),
+):
+    connection = await _ad_connection(session, ctx.org_id, provider)
+    if not settings.inbox_public_webhook_base_url.startswith("https://"):
+        raise HTTPException(status_code=422, detail="Configure a public HTTPS API URL before enabling lead webhooks.")
+    token = secrets.token_urlsafe(32)
+    rotated = connection is not None
+    if connection is None:
+        connection = InboxChannelConnection(
+            organization_id=ctx.org_id, channel=_AD_CHANNELS[provider],
+            credentials_ciphertext="{}", webhook_token=token,
+        )
+    else:
+        connection.webhook_token = token
+        connection.connected_at = now_utc()
+    session.add(connection)
+    await session.flush()
+    await record_audit(session, action="lead.capture_integration_connected",
+                       organization_id=ctx.org_id, actor_user_id=ctx.user_id,
+                       entity_type="lead_capture_integration", entity_id=provider,
+                       metadata={"provider": provider, "rotated": rotated})
+    return {
+        "connected": True,
+        "webhook_url": f"{settings.inbox_public_webhook_base_url.rstrip('/')}/api/v1/leads/webhooks/{provider}/{ctx.org_id}",
+        "secret": token,
+    }
+
+
+@router.delete("/capture-integrations/{provider}", status_code=204)
+async def disconnect_capture_integration(
+    provider: str,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
+    session: AsyncSession = Depends(get_session),
+):
+    connection = await _ad_connection(session, ctx.org_id, provider)
+    if connection is not None:
+        await session.delete(connection)
+        await record_audit(session, action="lead.capture_integration_disconnected",
+                           organization_id=ctx.org_id, actor_user_id=ctx.user_id,
+                           entity_type="lead_capture_integration", entity_id=provider,
+                           metadata={"provider": provider})
+
+
+async def _provider_payload(request: Request) -> dict:
+    if int(request.headers.get("content-length", "0") or 0) > 65536:
+        raise HTTPException(status_code=413, detail="Lead payload is too large.")
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 65536:
+            raise HTTPException(status_code=413, detail="Lead payload is too large.")
+    try:
+        payload = json.loads(bytes(raw))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid lead payload.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Lead payload must be a JSON object.")
+    return payload
+
+
+@router.post("/webhooks/google_ads/{org_id}")
+async def google_ads_lead_webhook(org_id: str, request: Request, session: AsyncSession = Depends(get_session)):
+    payload = await _provider_payload(request)
+    connection = await _ad_connection(session, org_id, "google_ads")
+    if not connection or not hmac.compare_digest(str(payload.get("google_key", "")), connection.webhook_token or ""):
+        raise HTTPException(status_code=403, detail="Invalid Google Ads lead key.")
+    if payload.get("is_test") is True:
+        return {"ok": True, "test": True}
+    from app.services.lead_capture_service import capture_provider_lead, google_lead_fields
+    lead = google_lead_fields(payload)
+    lead_id = str(payload.get("lead_id", ""))
+    captured_id = await capture_provider_lead(session, org_id=org_id, provider="google_ads", lead_id=lead_id, data=lead)
+    await session.commit()
+    from app.realtime import events
+    await events.publish(org_id, "lead.changed", {"lead_ids": [captured_id]})
+    return {"ok": True}
+
+
+@router.post("/webhooks/tiktok/{org_id}")
+async def tiktok_lead_webhook(
+    org_id: str, request: Request, session: AsyncSession = Depends(get_session),
+):
+    payload = await _provider_payload(request)
+    connection = await _ad_connection(session, org_id, "tiktok")
+    if not connection or not hmac.compare_digest(request.headers.get("x-acron-lead-token", ""), connection.webhook_token or ""):
+        raise HTTPException(status_code=403, detail="Invalid lead provider token.")
+    from app.services.lead_capture_service import capture_provider_lead, tiktok_lead_fields
+    data = tiktok_lead_fields(payload)
+    value = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    lead_id = str(value.get("lead_id") or value.get("id") or "")
+    captured_id = await capture_provider_lead(session, org_id=org_id, provider="tiktok", lead_id=lead_id, data=data)
+    await session.commit()
+    from app.realtime import events
+    await events.publish(org_id, "lead.changed", {"lead_ids": [captured_id]})
+    return {"ok": True}
 
 
 class PublicLeadInquiry(BaseModel):

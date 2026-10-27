@@ -254,6 +254,8 @@ class LeadSource(str, Enum):
     SMS = "sms"
     INSTAGRAM = "instagram"
     FACEBOOK = "facebook"
+    GOOGLE = "google"
+    TIKTOK = "tiktok"
     LINE = "line"
     WECHAT = "wechat"
     OTHER = "other"

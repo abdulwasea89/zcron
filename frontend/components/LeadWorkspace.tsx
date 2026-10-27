@@ -67,6 +67,8 @@ const SOURCES = [
   ["sms", "SMS"],
   ["instagram", "Instagram"],
   ["facebook", "Facebook"],
+  ["google", "Google Ads"],
+  ["tiktok", "TikTok"],
   ["line", "LINE"],
   ["wechat", "WeChat"],
   ["other", "Other"],

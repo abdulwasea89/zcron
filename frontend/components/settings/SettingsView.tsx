@@ -8,6 +8,7 @@ import { AuditWorkspace } from "@/components/settings/AuditWorkspace";
 import { BillingWorkspace } from "@/components/settings/BillingWorkspace";
 import { MfaCard } from "@/app/app/account/MfaCard";
 import { DataRequestsSection } from "@/components/settings/DataRequestsSection";
+import { LeadCaptureIntegrationsSection } from "@/components/LeadCaptureIntegrationsSection";
 import { LiveIndicator } from "@/components/Realtime";
 import { Alert, Badge, Button, Input, Select, Spinner } from "@/components/ui";
 import { Row, ReadValue, Section } from "@/components/settings/primitives";
@@ -486,6 +487,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
 
             <Section id="channels" title="Inbox channels" description="Connect the providers your team uses to message members" hidden={active !== "channels"}>
               <InboxChannelsSection />
+              <LeadCaptureIntegrationsSection />
             </Section>
 
             <Section id="tools" title="Workspace tools" description="Manage the less frequent administrative work" hidden={active !== "tools"}>

@@ -1,4 +1,4 @@
-"""Facebook Lead Ads intake through the saved Page connection."""
+"""Lead Ads intake for connected providers."""
 
 import hashlib
 import hmac
@@ -101,3 +101,69 @@ async def capture_meta_lead(session: AsyncSession, *, org_id: str, credentials: 
                                  "matched_existing": matched})
     await idempotency_service.complete(session, claim.record, code=200, body=json.dumps({"lead_id": lead.id}))
     return lead.id
+
+
+def google_lead_fields(payload: dict) -> LeadCreate:
+    columns = {}
+    for column in payload.get("user_column_data", []):
+        if isinstance(column, dict):
+            key = str(column.get("column_id") or column.get("column_name") or "").upper()
+            value = column.get("string_value")
+            if key and isinstance(value, str):
+                columns[key] = value.strip()
+    name = columns.get("FULL_NAME") or " ".join(filter(None, (columns.get("FIRST_NAME"), columns.get("LAST_NAME"))))
+    try:
+        lead = LeadCreate(name=name or "Google Ads prospect", email=columns.get("EMAIL") or columns.get("WORK_EMAIL") or None,
+                          phone=columns.get("PHONE_NUMBER") or columns.get("WORK_PHONE") or None,
+                          goal=columns.get("SERVICE") or columns.get("OFFER") or None, source=LeadSource.GOOGLE)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Google lead fields are invalid.") from exc
+    if not lead.email and not lead.phone:
+        raise HTTPException(status_code=422, detail="The Google lead form must provide an email address or phone number.")
+    return lead
+
+
+def tiktok_lead_fields(payload: dict) -> LeadCreate:
+    """Accept the normalized name/email/phone shape supported by webhook relays."""
+    value = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    try:
+        lead = LeadCreate(name=value.get("name") or value.get("full_name") or "TikTok prospect",
+                          email=value.get("email"), phone=value.get("phone") or value.get("phone_number"),
+                          goal=value.get("goal"), source=value.get("source") or LeadSource.TIKTOK)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="TikTok lead fields are invalid.") from exc
+    if not lead.email and not lead.phone:
+        raise HTTPException(status_code=422, detail="The TikTok lead must provide an email address or phone number.")
+    return lead
+
+
+async def capture_provider_lead(session: AsyncSession, *, org_id: str, provider: str, lead_id: str, data: LeadCreate) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,200}", lead_id):
+        raise HTTPException(status_code=422, detail="Invalid provider lead identifier.")
+    claim = await idempotency_service.claim(
+        session, key=f"ad-lead:{provider}:{data.source}:{lead_id}", endpoint=f"leads.ad:{provider}:{org_id}",
+        body={"lead_id": lead_id}, organization_id=org_id,
+    )
+    if not claim.claimed:
+        return json.loads(claim.cached_response or "{}").get("lead_id", "")
+    org = await session.get(Organization, org_id, with_for_update=True, populate_existing=True)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    matched = await leads_service.find_matching_lead(session, org_id=org_id, email=data.email, phone=data.phone)
+    is_new = matched is None
+    if is_new:
+        matched = await leads_service.create_lead(session, org_id=org_id, actor_id=None, data=data)
+        matched.profile_sources = {field: provider for field in matched.profile_sources}
+        session.add(matched)
+    else:
+        task = Task(organization_id=org_id, category="lead_capture", deadline=now_utc(),
+                    title=f"New {provider.replace('_', ' ').title()} inquiry: {data.name}"[:120],
+                    description=f"An existing lead submitted a {provider.replace('_', ' ')} form. Review {matched.name} in Leads. Incoming contact: {data.email or ''} {data.phone or ''}.")
+        session.add(task)
+        await session.flush()
+        await events.task_changed(org_id, task_id=task.id, action="created")
+    await record_audit(session, action="lead.ad_inquiry_received", organization_id=org_id,
+                       entity_type="lead", entity_id=matched.id,
+                       metadata={"provider": provider, "provider_lead_id": lead_id, "matched_existing": not is_new})
+    await idempotency_service.complete(session, claim.record, code=200, body=json.dumps({"lead_id": matched.id}))
+    return matched.id
