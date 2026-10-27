@@ -489,7 +489,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
             <Section id="channels" title="Inbox channels" description="Connect the providers your team uses to message members" hidden={active !== "channels"}>
               <InboxChannelsSection />
               <LeadCaptureIntegrationsSection />
-              {(role === "owner" || role === "manager") && <LeadFollowupTemplatesSection />}
+              {role === "owner" && <LeadFollowupTemplatesSection />}
             </Section>
 
             <Section id="tools" title="Workspace tools" description="Manage the less frequent administrative work" hidden={active !== "tools"}>
