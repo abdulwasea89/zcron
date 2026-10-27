@@ -54,10 +54,19 @@ class ActivitySession:
         return Result(rows)
 
 
-async def test_member_activity_merges_events_and_keeps_tenant_and_content_boundaries():
+async def test_member_activity_merges_events_and_audits_history_reads(monkeypatch):
+    from app.api.v1.routes import members
+
     member = SimpleNamespace(id="member", organization_id="gym")
     session = ActivitySession(member, "staff")
-    events = await member_activity("member", TenantContext("staff", "gym", Role.OWNER), session)
+    audit_events = []
+
+    async def record_audit(_session, **kwargs):
+        audit_events.append(kwargs)
+
+    monkeypatch.setattr(members, "record_audit", record_audit)
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), headers={"user-agent": "unit-test"})
+    events = await member_activity("member", request, TenantContext("staff", "gym", Role.OWNER), session)
 
     assert {event["type"] for event in events} == {"visit", "payment", "message", "staff_action"}
     assert [event["type"] for event in events] == ["visit", "payment", "message", "staff_action"]
@@ -65,3 +74,9 @@ async def test_member_activity_merges_events_and_keeps_tenant_and_content_bounda
     assert sum(event["actor_name"] == "Front Desk" for event in events) == 3
     assert all("organization_id" in query for query in session.statements[:4])
     assert all("body" not in event and "metadata_json" not in event for event in events)
+    assert audit_events == [{
+        "action": "member.activity_viewed", "organization_id": "gym", "actor_user_id": "staff",
+        "entity_type": "member", "entity_id": "member", "ip_address": "127.0.0.1",
+        "user_agent": "unit-test",
+    }]
+    assert "audit_logs.action !=" in session.statements[-2]

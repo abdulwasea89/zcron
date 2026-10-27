@@ -340,6 +340,7 @@ async def member_detail(
 @router.get("/{member_id}/activity")
 async def member_activity(
     member_id: str,
+    request: Request,
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
     session: AsyncSession = Depends(get_session),
 ):
@@ -394,6 +395,7 @@ async def member_activity(
             AuditLog.organization_id == ctx.org_id,
             AuditLog.entity_type == "member",
             AuditLog.entity_id == member.id,
+            AuditLog.action != "member.activity_viewed",
         ).order_by(AuditLog.created_at.desc()).limit(50)
     )).scalars().all()
     events.extend({
@@ -412,6 +414,11 @@ async def member_activity(
     for event in events:
         event["actor_name"] = actors.get(event.pop("actor_user_id", None))
     events.sort(key=lambda event: (event["at"], event["id"]), reverse=True)
+    await record_audit(
+        session, action="member.activity_viewed", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="member", entity_id=member.id,
+        ip_address=get_client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
     return events[:100]
 
 
