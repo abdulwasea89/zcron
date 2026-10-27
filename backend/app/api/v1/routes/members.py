@@ -50,6 +50,10 @@ from app.services import membership_changes_service as member_changes
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
 from app.models.user import User
+from app.models.attendance import Attendance
+from app.models.audit_log import AuditLog
+from app.models.inbox import InboxConversation, InboxMessage
+from app.models.payment import Payment
 
 router = APIRouter()
 
@@ -331,6 +335,84 @@ async def member_detail(
         family_owner=family_owner,
         family_members=family_members,
     )
+
+
+@router.get("/{member_id}/activity")
+async def member_activity(
+    member_id: str,
+    ctx: TenantContext = Depends(require_capability(Capability.MANAGE_MEMBERS)),
+    session: AsyncSession = Depends(get_session),
+):
+    member = await members._get_member(session, ctx.org_id, member_id)
+    events: list[dict] = []
+
+    visits = (await session.execute(
+        select(Attendance).where(
+            Attendance.organization_id == ctx.org_id,
+            Attendance.member_id == member.id,
+        ).order_by(Attendance.checked_in_at.desc()).limit(50)
+    )).scalars().all()
+    events.extend({
+        "id": f"visit:{row.id}", "type": "visit", "at": row.checked_in_at.isoformat(),
+        "title": "Checked in", "detail": row.method.value.replace("_", " ").title(),
+        "actor_user_id": row.checked_in_by,
+    } for row in visits)
+
+    payments = (await session.execute(
+        select(Payment).where(
+            Payment.organization_id == ctx.org_id,
+            Payment.member_id == member.id,
+        ).order_by(Payment.created_at.desc()).limit(50)
+    )).scalars().all()
+    events.extend({
+        "id": f"payment:{row.id}", "type": "payment",
+        "at": (row.paid_at or row.created_at).isoformat(), "title": "Payment",
+        "detail": f"{row.status.value.replace('_', ' ').title()} · {row.amount:.2f} {row.currency}",
+        "actor_user_id": row.logged_by,
+    } for row in payments)
+
+    if role_has(ctx.role, Capability.VIEW_INBOX):
+        messages = (await session.execute(
+            select(InboxMessage, InboxConversation.channel).join(
+                InboxConversation, InboxConversation.id == InboxMessage.conversation_id,
+            ).where(
+                InboxMessage.organization_id == ctx.org_id,
+                InboxConversation.organization_id == ctx.org_id,
+                InboxConversation.member_id == member.id,
+            ).order_by(InboxMessage.created_at.desc()).limit(50)
+        )).all()
+        events.extend({
+            "id": f"message:{message.id}", "type": "message",
+            "at": message.created_at.isoformat(),
+            "title": f"{message.direction.value.title()} message",
+            "detail": f"{channel.value.replace('_', ' ').title()} · {message.delivery_status or 'status unavailable'}",
+            "actor_user_id": message.sender_user_id,
+        } for message, channel in messages)
+
+    actions = (await session.execute(
+        select(AuditLog).where(
+            AuditLog.organization_id == ctx.org_id,
+            AuditLog.entity_type == "member",
+            AuditLog.entity_id == member.id,
+        ).order_by(AuditLog.created_at.desc()).limit(50)
+    )).scalars().all()
+    events.extend({
+        "id": f"audit:{row.id}", "type": "staff_action",
+        "at": row.created_at.isoformat(),
+        "title": row.action.removeprefix("member.").replace("_", " ").title(),
+        "detail": "Staff action", "actor_user_id": row.actor_user_id,
+    } for row in actions)
+
+    actor_ids = {event["actor_user_id"] for event in events if event["actor_user_id"]}
+    actors = {}
+    if actor_ids:
+        actors = dict((await session.execute(
+            select(User.id, User.full_name).where(User.id.in_(actor_ids))
+        )).all())
+    for event in events:
+        event["actor_name"] = actors.get(event.pop("actor_user_id", None))
+    events.sort(key=lambda event: (event["at"], event["id"]), reverse=True)
+    return events[:100]
 
 
 @router.put("/{member_id}/tags", response_model=MemberTagsUpdate, dependencies=[Depends(require_writable_org)])

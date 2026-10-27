@@ -9,7 +9,12 @@ from __future__ import annotations
 import pytest
 
 from app.models.audit_log import AuditLog
-from app.core.constants import PaymentStatus, SubscriptionStatus
+from app.core.constants import (
+    AttendanceMethod, AttendanceSource, Channel, MessageDirection, PaymentStatus,
+    SenderKind, SubscriptionStatus,
+)
+from app.models.attendance import Attendance
+from app.models.inbox import InboxConversation, InboxMessage
 from app.models.membership import OrganizationMember
 from app.models.payment import Payment
 from app.models.subscription import Subscription
@@ -138,6 +143,45 @@ async def test_cash_payment_appears_in_history(client):
     methods = {p["method"] for p in body["payments"]}
     assert methods == {"card", "cash"}
     assert len(body["payments"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_activity_timeline_includes_visits_payments_messages_and_staff_actions(client, db):
+    org_code, plan_id, headers, org_id = await _provision(client)
+    email = "timeline@member.com"
+    await _signup_and_pay(client, org_code, plan_id, email)
+    member_id = await _member_id(client, headers, email)
+    member = await db.get(OrganizationMember, member_id)
+    db.add(Attendance(
+        organization_id=org_id, member_id=member_id,
+        method=AttendanceMethod.MANUAL, source=AttendanceSource.FRONT_DESK,
+    ))
+    conversation = InboxConversation(
+        organization_id=org_id, member_id=member_id, channel=Channel.EMAIL,
+        contact_handle=email,
+    )
+    db.add(conversation)
+    await db.flush()
+    db.add(InboxMessage(
+        organization_id=org_id, conversation_id=conversation.id,
+        direction=MessageDirection.INBOUND, sender_kind=SenderKind.CONTACT,
+        channel=Channel.EMAIL, body="Private message content must stay out of the timeline.",
+    ))
+    db.add(AuditLog(
+        organization_id=org_id, actor_user_id=member.user_id,
+        action="member.tags_updated", entity_type="member", entity_id=member_id,
+        metadata_json='{"private":"value must stay out"}',
+    ))
+    await db.commit()
+
+    response = await client.get(f"/api/v1/members/{member_id}/activity", headers=headers)
+    assert response.status_code == 200, response.text
+    events = response.json()
+    types = {event["type"] for event in events}
+    assert {"visit", "payment", "message", "staff_action"} <= types
+    assert any(event["title"] == "Tags Updated" for event in events)
+    assert "Private message content" not in response.text
+    assert "value must stay out" not in response.text
 
 
 @pytest.mark.asyncio

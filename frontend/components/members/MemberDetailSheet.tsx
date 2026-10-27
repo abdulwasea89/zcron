@@ -137,7 +137,7 @@ function MethodCell({ method }: { method: string }) {
 
 /** Compact relative time: "just now", "3h ago", "12d ago", then a short date. */
 function ago(iso: string): string {
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso + "Z").getTime()) / 1000));
+  const s = Math.max(0, Math.floor((Date.now() - activityDate(iso).getTime()) / 1000));
   if (s < 60) return "just now";
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ago`;
@@ -145,8 +145,21 @@ function ago(iso: string): string {
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
-  return new Date(iso + "Z").toLocaleDateString([], { month: "short", day: "numeric" });
+  return activityDate(iso).toLocaleDateString([], { month: "short", day: "numeric" });
 }
+
+function activityDate(iso: string) {
+  return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(iso) ? iso : `${iso}Z`);
+}
+
+type MemberActivityItem = {
+  id: string;
+  type: "visit" | "payment" | "message" | "staff_action";
+  at: string;
+  title: string;
+  detail: string;
+  actor_name: string | null;
+};
 
 /**
  * MemberDetailSheet — a member's full profile as an edge sheet.
@@ -167,8 +180,9 @@ export function MemberDetailSheet({
   const [data, setData] = useState<MemberDetailOut | null>(null);
   const [error, setError] = useState("");
   const [visits, setVisits] = useState<AttendanceOut[] | null>(null);
+  const [activity, setActivity] = useState<MemberActivityItem[] | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
-  const [detailSheet, setDetailSheet] = useState<"profile" | "visits" | "pending" | "payments" | null>(null);
+  const [detailSheet, setDetailSheet] = useState<"profile" | "visits" | "pending" | "payments" | "activity" | null>(null);
 
   // Assign trainer sheet
   const [assignOpen, setAssignOpen] = useState(false);
@@ -184,6 +198,7 @@ export function MemberDetailSheet({
     setError("");
     setData(null);
     setVisits(null);
+    setActivity(null);
     try {
       setData(await api.get<MemberDetailOut>(`/members/${id}`));
     } catch (e) {
@@ -206,6 +221,11 @@ export function MemberDetailSheet({
         .get<AttendanceOut[]>(`/attendance/members/${memberId}/visits`)
         .then(setVisits)
         .catch(() => setVisits([]));
+    });
+    queueMicrotask(() => {
+      api.get<MemberActivityItem[]>(`/members/${memberId}/activity`)
+        .then(setActivity)
+        .catch(() => setActivity([]));
     });
     return () => { active = false; };
   }, [memberId, load]);
@@ -264,26 +284,7 @@ export function MemberDetailSheet({
     (payment) => payment.status === "pending" || payment.status === "failed",
   ).length;
   const currency = sub?.currency ?? data?.payments?.[0]?.currency ?? "USD";
-  const recentActivity = [
-    ...(m ? [{
-      id: "joined",
-      at: new Date(m.created_at),
-      title: "Joined",
-      detail: "Member account created",
-    }] : []),
-    ...(visits ?? []).map((visit) => ({
-      id: `visit-${visit.id}`,
-      at: new Date(visit.checked_in_at + "Z"),
-      title: "Checked in",
-      detail: titleCase(visit.method),
-    })),
-    ...(data?.payments ?? []).map((payment) => ({
-      id: `payment-${payment.id}`,
-      at: new Date(payment.paid_at ?? payment.created_at),
-      title: "Payment",
-      detail: `${titleCase(payment.status)} · ${money(payment.amount, payment.currency)}`,
-    })),
-  ].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 6);
+  const recentActivity = (activity ?? []).slice(0, 6);
 
   return (
     <>
@@ -367,19 +368,19 @@ export function MemberDetailSheet({
                 <section aria-labelledby="member-recent-activity" className="border-t border-foreground/[0.08] pt-4">
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <h2 id="member-recent-activity" className="text-[12px] font-medium text-muted-foreground">Recent activity</h2>
-                    <button type="button" onClick={() => setDetailSheet("payments")} className="text-[11px] font-medium text-brand hover:underline">View payments</button>
+                    <button type="button" onClick={() => setDetailSheet("activity")} className="text-[11px] font-medium text-brand hover:underline">View activity</button>
                   </div>
-                  {visits === null ? <p className="text-[12px] text-muted-foreground">Loading activity…</p> : recentActivity.length === 0 ? (
-                    <p className="text-[12px] text-muted-foreground">No check-ins or payments recorded yet.</p>
+                  {activity === null ? <p className="text-[12px] text-muted-foreground">Loading activity…</p> : recentActivity.length === 0 ? (
+                    <p className="text-[12px] text-muted-foreground">No member activity recorded yet.</p>
                   ) : (
                     <ul className="m-0 list-none divide-y divide-foreground/[0.07] p-0">
                       {recentActivity.map((item) => (
                         <li key={item.id} className="flex items-center justify-between gap-3 py-2.5 text-[12px]">
                           <span className="min-w-0">
                             <span className="block font-medium">{item.title}</span>
-                            <span className="block text-muted-foreground">{item.detail}</span>
+                            <span className="block text-muted-foreground">{item.detail}{item.actor_name ? ` · ${item.actor_name}` : ""}</span>
                           </span>
-                          <time className="shrink-0 text-muted-foreground" dateTime={item.at.toISOString()}>{item.at.toLocaleDateString([], { month: "short", day: "numeric" })}</time>
+                          <time className="shrink-0 text-muted-foreground" dateTime={item.at}>{activityDate(item.at).toLocaleDateString([], { month: "short", day: "numeric" })}</time>
                         </li>
                       ))}
                     </ul>
@@ -482,6 +483,25 @@ export function MemberDetailSheet({
                   </tr>)}</tbody>
                 </table>
               </div>
+            )}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={detailSheet === "activity"} onOpenChange={(open) => { if (!open) setDetailSheet(null); }}>
+        <SheetContent style={{ "--sheet-max-w": "560px" } as React.CSSProperties}>
+          <SheetHeader>
+            <SheetTitle>Member activity</SheetTitle>
+            <SheetDescription>{activity ? `${activity.length} recent events` : "Loading member activity…"}</SheetDescription>
+          </SheetHeader>
+          <SheetBody className="p-0">
+            {activity === null ? <div className="p-6"><Spinner label="Loading activity…" /></div> : activity.length === 0 ? <EmptyState title="No activity yet" hint="Visits, payments, messages, and staff actions will appear here." /> : (
+              <ol className="divide-y divide-foreground/[0.07] px-5">
+                {activity.map((item) => <li key={item.id} className="flex items-start justify-between gap-4 py-3.5 text-[13px]">
+                  <span className="min-w-0"><span className="block font-medium text-foreground">{item.title}</span><span className="mt-0.5 block text-muted-foreground">{item.detail}{item.actor_name ? ` · ${item.actor_name}` : ""}</span></span>
+                  <time className="shrink-0 text-xs text-muted-foreground" dateTime={item.at}>{activityDate(item.at).toLocaleString([], { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</time>
+                </li>)}
+              </ol>
             )}
           </SheetBody>
         </SheetContent>
