@@ -119,6 +119,12 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "first_contact_delivery_status": "VARCHAR NOT NULL DEFAULT 'unknown'",
             "first_contact_external_id": "VARCHAR",
         },
+        "lead_followups": {
+            "sms_status": "VARCHAR NOT NULL DEFAULT 'pending'",
+            "sms_attempted_at": "DATETIME",
+            "sms_sent_at": "DATETIME",
+            "sms_attempts": "INTEGER NOT NULL DEFAULT 0",
+        },
         "campaign_deliveries": {
             "provider_message_id": "VARCHAR",
             "delivery_status": "VARCHAR",

@@ -310,6 +310,7 @@ async def create_lead(session: AsyncSession, *, org_id: str, actor_id: str | Non
             day=day,
             due_at=lead.created_at + timedelta(days=day),
             email_status="pending" if lead.email_followup_consent else "skipped",
+            sms_status="pending" if lead.sms_followup_consent else "skipped",
         )
         session.add(followup)
         if day == 0 and lead.email_followup_consent and lead.email:
@@ -328,6 +329,14 @@ async def create_lead(session: AsyncSession, *, org_id: str, actor_id: str | Non
             )
             followup.email_status = "sent" if sent else "failed"
             followup.email_sent_at = now_utc() if sent else None
+            session.add(followup)
+        if day == 0 and lead.sms_followup_consent and lead.phone:
+            from app.services.lead_followup_delivery import send_lead_followup_sms
+
+            followup.sms_attempted_at = now_utc()
+            followup.sms_attempts = 1
+            followup.sms_status = await send_lead_followup_sms(session, lead=lead, day=day)
+            followup.sms_sent_at = now_utc() if followup.sms_status == "sent" else None
             session.add(followup)
     await record_audit(session, action="lead.created", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="lead", entity_id=lead.id, new_values={"name": lead.name, "source": lead.source})
@@ -464,6 +473,32 @@ async def update_lead(session: AsyncSession, *, org_id: str, actor_id: str,
             )).scalars()
             for followup in followups:
                 followup.email_status = "skipped"
+                session.add(followup)
+    if "sms_followup_consent" in changes:
+        if changes["sms_followup_consent"]:
+            followups = (await session.execute(
+                select(LeadFollowUp).where(
+                    LeadFollowUp.organization_id == org_id,
+                    LeadFollowUp.lead_id == lead.id,
+                    LeadFollowUp.sms_status == "skipped",
+                    LeadFollowUp.sms_sent_at.is_(None),
+                    LeadFollowUp.due_at > now_utc(),
+                ).with_for_update()
+            )).scalars()
+            for followup in followups:
+                followup.sms_status = "pending"
+                session.add(followup)
+        else:
+            followups = (await session.execute(
+                select(LeadFollowUp).where(
+                    LeadFollowUp.organization_id == org_id,
+                    LeadFollowUp.lead_id == lead.id,
+                    LeadFollowUp.sms_status == "pending",
+                    LeadFollowUp.sms_sent_at.is_(None),
+                ).with_for_update()
+            )).scalars()
+            for followup in followups:
+                followup.sms_status = "skipped"
                 session.add(followup)
     await record_audit(session, action="lead.updated", organization_id=org_id, actor_user_id=actor_id,
                        entity_type="lead", entity_id=lead.id,

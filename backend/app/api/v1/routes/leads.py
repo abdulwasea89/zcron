@@ -53,11 +53,12 @@ class TikTokCredentials(BaseModel):
     client_secret: str = Field(min_length=1, max_length=500)
 
 
-class LeadFollowupEmail(BaseModel):
+class LeadFollowupTemplate(BaseModel):
     subject: str = Field(min_length=1, max_length=120)
     body: str = Field(min_length=1, max_length=2000)
+    sms_body: str = Field(min_length=1, max_length=250)
 
-    @field_validator("subject", "body")
+    @field_validator("subject", "body", "sms_body")
     @classmethod
     def trim_template_text(cls, value: str) -> str:
         value = value.strip()
@@ -68,7 +69,8 @@ class LeadFollowupEmail(BaseModel):
     @model_validator(mode="after")
     def allow_only_name_variable(self):
         try:
-            fields = [field for _, field, _, _ in Formatter().parse(self.subject + self.body) if field]
+            fields = [field for text in (self.subject, self.body, self.sms_body)
+                      for _, field, _, _ in Formatter().parse(text) if field]
         except ValueError as exc:
             raise ValueError("Use only the {name} placeholder.") from exc
         if any(field != "name" for field in fields):
@@ -77,7 +79,7 @@ class LeadFollowupEmail(BaseModel):
 
 
 class LeadFollowupTemplatesIn(BaseModel):
-    templates: dict[str, LeadFollowupEmail]
+    templates: dict[str, LeadFollowupTemplate]
 
     @model_validator(mode="after")
     def require_schedule_days(self):
@@ -468,11 +470,19 @@ async def get_followup_templates(
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
     session: AsyncSession = Depends(get_session),
 ):
+    from app.services.lead_followup_delivery import configured_sms_template
     from app.workers.lead_followups import _EMAILS, configured_followup_email
 
     org = await session.get(Organization, ctx.org_id)
     config = org.lead_followup_templates if org else None
-    return {str(day): dict(zip(("subject", "body"), configured_followup_email(day, config))) for day in _EMAILS}
+    return {
+        str(day): {
+            "subject": configured_followup_email(day, config)[0],
+            "body": configured_followup_email(day, config)[1],
+            "sms_body": configured_sms_template(day, config),
+        }
+        for day in _EMAILS
+    }
 
 
 @router.put("/followup-templates", dependencies=[Depends(require_writable_org)])

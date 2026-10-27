@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 
-type Template = { subject: string; body: string };
+type Template = { subject: string; body: string; sms_body: string };
 type Templates = Record<"0" | "1" | "3" | "7", Template>;
 const DAYS = ["0", "1", "3", "7"] as const;
 
@@ -44,7 +44,7 @@ export function LeadFollowupTemplatesSection() {
   return <div className="mt-6 space-y-4 border-t border-border pt-5">
     <div>
       <h3 className="text-sm font-semibold text-foreground">Lead follow-up emails</h3>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">Customize the consent-gated day 0, 1, 3, and 7 emails. Use <code>{"{name}"}</code> for the lead’s first name. Timing and consent rules stay in effect.</p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">Customize the day 0, 1, 3, and 7 email and SMS copy. Each channel sends only with its recorded consent. Use <code>{"{name}"}</code>; an SMS opt-out instruction is appended automatically.</p>
     </div>
     {templates ? <div className="space-y-4">
       {DAYS.map((day) => <fieldset key={day} className="space-y-2 border border-border p-3">
@@ -54,6 +54,9 @@ export function LeadFollowupTemplatesSection() {
         </label>
         <label className="grid gap-1 text-xs text-muted-foreground">Email body
           <textarea value={templates[day].body} maxLength={2000} rows={4} onChange={(event) => update(day, "body", event.target.value)} className="resize-y border border-border bg-background px-3 py-2 text-sm text-foreground" />
+        </label>
+        <label className="grid gap-1 text-xs text-muted-foreground">SMS body
+          <textarea value={templates[day].sms_body} maxLength={250} rows={3} onChange={(event) => update(day, "sms_body", event.target.value)} className="resize-y border border-border bg-background px-3 py-2 text-sm text-foreground" />
         </label>
       </fieldset>)}
       <Button variant="secondary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save follow-up emails"}</Button>

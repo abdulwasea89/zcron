@@ -72,14 +72,21 @@ async def run_due_lead_followups(session: AsyncSession, *, org_id: str) -> dict:
             followup.email_sent_at = now_utc() if sent else None
         else:
             followup.email_status = "skipped"
+        if lead.sms_followup_consent and lead.phone and followup.sms_status == "pending":
+            from app.services.lead_followup_delivery import send_lead_followup_sms
+
+            followup.sms_attempted_at = now_utc()
+            followup.sms_attempts += 1
+            followup.sms_status = await send_lead_followup_sms(session, lead=lead, day=followup.day)
+            followup.sms_sent_at = now_utc() if followup.sms_status == "sent" else None
+        elif not lead.sms_followup_consent or not lead.phone:
+            followup.sms_status = "skipped"
         data = {"lead_id": lead.id, "followup_id": followup.id, "day": followup.day}
         title = f"Lead follow-up due: {lead.name}"
-        if followup.email_status == "sent":
-            body = f"The day {followup.day} follow-up email was sent. Review replies and record the outcome."
-        elif followup.email_status == "failed":
-            body = f"Day {followup.day} email could not be delivered. Contact the lead manually and record the outcome."
-        else:
-            body = f"Day {followup.day} follow-up is due. No email consent is recorded; use a permitted channel."
+        body = (
+            f"Day {followup.day} follow-up: email {followup.email_status}; "
+            f"SMS {followup.sms_status}. Review replies and record the outcome."
+        )
         if lead.created_by:
             await create_notification(
                 session,

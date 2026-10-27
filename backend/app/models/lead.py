@@ -91,6 +91,10 @@ class LeadFollowUp(UUIDModel, TimestampModel, table=True):
             "email_status IN ('pending', 'sent', 'failed', 'skipped')",
             name="ck_lead_followup_email_status",
         ),
+        CheckConstraint(
+            "sms_status IN ('pending', 'sent', 'failed', 'skipped')",
+            name="ck_lead_followup_sms_status",
+        ),
     )
 
     organization_id: str = Field(index=True, foreign_key="organizations.id")
@@ -105,3 +109,7 @@ class LeadFollowUp(UUIDModel, TimestampModel, table=True):
     email_attempted_at: datetime | None = None
     email_sent_at: datetime | None = None
     email_attempts: int = Field(default=0, nullable=False)
+    sms_status: str = Field(default="pending", index=True)
+    sms_attempted_at: datetime | None = None
+    sms_sent_at: datetime | None = None
+    sms_attempts: int = Field(default=0, nullable=False)

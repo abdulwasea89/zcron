@@ -208,6 +208,8 @@ class LeadFollowUpOut(BaseModel):
     note: str | None
     email_status: Literal["pending", "sent", "failed", "skipped"]
     email_sent_at: datetime | None
+    sms_status: Literal["pending", "sent", "failed", "skipped"]
+    sms_sent_at: datetime | None
 
 
 class LeadFollowUpUpdate(BaseModel):

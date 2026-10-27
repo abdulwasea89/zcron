@@ -13,6 +13,8 @@ type FollowUp = {
   note: string | null;
   email_status: "pending" | "sent" | "failed" | "skipped";
   email_sent_at: string | null;
+  sms_status: "pending" | "sent" | "failed" | "skipped";
+  sms_sent_at: string | null;
 };
 
 type Props = { leadId: string };
@@ -36,6 +38,13 @@ const EMAIL_LABELS: Record<FollowUp["email_status"], string> = {
   sent: "Email sent",
   failed: "Email failed — follow up manually",
   skipped: "No email sent",
+};
+
+const SMS_LABELS: Record<FollowUp["sms_status"], string> = {
+  pending: "SMS pending",
+  sent: "SMS accepted by provider",
+  failed: "SMS failed — follow up manually",
+  skipped: "No SMS sent",
 };
 
 export function LeadFollowUps({ leadId }: Props) {
@@ -75,7 +84,7 @@ export function LeadFollowUps({ leadId }: Props) {
     <section aria-labelledby="lead-followups-title" className="mb-6 rounded-xl border border-border bg-background p-4">
       <div className="mb-3">
         <h3 id="lead-followups-title" className="text-sm font-semibold">Follow-up sequence</h3>
-        <p className="mt-1 text-xs text-muted-foreground">Emails are scheduled for days 0, 1, 3, and 7 only when email permission is recorded. Staff reminders remain available otherwise.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Email and SMS follow-ups run only with the matching recorded permission. Text delivery needs a connected provider; recipients can reply STOP to opt out.</p>
       </div>
       {error && <Alert tone="danger">{error}</Alert>}
       {items === null ? <Spinner /> : items.length === 0 ? (
@@ -96,8 +105,10 @@ export function LeadFollowUps({ leadId }: Props) {
                 </span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {EMAIL_LABELS[item.email_status]}
+                Email: {EMAIL_LABELS[item.email_status]}
                 {item.email_sent_at && ` · ${new Date(item.email_sent_at).toLocaleString()}`}
+                <br />SMS: {SMS_LABELS[item.sms_status]}
+                {item.sms_sent_at && ` · ${new Date(item.sms_sent_at).toLocaleString()}`}
               </p>
               {item.note && <p className="mt-2 text-xs text-muted-foreground">{item.note}</p>}
               {item.status === "due" && (
