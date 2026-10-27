@@ -2,21 +2,26 @@
 
 from __future__ import annotations
 
-from datetime import time, timezone
+from datetime import time, timezone, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from sqlalchemy import func
 
 from app.api.deps import get_session, require_capability, require_writable_org
-from app.core.constants import Role
+from app.core.constants import MemberStatus, PaymentMethod, PaymentStatus, Role
 from app.core.permissions import Capability
 from app.core.tenancy import TenantContext
 from app.models.membership import OrganizationMember
+from app.models.audit_log import AuditLog
+from app.models.payment import Payment
 from app.models.user import User
 from app.models.base import utcnow
 from app.models.staff import ScheduledShift
+from app.models.staff import Shift
 from app.models.trainer_availability import TrainerAvailability
 from app.schemas.auth import LoginResponse
 from app.schemas.common import Message
@@ -50,6 +55,64 @@ from app.services import idempotency_service
 from app.services import member_trainers_service
 
 router = APIRouter()
+
+
+@router.get("/performance")
+async def staff_performance(
+    days: int = Query(default=30, ge=7, le=365),
+    ctx: TenantContext = Depends(require_capability(Capability.VIEW_REVENUE_ANALYTICS)),
+    session: AsyncSession = Depends(get_session),
+):
+    """Owner/manager view of recorded team activity; metrics are not a quality rating."""
+    from app.core.security import now_utc
+
+    since = now_utc() - timedelta(days=days)
+    staff_rows = (await session.execute(
+        select(OrganizationMember.user_id, User.full_name, User.email)
+        .join(User, User.id == OrganizationMember.user_id)
+        .where(OrganizationMember.organization_id == ctx.org_id,
+               OrganizationMember.role != Role.MEMBER, OrganizationMember.banned.is_(False),
+               OrganizationMember.member_status == MemberStatus.ACTIVE, User.is_active.is_(True))
+        .order_by(User.full_name, User.email)
+    )).all()
+    by_user = {user_id: {"user_id": user_id, "name": name or email,
+                         "completed_tasks": 0, "lead_responses": 0,
+                         "shift_hours": 0.0, "cash_by_currency": {}}
+               for user_id, name, email in staff_rows}
+    activity = (await session.execute(
+        select(AuditLog.actor_user_id, AuditLog.action, func.count())
+        .where(AuditLog.organization_id == ctx.org_id, AuditLog.created_at >= since,
+               AuditLog.actor_user_id.is_not(None),
+               AuditLog.action.in_(["task.completed", "retention.case_closed", "lead.first_contact_logged"]))
+        .group_by(AuditLog.actor_user_id, AuditLog.action)
+    )).all()
+    for user_id, action, count in activity:
+        if user_id in by_user:
+            key = "lead_responses" if action == "lead.first_contact_logged" else "completed_tasks"
+            by_user[user_id][key] += int(count)
+    shifts = (await session.execute(
+        select(OrganizationMember.user_id, func.coalesce(func.sum(Shift.hours), 0))
+        .join(OrganizationMember, OrganizationMember.id == Shift.staff_member_id)
+        .where(Shift.organization_id == ctx.org_id, Shift.checked_in_at >= since,
+               OrganizationMember.organization_id == ctx.org_id)
+        .group_by(OrganizationMember.user_id)
+    )).all()
+    for user_id, hours in shifts:
+        if user_id in by_user:
+            by_user[user_id]["shift_hours"] = round(float(hours or 0), 2)
+    cash = (await session.execute(
+        select(Payment.logged_by, Payment.currency, func.sum(Payment.amount))
+        .where(Payment.organization_id == ctx.org_id, Payment.logged_by.is_not(None),
+               Payment.paid_at >= since, Payment.status == PaymentStatus.SUCCEEDED,
+               Payment.method == PaymentMethod.CASH)
+        .group_by(Payment.logged_by, Payment.currency)
+    )).all()
+    for user_id, currency, amount in cash:
+        if user_id in by_user:
+            by_user[user_id]["cash_by_currency"][currency] = format(
+                Decimal(str(amount or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), ".2f",
+            )
+    return {"days": days, "staff": list(by_user.values())}
 
 
 @router.get("/trainer-matches", response_model=list[TrainerMatchOut])

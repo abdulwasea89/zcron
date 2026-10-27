@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { StaffPerformanceCard } from "@/components/StaffPerformanceCard";
 import { Alert, Badge, Button, Card, EmptyState, Input, Spinner, TableToolbar } from "@/components/ui";
 import { FieldSelect } from "@/components/FieldSelect";
 import { SelectItem } from "@/components/ui/select";
@@ -522,6 +523,7 @@ export default function StaffPage() {
         }
       />
 
+      {currentUser && ["owner", "manager"].includes(currentUser.role) && <StaffPerformanceCard />}
       {currentUser && ["owner", "manager"].includes(currentUser.role) && <Link href="/app/training" className="mb-5 inline-block text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">Manage trainer session credits →</Link>}
 
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
