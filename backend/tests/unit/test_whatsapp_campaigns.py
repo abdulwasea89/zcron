@@ -84,6 +84,7 @@ async def test_phone_campaigns_require_the_correct_channel_consent(monkeypatch, 
 
 @pytest.mark.asyncio
 async def test_email_campaign_never_claims_a_stub_or_rejected_send_succeeded(monkeypatch):
+    from app.integrations.email import EmailSendResult
     member = OrganizationMember(organization_id="org", user_id="user", marketing_email_consent=True)
     campaign = Campaign(organization_id="org", title="Offer", subject="Offer", body="Hello", channel=CampaignChannel.EMAIL)
     delivery = CampaignDelivery(organization_id="org", campaign_id=campaign.id, member_id=member.id)
@@ -92,9 +93,9 @@ async def test_email_campaign_never_claims_a_stub_or_rejected_send_succeeded(mon
         return User(id="user", email="member@example.com", hashed_password="unused", email_verified=True)
 
     async def send(*_args):
-        return False
+        return EmailSendResult(False)
 
-    monkeypatch.setattr(campaign_service, "send_email", send)
+    monkeypatch.setattr(campaign_service, "send_campaign_email", send)
     await campaign_service._deliver_member(SimpleNamespace(get=get), org_id="org", campaign=campaign, member=member, delivery=delivery)
     assert delivery.status == CampaignDeliveryStatus.FAILED
     assert delivery.delivered_at is None

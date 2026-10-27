@@ -204,6 +204,13 @@ async def test_win_back_api_capability(client, db):
 
     r = await client.post("/api/v1/win-back/campaign", headers=headers, json={})
     assert r.status_code == 200, r.text
+    assert r.json()["sent"] == 0
+    member = await db.get(OrganizationMember, member_id)
+    member.marketing_in_app_consent = True
+    db.add(member)
+    await db.commit()
+    r = await client.post("/api/v1/win-back/campaign", headers=headers, json={})
+    assert r.status_code == 200, r.text
     assert r.json()["sent"] == 1
 
     # Front desk cannot access retention surfaces.

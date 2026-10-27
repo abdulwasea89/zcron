@@ -169,13 +169,14 @@ async def test_stage_history_transitions_legacy_and_rollback(db):
     assert len(paged["items"]) == 3
     with pytest.raises(HTTPException):
         await leads_service.stage_history(db, org_id="other", lead_id=lead.id)
+    org_id = org.id
     async with db.begin_nested() as transaction:
         await leads_service.change_stage(db, lead=lead, stage="joined", actor_id=actor.id)
         await db.flush()
         await transaction.rollback()
     await db.refresh(lead)
     assert lead.stage == "new"
-    assert (await leads_service.stage_history(db, org_id=org.id, lead_id=lead.id))["total"] == 8
+    assert (await leads_service.stage_history(db, org_id=org_id, lead_id=lead.id))["total"] == 8
 
 
 @pytest.mark.asyncio

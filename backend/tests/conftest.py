@@ -74,14 +74,24 @@ def reset_process_globals():
     from app.core.rate_limit import rate_limiter
     from app.integrations import email as email_mod
     from app.integrations import push as push_mod
+    from app.integrations.stripe_client import platform_stripe
+    from app.integrations.stripe_connect import connect_stripe
 
     # Force email stub mode so tests never hit a real provider (the dev .env may
     # carry a live Resend key or SMTP creds). Stub mode captures every email in
     # `outbox`, which the helpers read for verification codes.
     saved_key = settings.resend_api_key
     saved_smtp_host = settings.smtp_host
+    saved_stripe_key = settings.stripe_secret_key
+    saved_platform_live = platform_stripe.live
+    saved_connect_live = connect_stripe.live
+    saved_hibp = settings.hibp_enabled
     settings.resend_api_key = None
     settings.smtp_host = ""
+    settings.stripe_secret_key = ""
+    platform_stripe.live = False
+    connect_stripe.live = False
+    settings.hibp_enabled = False
 
     rate_limiter._memory._events.clear()
     email_mod.outbox.clear()
@@ -89,3 +99,7 @@ def reset_process_globals():
     yield
     settings.resend_api_key = saved_key
     settings.smtp_host = saved_smtp_host
+    settings.stripe_secret_key = saved_stripe_key
+    platform_stripe.live = saved_platform_live
+    connect_stripe.live = saved_connect_live
+    settings.hibp_enabled = saved_hibp

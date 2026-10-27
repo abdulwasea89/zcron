@@ -6,7 +6,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 
 | Priority | Feature | Status | Verification | Commit / push | Remaining limitations |
 |---:|---|---|---|---|---|
-| 1 | Member payments and receipts | In progress | 42 focused backend tests, PostgreSQL receipt concurrency and migration checks, two offline queue checks, frontend lint, and TypeScript passed; 17 pending-payment and webhook checks passed for the next change. | `75ba0ee` and `f244301` pushed; provider verification pending commit | Automatic recovery of stale idempotency claims, end-to-end integration, production build, and production providers still need verification. The broader unit run stalled; an isolated production build failed in the temporary environment. |
+| 1 | Member payments and receipts | In progress | Full backend suite: 611 passed, 2 optional PostgreSQL tests skipped; both PostgreSQL checks passed separately. Offline queue checks passed. GitHub passed the frontend production build, type check, and smoke checks for `5285336`. | `75ba0ee`, `f244301`, and `5285336` pushed; backend CI test fixes pending commit | Automatic recovery of stale idempotency claims and live provider behavior remain unverified. The latest GitHub backend run predates the locally verified test fixes. |
 | 2 | Member invoices and receivables | Not started | Not verified | — | To be assessed |
 | 3 | Refunds, credits, and disputes | Not started | Not verified | — | To be assessed |
 | 4 | Audit log | Not started | Not verified | — | To be assessed |

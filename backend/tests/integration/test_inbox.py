@@ -453,7 +453,10 @@ async def test_twilio_voice_missed_call_creates_member_callback_task(client, mon
 
     monkeypatch.setattr(organizations_service.platform_stripe, "live", False)
     monkeypatch.setattr(organizations_service.connect_stripe, "live", False)
-    monkeypatch.setattr(inbox_channels_service, "_verify_twilio", lambda *_args: None)
+    async def verify_twilio(_credentials):
+        return None
+
+    monkeypatch.setattr(inbox_channels_service, "_verify_twilio", verify_twilio)
     monkeypatch.setattr(inbox_channels_service.settings, "inbox_encryption_key", Fernet.generate_key().decode())
     monkeypatch.setattr(inbox_webhooks, "_verify_twilio", lambda *_args: True)
     monkeypatch.setattr(inbox_webhooks.settings, "inbox_public_webhook_base_url", "https://api.example.test")
