@@ -31,6 +31,7 @@ from sqlmodel import select
 
 from app.core.config import settings
 from app.db.session import async_session_maker
+from app.db.rls import set_rls_context
 from app.models.organization import Organization
 
 celery_app = Celery(
@@ -60,9 +61,11 @@ async def _for_each_org(fn: Callable[[object, str], Awaitable[dict]]) -> dict:
 
     results: dict[str, object] = {}
     async with async_session_maker() as session:
+        await set_rls_context(session, bypass=True)
         org_ids = (await session.execute(select(Organization.id))).scalars().all()
         for org_id in org_ids:
             try:
+                await set_rls_context(session, organization_id=org_id)
                 results[org_id] = await fn(session, org_id)
             except Exception as exc:  # one org failing must not stop the sweep
                 results[org_id] = {"error": str(exc)}
@@ -77,6 +80,7 @@ def reconcile_stuck_task() -> dict:
 
     async def _go():
         async with async_session_maker() as session:
+            await set_rls_context(session, bypass=True)
             out = await reconcile_stuck(session)  # all orgs at once
             await session.commit()
             return out
@@ -120,8 +124,10 @@ def enforce_saas_lifecycle_task() -> dict:
 
     async def _go():
         async with async_session_maker() as session:
+            await set_rls_context(session, bypass=True)
             orgs = (await session.execute(select(Organization))).scalars().all()
             for org in orgs:
+                await set_rls_context(session, organization_id=org.id)
                 await enforce_lifecycle(session, org=org)
             await session.commit()
             return {"orgs": len(orgs)}

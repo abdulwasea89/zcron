@@ -45,6 +45,8 @@ def do_run_migrations(connection) -> None:
         render_as_batch=settings.is_sqlite,
     )
     with context.begin_transaction():
+        if connection.dialect.name == "postgresql":
+            connection.exec_driver_sql("SELECT set_config('app.rls_bypass', 'on', true)")
         context.run_migrations()
 
 

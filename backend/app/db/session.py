@@ -15,6 +15,7 @@ from sqlmodel import SQLModel
 from starlette.requests import Request
 
 from app.core.config import settings
+from app.db.rls import set_rls_context
 
 # SQLite needs check_same_thread disabled for async usage. Cloud Postgres
 # (Neon/Supabase) requires TLS by default; local CI Postgres can opt out.
@@ -352,6 +353,21 @@ async def get_session(request: Request = None) -> AsyncGenerator[AsyncSession, N
 
     async with async_session_maker() as session:
         try:
+            if request is not None:
+                from app.core.security import ACCESS, safe_decode
+
+                authorization = request.headers.get("authorization", "")
+                payload = safe_decode(authorization[7:]) if authorization.lower().startswith("bearer ") else None
+                if payload and payload.get("type") == ACCESS:
+                    await set_rls_context(
+                        session,
+                        organization_id=payload.get("org_id"),
+                        user_id=payload.get("sub"),
+                    )
+                else:
+                    # Public flows and token refresh use separate proof and apply
+                    # their own validation before reading tenant data.
+                    await set_rls_context(session, bypass=True)
             yield session
             from app.services.data_access_service import record_read_access
 

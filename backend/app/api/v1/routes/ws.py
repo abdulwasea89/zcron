@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from app.core.constants import MemberStatus
 from app.core.security import WEBSOCKET, now_utc, safe_decode
+from app.db.rls import set_rls_context
 from app.db.session import async_session_maker
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
@@ -33,6 +34,7 @@ async def _authorize(token: str) -> tuple[str, str, str] | None:
     if not user_id or not org_id or not session_id:
         return None
     async with async_session_maker() as session:
+        await set_rls_context(session, organization_id=org_id, user_id=user_id)
         membership = (
             await session.execute(
                 select(OrganizationMember).where(
@@ -64,6 +66,7 @@ async def _authorize(token: str) -> tuple[str, str, str] | None:
 
 async def _session_is_active(session_id: str, user_id: str, org_id: str) -> bool:
     async with async_session_maker() as session:
+        await set_rls_context(session, organization_id=org_id, user_id=user_id)
         active = await session.execute(
             select(AuthSession.id)
             .join(User, User.id == AuthSession.user_id)
