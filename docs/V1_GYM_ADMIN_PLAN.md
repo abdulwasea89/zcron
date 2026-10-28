@@ -9,7 +9,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 | 1 | Member payments and receipts | Complete | Full backend suite: 617 passed, 2 optional PostgreSQL tests skipped. Focused payment verification/recovery tests: 9 passed. Ruff passed and Alembic reports `p1q2r3s4t5u6` as the single head. GitHub Production checks passed on Python 3.12, Python 3.13, and frontend for `2aa7b5c`. | `75ba0ee`, `f244301`, `5285336`, `d2f260c`, `edc271a`, and `2aa7b5c` pushed | Live Stripe credentials and webhook delivery are not exercised. Stale claims without a durable payment/provider reference still require manual review. |
 | 2 | Member invoices and receivables | Complete | Invoice/refund unit tests: 14 passed. Ruff, invoice-page ESLint, TypeScript, and production build passed locally. GitHub Production checks passed on Python 3.12, Python 3.13, and frontend for `7753f27`. | `7753f27` pushed | Live email-provider delivery is not verified. |
 | 3 | Refunds, credits, and disputes | Complete | 35 focused backend integration/unit tests passed; Ruff, payment/member-sheet ESLint, TypeScript, and production build passed. GitHub Production checks passed on Python 3.12, Python 3.13, and frontend for `312b8be`. | `312b8be` pushed | Live Stripe refunds and dispute submission are not verified. |
-| 4 | Audit log | Not started | Not verified | — | To be assessed |
+| 4 | Audit log | Complete | 47 focused audit, sensitive-access, finance-export, member-detail, and privacy-export tests passed; AuditWorkspace ESLint passed. GitHub Production checks passed on Python 3.12, Python 3.13, and frontend for `312b8be`. | Verified on `main`; no feature-code change needed | Hash-chain verification compares entries to the database-stored chain head; a privileged database operator could rewrite both. No external WORM anchor is included in Version 1. |
 | 5 | Data requests and exports | Not started | Not verified | — | To be assessed |
 | 6 | Gym's software subscription | Not started | Not verified | — | To be assessed |
 | 7 | Member import | Not started | Not verified | — | To be assessed |
@@ -46,6 +46,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 - Priority 2: Voiding a gym member invoice now requires a nonblank reason, captured from the admin page and retained in the invoice audit event.
 - Priority 3: The Payments page now continues to offer refunds after a partial refund, so admins can refund the remaining eligible balance.
 - Priority 3: Owner/manager member details now show tenant-scoped credit balances and the 50 most recent ledger entries; opening the view is audit logged.
+- Priority 4: The existing audit workflow records financial changes, exports, and sensitive profile/receipt/payroll reads. Payroll details are redacted from manager-visible audit events; admins can search and verify the organization hash chain. Focused audit and privacy tests passed without a new feature-code change.
 
 ## Verification and scope
 
