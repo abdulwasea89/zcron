@@ -17,6 +17,7 @@ from app.models.attendance import Attendance
 from app.models.inbox import InboxConversation, InboxMessage
 from app.models.membership import OrganizationMember
 from app.models.payment import Payment
+from app.models.member_credit import MemberCreditAccount, MemberCreditEntry
 from app.models.subscription import Subscription
 from tests.helpers import OWNER_PROFILE, latest_code_for
 from sqlmodel import select
@@ -143,6 +144,41 @@ async def test_cash_payment_appears_in_history(client):
     methods = {p["method"] for p in body["payments"]}
     assert methods == {"card", "cash"}
     assert len(body["payments"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_admin_can_review_member_credit_balance_and_recent_entries(client, db):
+    org_code, plan_id, headers, org_id = await _provision(client)
+    await _signup_and_pay(client, org_code, plan_id, "credits@member.com")
+    member_id = await _member_id(client, headers, "credits@member.com")
+    account = MemberCreditAccount(
+        organization_id=org_id, member_id=member_id, currency="USD", balance_minor=4250,
+    )
+    db.add(account)
+    await db.flush()
+    db.add(MemberCreditEntry(
+        account_id=account.id, reference="member-detail-credit", amount_minor=4250,
+        description="Unused membership value",
+    ))
+    await db.commit()
+
+    response = await client.get(f"/api/v1/members/{member_id}/credits", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["currency"] == "USD"
+    assert body[0]["available_credit"] == 4250
+    assert len(body[0]["transactions"]) == 1
+    assert body[0]["transactions"][0]["amount"] == 4250
+    assert body[0]["transactions"][0]["description"] == "Unused membership value"
+    assert (await client.get("/api/v1/members/does-not-exist/credits", headers=headers)).status_code == 404
+
+    audit = (await db.execute(select(AuditLog).where(
+        AuditLog.organization_id == org_id,
+        AuditLog.action == "member.credits_viewed",
+        AuditLog.entity_id == member_id,
+    ))).scalar_one()
+    assert audit.actor_user_id
 
 
 @pytest.mark.asyncio

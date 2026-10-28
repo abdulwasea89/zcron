@@ -102,7 +102,7 @@ export default function PaymentsPage() {
   // managed in billing settings, not refunded on this screen.
   const refundable = (p: PaymentOut) =>
     p.kind === "member_fee" &&
-    p.status === "succeeded" &&
+    ["succeeded", "partially_refunded"].includes(p.status) &&
     p.method === "card" &&
     p.refunded_amount < p.amount;
 

@@ -33,6 +33,12 @@ import { money, statusTone, titleCase } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { AttendanceOut, MemberDetailOut, MemberDirectoryItem, PendingPaymentItem } from "@/lib/types";
 
+type MemberCreditAccount = {
+  currency: string;
+  available_credit: number;
+  transactions: { id: string; amount: number; description: string; created_at: string }[];
+};
+
 function roleBadge(role: string) {
   switch (role) {
     case "owner":
@@ -182,7 +188,9 @@ export function MemberDetailSheet({
   const [visits, setVisits] = useState<AttendanceOut[] | null>(null);
   const [activity, setActivity] = useState<MemberActivityItem[] | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
-  const [detailSheet, setDetailSheet] = useState<"profile" | "visits" | "pending" | "payments" | "activity" | null>(null);
+  const [detailSheet, setDetailSheet] = useState<"profile" | "visits" | "pending" | "payments" | "credits" | "activity" | null>(null);
+  const [credits, setCredits] = useState<MemberCreditAccount[] | null>(null);
+  const [creditsError, setCreditsError] = useState("");
 
   // Assign trainer sheet
   const [assignOpen, setAssignOpen] = useState(false);
@@ -239,6 +247,17 @@ export function MemberDetailSheet({
     } catch (e) {
       setAssignError((e as ApiError).message);
       setTrainerOptions([]);
+    }
+  }
+
+  async function openCredits(id: string) {
+    setDetailSheet("credits");
+    setCredits(null);
+    setCreditsError("");
+    try {
+      setCredits(await api.get<MemberCreditAccount[]>(`/members/${id}/credits`));
+    } catch (e) {
+      setCreditsError((e as ApiError).message);
     }
   }
 
@@ -362,6 +381,7 @@ export function MemberDetailSheet({
                   <MemberDetailLink title="Visits" detail={visits === null ? "Loading activity…" : `${visitCount} recorded`} onClick={() => setDetailSheet("visits")} />
                   <MemberDetailLink title="Pending payments" detail={`${data.pending_payments.length} to review`} onClick={() => setDetailSheet("pending")} />
                   <MemberDetailLink title="Payment history" detail={`${data.payments.length} recorded · ${money(collected, currency)} collected`} onClick={() => setDetailSheet("payments")} />
+                  {canManage && <MemberDetailLink title="Member credits" detail="Balance and recent credit entries" onClick={() => void openCredits(m.member_id)} />}
                   <MemberDetailLink title="Member profile" detail="Goals, contact and private notes" onClick={() => setDetailSheet("profile")} />
                 </div>
 
@@ -484,6 +504,41 @@ export function MemberDetailSheet({
                 </table>
               </div>
             )}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={detailSheet === "credits"} onOpenChange={(open) => { if (!open) setDetailSheet(null); }}>
+        <SheetContent style={{ "--sheet-max-w": "720px" } as React.CSSProperties}>
+          <SheetHeader>
+            <SheetTitle>Member credits</SheetTitle>
+            <SheetDescription>{name} · account balances and recent ledger entries</SheetDescription>
+          </SheetHeader>
+          <SheetBody className="space-y-5">
+            {creditsError && <Alert>{creditsError}</Alert>}
+            {!credits && !creditsError && <Spinner label="Loading credit balances…" />}
+            {credits && credits.length === 0 && <EmptyState title="No credit balance" hint="This member has no credit accounts yet." />}
+            {credits?.map((account) => <section key={account.currency} className="border border-foreground/[0.1]">
+              <div className="flex items-center justify-between gap-3 border-b border-foreground/[0.08] px-4 py-3">
+                <span className="text-[12px] text-muted-foreground">Available {account.currency} credit</span>
+                <strong className="text-[15px] tabular-nums">{money(account.available_credit / 100, account.currency)}</strong>
+              </div>
+              {account.transactions.length === 0 ? <p className="px-4 py-4 text-[12px] text-muted-foreground">No credit entries recorded.</p> : <div className="overflow-x-auto">
+                <table className={TABLE}>
+                  <thead><tr className={THEAD_ROW}>
+                    <th className={TH + " " + CELL_FIRST}>Date</th>
+                    <th className={TH + " " + CELL}>Description</th>
+                    <th className={TH + " " + CELL_LAST + " text-right"}>Change</th>
+                  </tr></thead>
+                  <tbody>{account.transactions.map((entry) => <tr key={entry.id} className={TR}>
+                    <td className={TD + " " + CELL_FIRST + " py-2.5 whitespace-nowrap"}>{new Date(entry.created_at).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}</td>
+                    <td className={TD + " " + CELL + " py-2.5"}>{entry.description}</td>
+                    <td className={TD + " " + CELL_LAST + " py-2.5 text-right tabular-nums"}>{money(entry.amount / 100, account.currency)}</td>
+                  </tr>)}</tbody>
+                </table>
+                <p className="px-4 py-2 text-[11px] text-muted-foreground">Showing the 50 most recent entries.</p>
+              </div>}
+            </section>)}
           </SheetBody>
         </SheetContent>
       </Sheet>

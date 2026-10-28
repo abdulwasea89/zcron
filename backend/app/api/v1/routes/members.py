@@ -47,6 +47,7 @@ from app.services.audit_service import record_audit
 from app.services import members_service as members
 from app.services import family_service as families
 from app.services import membership_changes_service as member_changes
+from app.services import member_vault_service as member_vault
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
 from app.models.user import User
@@ -56,6 +57,28 @@ from app.models.inbox import InboxConversation, InboxMessage
 from app.models.payment import Payment
 
 router = APIRouter()
+
+
+@router.get("/{member_id}/credits")
+async def member_credit_summary(
+    member_id: str,
+    request: Request,
+    ctx: TenantContext = Depends(require_capability(Capability.PROCESS_REFUNDS)),
+    session: AsyncSession = Depends(get_session),
+):
+    member = (await session.execute(select(OrganizationMember).where(
+        OrganizationMember.id == member_id,
+        OrganizationMember.organization_id == ctx.org_id,
+        OrganizationMember.banned.is_(False),
+    ))).scalar_one_or_none()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    await record_audit(
+        session, action="member.credits_viewed", organization_id=ctx.org_id,
+        actor_user_id=ctx.user_id, entity_type="member", entity_id=member.id,
+        ip_address=get_client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
+    return await member_vault.summary(session, ctx.org_id, member.id)
 
 
 @router.get("/change-requests", response_model=list[MembershipChangeQueueOut])
