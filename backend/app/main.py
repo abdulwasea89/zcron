@@ -18,8 +18,13 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import api_router
 from app.agent.checkpointer import close_checkpointer
 from app.core.config import settings
+from app.core.console_logging import configure_console_logging
 from app.db.session import engine, init_db
+from app.realtime.manager import manager as realtime_manager
 
+configure_console_logging()
+
+logger = logging.getLogger("acron")
 
 
 @asynccontextmanager    
@@ -27,10 +32,12 @@ async def lifespan(app: FastAPI):
     # Create tables for local/dev SQLite so the app is runnable immediately.
     if settings.is_sqlite:
         await init_db()
+    await realtime_manager.start()
     yield
     # Release the assistant's Postgres checkpoint pool (no-op for the memory
     # saver) before the DB engine itself is disposed.
     await close_checkpointer()
+    await realtime_manager.stop()
     await engine.dispose()
 
 
@@ -67,7 +74,7 @@ async def root() -> dict[str, str]:
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Return clean JSON for unhandled errors — traceback goes to terminal only."""
-    logging.exception("Unhandled exception")
+    logger.exception("%s %s failed", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},
@@ -77,6 +84,3 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, str]:
     return {"status": "ok", "app": settings.app_name, "env": settings.app_env}
-from app.realtime.manager import manager as realtime_manager
-    await realtime_manager.start()
-    await realtime_manager.stop()
