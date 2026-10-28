@@ -38,8 +38,8 @@ async def test_current_membership_overrides_old_owner_token(monkeypatch, inactiv
                                  member_status=MemberStatus.BANNED if banned else MemberStatus.ACTIVE)
 
     async def get(model, key):
-        return {User: SimpleNamespace(is_active=not inactive),
-                Organization: SimpleNamespace(onboarding_complete=True),
+        return {User: SimpleNamespace(is_active=not inactive, mfa_enabled=True),
+                Organization: SimpleNamespace(onboarding_complete=True, mfa_required=False),
                 AuthSession: SimpleNamespace(revoked=False, user_id='other' if wrong_session else 'user',
                                              organization_id='org')}[model]
 
