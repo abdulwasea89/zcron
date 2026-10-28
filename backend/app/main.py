@@ -77,3 +77,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, str]:
     return {"status": "ok", "app": settings.app_name, "env": settings.app_env}
+from app.realtime.manager import manager as realtime_manager
+    await realtime_manager.start()
+    await realtime_manager.stop()
