@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
 import { CampaignPerformance } from "@/components/CampaignPerformance";
 import { PageHeader } from "@/components/PageHeader";
-import { Alert, Badge, Button, Input, Select, Spinner } from "@/components/ui";
+import { Alert, Badge, Button, Input, Spinner } from "@/components/ui";
+import { Select as RadixSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ApiError, api } from "@/lib/api";
 
 type Campaign = { estimated_unit_cost: string | null; cost_currency: string; whatsapp_template_sid: string | null; whatsapp_variables: Record<string, string>; member_tag: string | null; id: string; title: string; subject: string; body: string; channel: string; status: string; member_status: string | null; plan_id: string | null; min_days_since_last_visit: number | null; scheduled_at: string | null; sent_at: string | null; send_limit: number; sent_count: number; deliveries: number };
@@ -71,18 +74,37 @@ export default function CampaignsPage() {
   }, [selectedId]);
 
   async function create(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy(true);
+    event.preventDefault();
+    const parsed = z.object({
+      title: z.string().trim().min(1, "Campaign name is required.").max(120),
+      subject: z.string().trim().min(1, "Message title is required.").max(200),
+      body: z.string().trim().min(1, "Message is required.").max(2000),
+      channel: z.enum(["in_app", "email", "both", "sms", "whatsapp"]),
+      status: z.enum(["", "active", "grace", "frozen", "active,grace"]),
+      costCurrency: z.string().regex(/^[A-Z]{3}$/),
+      unitCost: z.union([z.literal(""), z.coerce.number().nonnegative()]),
+      inactiveDays: z.union([z.literal(""), z.coerce.number().int().min(1).max(3650)]),
+      scheduleAt: z.string().refine((value) => !value || Number.isFinite(new Date(value).getTime()), "Enter a valid schedule time."),
+      memberTag: z.string().max(80),
+      templateSid: z.string().max(64).refine((value) => channel !== "whatsapp" || value.trim().length > 0, "WhatsApp campaigns require an approved template."),
+      templateVariables: z.string().refine((value) => {
+        try { return JSON.parse(value) !== null && typeof JSON.parse(value) === "object" && !Array.isArray(JSON.parse(value)); }
+        catch { return false; }
+      }, "Template variables must be a valid JSON object."),
+    }).safeParse({ title, subject, body, channel, status, costCurrency, unitCost, inactiveDays, scheduleAt, memberTag, templateSid, templateVariables });
+    if (!parsed.success) { toast.error(parsed.error.issues[0]?.message ?? "Check the campaign details."); return; }
+    setBusy(true);
     try {
       const schedule = scheduleAt ? new Date(scheduleAt) : null;
       if (schedule && schedule <= new Date()) throw new Error("Choose a future schedule time.");
       const created = await api.post<CampaignOut>("/campaigns", {
-        title: title.trim(), subject: subject.trim(), body: body.trim(), channel,
-        member_status: status || null, min_days_since_last_visit: inactiveDays ? Number(inactiveDays) : null,
+        title: parsed.data.title, subject: parsed.data.subject, body: parsed.data.body, channel: parsed.data.channel,
+        member_status: parsed.data.status || null, min_days_since_last_visit: parsed.data.inactiveDays ? Number(parsed.data.inactiveDays) : null,
         scheduled_at: schedule?.toISOString() ?? null, send_limit: 200,
-        whatsapp_template_sid: channel === "whatsapp" ? templateSid.trim() : null,
-        whatsapp_variables: channel === "whatsapp" ? JSON.parse(templateVariables) : {},
-        member_tag: memberTag.trim() || null,
-        estimated_unit_cost: unitCost || null, cost_currency: costCurrency.trim().toUpperCase(),
+        whatsapp_template_sid: parsed.data.channel === "whatsapp" ? parsed.data.templateSid.trim() : null,
+        whatsapp_variables: parsed.data.channel === "whatsapp" ? JSON.parse(parsed.data.templateVariables) : {},
+        member_tag: parsed.data.memberTag.trim() || null,
+        estimated_unit_cost: parsed.data.unitCost === "" ? null : parsed.data.unitCost, cost_currency: parsed.data.costCurrency.trim().toUpperCase(),
       });
       setComposer(false); setTitle(""); setSubject(""); setBody(""); setStatus(""); setInactiveDays(""); setScheduleAt(""); setUnitCost(""); setMemberTag(""); setTemplateSid(""); setTemplateVariables("{}");
       await loadRows(); setSelectedId(created.id); toast.success(created.scheduled_at ? "Campaign scheduled." : "Campaign draft saved.");
@@ -114,14 +136,13 @@ export default function CampaignsPage() {
     finally { setBusy(false); }
   }
 
-  return <>
-    <PageHeader title="Campaigns" subtitle="Send consent-aware updates to a member segment and review delivery outcomes." action={<Button onClick={() => setComposer((open) => !open)}>{composer ? "Close composer" : "New campaign"}</Button>} />
-    {composer && <form onSubmit={create} className="mb-6 border border-[var(--border)] bg-card p-4 sm:p-5">
-      <h2 className="text-sm font-semibold text-foreground">Create a campaign</h2>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">Saving creates a draft. Nothing is sent until you preview the audience and confirm. Members without consent for the chosen channel are excluded.</p>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+  return <div className="campaigns-page">
+    <PageHeader title="Campaigns" subtitle="Send consent-aware updates to a member segment and review delivery outcomes." action={<Button onClick={() => setComposer(true)}>New campaign</Button>} />
+    <Sheet open={composer} onOpenChange={setComposer}><SheetContent className="[--sheet-max-w:640px]"><SheetHeader><SheetTitle>Create a campaign</SheetTitle><SheetDescription>Saving creates a draft. Nothing is sent until you preview the audience and confirm. Members without consent for the chosen channel are excluded.</SheetDescription></SheetHeader><SheetBody>
+    <form onSubmit={create} className="flex flex-col gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Input label="Campaign name" required maxLength={120} value={title} onChange={(e) => setTitle(e.target.value)} />
-        <Select label="Channel" value={channel} onChange={(e) => setChannel(e.target.value)}><option value="in_app">In-app</option><option value="email">Email</option><option value="both">Email + in-app</option><option value="sms">SMS (consenting members only)</option><option value="whatsapp">WhatsApp (approved template)</option></Select>
+        <label className="block text-xs text-muted-foreground">Channel<RadixSelect value={channel} onValueChange={(value) => setChannel(value as typeof channel)}><SelectTrigger className="mt-1.5 h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="in_app">In-app</SelectItem><SelectItem value="email">Email</SelectItem><SelectItem value="both">Email + in-app</SelectItem><SelectItem value="sms">SMS (consenting members only)</SelectItem><SelectItem value="whatsapp">WhatsApp (approved template)</SelectItem></SelectContent></RadixSelect></label>
         {channel === "whatsapp" && <>
           <Input label="Approved Twilio Content SID" required pattern="HX[0-9a-fA-F]{32}" value={templateSid} onChange={(event) => setTemplateSid(event.target.value)} placeholder="HX…" />
           <Input label='Template variables (JSON, for example {"1":"Gym offer"})' required value={templateVariables} onChange={(event) => setTemplateVariables(event.target.value)} />
@@ -130,14 +151,14 @@ export default function CampaignsPage() {
         <Input label="Estimated cost per accepted recipient (optional)" type="number" min="0" step="0.000001" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} />
         <Input label="Provider billing currency" required pattern="[A-Z]{3}" maxLength={3} value={costCurrency} onChange={(event) => setCostCurrency(event.target.value.toUpperCase())} />
         <Input label="Member tag (optional)" maxLength={32} value={memberTag} onChange={(event) => setMemberTag(event.target.value)} placeholder="morning" />
-        <Select label="Member status" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Active, grace, or frozen</option><option value="active">Active</option><option value="grace">Grace</option><option value="frozen">Frozen</option><option value="active,grace">Active or grace</option></Select>
+        <label className="block text-xs text-muted-foreground">Member status<RadixSelect value={status || "__all__"} onValueChange={(value) => setStatus(value === "__all__" ? "" : value)}><SelectTrigger className="mt-1.5 h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__all__">Active, grace, or frozen</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="grace">Grace</SelectItem><SelectItem value="frozen">Frozen</SelectItem><SelectItem value="active,grace">Active or grace</SelectItem></SelectContent></RadixSelect></label>
         <Input label="Inactive for at least (days)" type="number" min={1} max={3650} value={inactiveDays} onChange={(e) => setInactiveDays(e.target.value)} />
         <Input label="Message title / email subject" required maxLength={200} value={subject} onChange={(e) => setSubject(e.target.value)} />
         <Input label="Schedule for (optional)" type="datetime-local" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} />
         <label className="text-xs font-medium text-muted-foreground sm:col-span-2">{channel === "whatsapp" ? "Internal campaign description" : "Message"}<textarea required maxLength={2000} rows={4} value={body} onChange={(e) => setBody(e.target.value)} className="mt-1.5 block w-full resize-y rounded-md border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" /></label>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Maximum 200 recipients per run · consent checked at delivery time.</p><Button type="submit" loading={busy}>Save campaign</Button></div>
-    </form>}
+      <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Maximum 200 recipients per run · consent checked at delivery time.</p><Button type="submit" loading={busy}>Save campaign</Button></div>
+    </form></SheetBody></SheetContent></Sheet>
     {error && <div className="mb-4"><Alert tone="danger">{error}</Alert><Button variant="secondary" className="mt-2" onClick={() => void refresh()}>Try again</Button></div>}
     {loading ? <div className="flex justify-center border border-[var(--border)] bg-card p-10"><Spinner label="Loading campaigns…" /></div> : <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       <section className="border border-[var(--border)] bg-card"><header className="border-b border-[var(--border)] px-4 py-3"><h2 className="text-sm font-semibold text-foreground">Campaign history</h2><p className="mt-1 text-xs text-muted-foreground">{rows.length} saved</p></header>
@@ -155,5 +176,5 @@ export default function CampaignsPage() {
       </>}</section>
     </div>}
     <AlertDialog open={confirmSend} onOpenChange={setConfirmSend}><AlertDialogContent><AlertDialogTitle>Send this campaign now?</AlertDialogTitle><AlertDialogDescription>This delivers “{detail?.subject}” to up to {Math.min(preview?.count ?? 0, detail?.send_limit ?? 200)} eligible members. Channel consent is checked again at delivery time.{["sms", "whatsapp"].includes(detail?.channel ?? "") ? " Your Twilio account may charge for each accepted message." : ""}</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel asChild><Button variant="secondary">Review again</Button></AlertDialogCancel><AlertDialogAction asChild><Button loading={busy} onClick={(event) => { event.preventDefault(); void send(); }}>Send campaign</Button></AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-  </>;
+  </div>;
 }

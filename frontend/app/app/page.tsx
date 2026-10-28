@@ -354,7 +354,7 @@ export default async function DashboardPage() {
           <p className="mt-2 text-sm text-muted-foreground">{today}<span className="mx-2 text-border-strong">/</span>{org?.name ?? "Workspace"}</p>
         </div>
         <nav aria-label="Quick actions" className="flex flex-wrap gap-2">
-          {quickActions.slice(0, 2).map((action, index) => (
+          {quickActions.slice(0, 1).map((action, index) => (
             <WorkspaceAction key={action.href} href={action.href} primary={index === 0} className={index === 0 ? PRIMARY_ACTION_CLASS : "inline-flex h-8 items-center gap-2 border border-border bg-background px-3 text-xs font-medium text-foreground no-underline transition-colors hover:bg-foreground/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"}>
               {index === 0 ? <span aria-hidden="true" className="text-base leading-none">+</span> : <Icon d={action.icon} className="h-4 w-4 text-muted-foreground" />}
               {action.label}
@@ -447,22 +447,38 @@ export default async function DashboardPage() {
           </div>
           <Link href="/app/analytics" className="shrink-0 text-xs font-medium text-brand no-underline hover:underline">All analytics <span aria-hidden="true">↗</span></Link>
         </div>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-px overflow-hidden border border-border bg-border sm:grid-cols-4">
           {stats.map((stat) => (
-            <Link key={stat.label} href={stat.href} className="group min-w-0 border border-border bg-background p-4 text-foreground no-underline transition-colors hover:border-brand/40 hover:bg-foreground/[0.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
-              <div className="flex items-center justify-between">
-                <span className={`flex h-9 w-9 items-center justify-center ${stat.accent ? "bg-brand/10 text-brand" : "bg-foreground/[0.04] text-muted-foreground"}`}><Icon d={stat.icon} className="h-[18px] w-[18px]" /></span>
-                <span aria-hidden="true" className="text-sm text-muted-foreground transition-transform group-hover:translate-x-0.5">↗</span>
+            <Link key={stat.label} href={stat.href} className="group min-w-0 bg-background px-4 py-3 text-foreground no-underline transition-colors hover:bg-foreground/[0.035] focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</span>
+                <Icon d={stat.icon} className={`h-4 w-4 shrink-0 ${stat.accent ? "text-brand" : "text-muted-foreground"}`} />
               </div>
-              <span className="mt-4 block truncate text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</span>
-              <span className={`mt-1 block truncate text-[25px] font-semibold tracking-tight tabular-nums ${stat.accent ? "text-brand" : "text-foreground"}`}>{stat.value}</span>
+              <span className={`mt-1 block truncate text-xl font-semibold tracking-tight tabular-nums ${stat.accent ? "text-brand" : "text-foreground"}`}>{stat.value}</span>
             </Link>
           ))}
         </div>
       </section>}
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <div className="min-w-0 space-y-5">
+      {canViewBusinessMetrics && <section className="mb-5 min-w-0 border border-border bg-background" aria-labelledby="payments-title">
+        <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
+          <div>
+            <p className="mono-label text-[10px] text-muted-foreground">LAST 14 DAYS</p>
+            <h2 id="payments-title" className="mt-1 text-base font-semibold tracking-tight">Payment activity</h2>
+          </div>
+          <Link href="/app/payments" className="shrink-0 text-xs font-medium text-brand no-underline hover:underline">View payments <span aria-hidden="true">↗</span></Link>
+        </div>
+        <div className="min-w-0 overflow-hidden">
+          {trend === null ? (
+            <p className="px-5 py-8 text-sm text-muted-foreground">Payment activity is temporarily unavailable.</p>
+          ) : (
+            <PaymentTrendChart data={trend} />
+          )}
+        </div>
+      </section>}
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <div className="min-w-0 space-y-4">
           {(tasks !== null || attention.length > 0 || canManageWorkspace) && <section className="min-w-0 border border-border bg-background" aria-labelledby="priorities-title">
             <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
               <div>
@@ -475,25 +491,9 @@ export default async function DashboardPage() {
             <DashboardTaskList tasks={priorityTasks} attention={attention} storageKey={`acron-dashboard:${org?.id ?? "unknown"}`} />
           </section>}
 
-          {canViewBusinessMetrics && <section className="min-w-0 border border-border bg-background" aria-labelledby="payments-title">
-            <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
-              <div>
-                <p className="mono-label text-[10px] text-muted-foreground">LAST 14 DAYS</p>
-                <h2 id="payments-title" className="mt-1 text-base font-semibold tracking-tight">Payment activity</h2>
-              </div>
-              <Link href="/app/payments" className="shrink-0 text-xs font-medium text-brand no-underline hover:underline">View payments <span aria-hidden="true">↗</span></Link>
-            </div>
-            <div className="min-w-0 overflow-hidden">
-              {trend === null ? (
-                <p className="px-5 py-8 text-sm text-muted-foreground">Payment activity is temporarily unavailable.</p>
-              ) : (
-                <PaymentTrendChart data={trend} />
-              )}
-            </div>
-          </section>}
         </div>
 
-        <aside className="min-w-0 space-y-5" aria-label="Common tasks and workspace setup">
+        <aside className="min-w-0 space-y-4" aria-label="Common tasks and workspace setup">
           {quickActions.length > 1 && <nav className="border border-border bg-background" aria-label="Common tasks">
             <div className="border-b border-border px-4 py-3">
               <p className="mono-label text-[10px] text-muted-foreground">SHORTCUTS</p>
@@ -509,43 +509,39 @@ export default async function DashboardPage() {
             </div>
           </nav>}
 
-          {canManageWorkspace && <section className="border border-border bg-background" aria-labelledby="setup-title">
-            <div className="border-b border-border px-4 py-3">
-              <p className="mono-label text-[10px] text-muted-foreground">GET STARTED</p>
-              <div className="mt-1 flex items-center justify-between gap-3">
-                <h2 id="setup-title" className="text-sm font-semibold">Workspace setup</h2>
-                {checklist !== null && <span className="text-xs tabular-nums text-muted-foreground">{doneSteps}/{totalSteps}</span>}
-              </div>
-            </div>
-            <div className="p-4">
-              {checklist === null ? (
-                <p className="text-xs leading-5 text-muted-foreground">Setup status is temporarily unavailable.</p>
-              ) : nextStep ? (
-                <>
-                  <p className="text-xs text-muted-foreground">Next step</p>
-                  <p className="mt-1 text-sm font-medium">{nextStep.label}</p>
-                  <div className="my-3"><ProgressBar value={setupPct} /></div>
-                  <WorkspaceAction href={STEP_HREF[nextStep.key] ?? "/app/settings"} className="inline-flex min-h-8 items-center text-xs font-semibold text-brand no-underline hover:underline">Continue setup <span aria-hidden="true" className="ml-1">→</span></WorkspaceAction>
-                </>
-              ) : (
-                <p className="text-xs leading-5 text-muted-foreground">{allSetCopy}</p>
-              )}
-              {checklistItems.length > 0 && <details className="mt-4 border-t border-border pt-3 text-xs">
-                <summary className="cursor-pointer font-medium text-muted-foreground">View all setup steps</summary>
-                <ul className="mt-3 grid list-none gap-2.5 p-0">
-                  {checklistItems.map((item) => (
-                    <li key={item.key} className="flex items-center gap-2">
-                      <span className={item.done ? "text-success" : "text-muted-foreground"} aria-label={item.done ? "Complete" : "Incomplete"}>{item.done ? "✓" : "○"}</span>
-                      <span className="min-w-0 flex-1">{item.label}</span>
-                      {!item.done && <WorkspaceAction href={STEP_HREF[item.key] ?? "/app/settings"} label={"Open: " + item.label} className="text-brand no-underline hover:underline">Open</WorkspaceAction>}
-                    </li>
-                  ))}
-                </ul>
-              </details>}
-            </div>
-          </section>}
+
         </aside>
       </div>
+
+      {canManageWorkspace && <section className="mt-4 border border-border bg-background" aria-labelledby="setup-title">
+        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h2 id="setup-title" className="text-sm font-semibold">Workspace setup</h2>
+              {checklist !== null && <span className="text-xs tabular-nums text-muted-foreground">{doneSteps}/{totalSteps}</span>}
+            </div>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {checklist === null ? "Setup status is temporarily unavailable." : nextStep ? `Next: ${nextStep.label}` : allSetCopy}
+            </p>
+          </div>
+          {checklist !== null && nextStep && <div className="w-full sm:w-28"><ProgressBar value={setupPct} /></div>}
+          {checklist !== null && nextStep && <WorkspaceAction href={STEP_HREF[nextStep.key] ?? "/app/settings"} className="inline-flex min-h-8 shrink-0 items-center text-xs font-semibold text-brand no-underline hover:underline">Continue setup <span aria-hidden="true" className="ml-1">→</span></WorkspaceAction>}
+        </div>
+        {checklistItems.length > 0 && <details className="border-t border-border px-4 py-2.5 text-xs">
+          <summary className="cursor-pointer font-medium text-muted-foreground">View all setup steps</summary>
+          <ul className="mt-3 grid list-none gap-2.5 p-0 sm:grid-cols-2">
+            {checklistItems.map((item) => (
+              <li key={item.key} className="flex items-center gap-2">
+                <span className={item.done ? "text-success" : "text-muted-foreground"} aria-label={item.done ? "Complete" : "Incomplete"}>{item.done ? "✓" : "○"}</span>
+                <span className="min-w-0 flex-1">{item.label}</span>
+                {!item.done && <WorkspaceAction href={STEP_HREF[item.key] ?? "/app/settings"} label={"Open: " + item.label} className="text-brand no-underline hover:underline">Open</WorkspaceAction>}
+              </li>
+            ))}
+          </ul>
+        </details>}
+      </section>}
+
+
 
       {canManageWorkspace && <section className="mt-8 border border-border" aria-labelledby="subscription-title">
         <div className="flex items-center gap-3 border-b border-border px-5 py-4">

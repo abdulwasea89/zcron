@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { z } from "zod";
+import { Select as RadixSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { ListToolbar } from "@/components/ListToolbar";
@@ -36,9 +39,6 @@ const KIND_TONE: Record<string, "info" | "success" | "warning" | "neutral"> = {
 function clock(iso: string): string {
   return new Date(iso + "Z").toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
-
-const selectCls =
-  "h-9 w-full cursor-pointer rounded-md border border-foreground/20 bg-card px-2.5 text-[13px] text-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20";
 
 export default function FrontDeskPage() {
   const { ready } = useModuleGate("visitors");
@@ -131,7 +131,8 @@ export default function FrontDeskPage() {
 
   async function logVisitor(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    const parsed = z.object({ name: z.string().trim().min(1, "Name is required.").max(160), phone: z.string().max(64), amount: z.string().refine((value) => kind !== "day_pass" || (Number.isFinite(Number(value)) && Number(value) >= 0), "Enter a valid visitor amount.") }).safeParse({ name, phone, amount });
+    if (!parsed.success) { toast.error(parsed.error.issues[0]?.message ?? "Check the visitor details."); return; }
     setBusy("log");
     setError("");
     try {
@@ -153,6 +154,7 @@ export default function FrontDeskPage() {
       setHost(null);
       setHostQuery("");
       setShowVisitorForm(false);
+      toast.success("Visitor logged.");
       void loadVisitors();
       void loadSummary();
     } catch (e) {
@@ -262,9 +264,7 @@ export default function FrontDeskPage() {
               <Input label="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" />
               <label className="block">
                 <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Type</span>
-                <select className={selectCls} value={kind} onChange={(e) => setKind(e.target.value as (typeof KINDS)[number])}>
-                  {KINDS.map((k) => <option key={k} value={k}>{titleCase(k)}</option>)}
-                </select>
+                <RadixSelect value={kind} onValueChange={(value) => setKind(value as (typeof KINDS)[number])}><SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger><SelectContent>{KINDS.map((k) => <SelectItem key={k} value={k}>{titleCase(k)}</SelectItem>)}</SelectContent></RadixSelect>
               </label>
             </div>
 
@@ -273,12 +273,7 @@ export default function FrontDeskPage() {
                 <Input label="Amount" type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
                 <label className="block">
                   <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Method</span>
-                  <select className={selectCls} value={method} onChange={(e) => setMethod(e.target.value)}>
-                    <option value="cash">Cash</option>
-                    <option value="card">Card</option>
-                    <option value="bank_transfer">Bank transfer</option>
-                    <option value="mobile_wallet">Mobile wallet</option>
-                  </select>
+                  <RadixSelect value={method} onValueChange={setMethod}><SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cash">Cash</SelectItem><SelectItem value="card">Card</SelectItem><SelectItem value="bank_transfer">Bank transfer</SelectItem><SelectItem value="mobile_wallet">Mobile wallet</SelectItem></SelectContent></RadixSelect>
                 </label>
               </div>
             )}

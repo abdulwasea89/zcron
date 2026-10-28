@@ -1,6 +1,8 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState, useMemo, type ReactNode } from "react";
+import { z } from "zod";
+import { toast } from "sonner";
 import { useRealtimeEvent } from "@/components/Realtime";
 import { PageHeader } from "@/components/PageHeader";
 import { Glyph } from "@/components/Glyph";
@@ -308,10 +310,10 @@ export default function PlansPage() {
       <Sheet
         open={showForm}
         onOpenChange={(open) => {
-          if (!open) { setShowForm(false); setEditing(null); }
+          if (!open) setShowForm(false);
         }}
       >
-        <SheetContent>
+        <SheetContent forceMount className="data-[state=closed]:pointer-events-none data-[state=closed]:invisible">
           <PlanForm
             key={editing?.id ?? "new"}
             plan={editing}
@@ -624,6 +626,33 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    const numeric = z.string().trim().min(1).refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, "Enter a valid non-negative amount.");
+    const optionalInteger = (max: number) => z.string().refine((value) => !value || (Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= max), "Enter a valid positive whole number.");
+    const parsed = z.object({
+      name: z.string().trim().min(1, "Plan name is required.").max(120),
+      price: numeric,
+      joiningFee: numeric,
+      taxMode: z.enum(["inclusive", "added"]),
+      taxRate: z.string().refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100, "Tax rate must be between 0 and 100."),
+      billing: z.enum(["recurring", "one_time_pack", "drop_in"]),
+      visibility: z.enum(["public", "members_only", "invite_only"]),
+      cycleUnit: z.enum(["day", "week", "month", "year"]),
+      cycleLength: z.string().refine((value) => billing !== "recurring" || (Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 365), "Billing interval must be between 1 and 365."),
+      packSize: z.string().refine((value) => billing !== "one_time_pack" || (Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 10_000), "Class credits must be between 1 and 10,000."),
+      validityDays: optionalInteger(36_500),
+      audience: z.enum(["standard", "student", "family"]),
+      familyCapacity: z.string().refine((value) => audience !== "family" || (Number.isInteger(Number(value)) && Number(value) >= 2 && Number(value) <= 20), "Family capacity must be between 2 and 20."),
+      includedCredits: optionalInteger(100_000),
+      offPeakStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      offPeakEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      desc: z.string().max(2000),
+      spaceType: z.enum(["hot_desk", "fixed_desk", "private_office", "meeting_room", "day_pass"]),
+      term: z.enum(["monthly", "quarterly", "annual"]),
+      roomCredits: optionalInteger(100_000),
+    }).refine((value) => !offPeak || (value.offPeakStart !== value.offPeakEnd), {
+      path: ["offPeakEnd"], message: "Off-peak end time must differ from the start time.",
+    }).safeParse({ name, price, joiningFee, taxMode, taxRate, billing, visibility, cycleUnit, cycleLength, packSize, validityDays, audience, familyCapacity, includedCredits, offPeakStart, offPeakEnd, desc, spaceType, term, roomCredits });
+    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? "Check the plan details."); return; }
     setLoading(true);
     try {
       const spec = isOffice
@@ -635,7 +664,7 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
           }
         : undefined;
       const body: Record<string, unknown> = {
-        name,
+        name: parsed.data.name,
         price: parseFloat(price) || 0,
         joining_fee: isOffice ? 0 : parseFloat(joiningFee) || 0,
         ...(!isOffice ? { tax_mode: taxMode, tax_rate: Number(taxRate) / 100 } : {}),
@@ -661,6 +690,7 @@ function PlanForm({ plan, industryKey = "gym", onCreated }: { plan?: PlanOut | n
       } else {
         await api.post("/plans", body);
       }
+      toast.success(plan ? "Plan updated." : "Plan draft saved.");
       onCreated();
     } catch (e) {
       setError((e as ApiError).message);

@@ -38,7 +38,7 @@ const SheetOverlay = React.forwardRef<
   <SheetPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/25",
+      "fixed inset-0 z-50 bg-black/25 data-[state=closed]:pointer-events-none data-[state=closed]:invisible",
       "data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out",
       className,
     )}
@@ -66,12 +66,13 @@ const SheetContent = React.forwardRef<
 >(({ className, children, side = "right", ...props }, ref) => {
   const { placement, motion } = SIDES[side]
   return (
-    <SheetPortal>
+    <SheetPortal forceMount>
       <SheetOverlay />
       <SheetPrimitive.Content
         ref={ref}
+        forceMount
         className={cn(
-          "fixed z-50 flex w-full flex-col border-[var(--border)] bg-card shadow-2xl shadow-black/25",
+          "fixed z-50 flex w-full flex-col border-[var(--border)] bg-card shadow-2xl shadow-black/25 data-[state=closed]:pointer-events-none data-[state=closed]:invisible",
           placement,
           motion,
           // Callers widen the panel by setting `--sheet-max-w` (e.g. the view

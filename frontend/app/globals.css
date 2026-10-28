@@ -504,6 +504,33 @@
   --chart-5: #b9b9b9;
 }
 
+.chatgpt .retention-page {
+  --retention-accent: #a376ed;
+  --retention-accent-soft: rgb(163 118 237 / 9%);
+  --retention-accent-border: rgb(163 118 237 / 42%);
+}
+
+.retention-page .bg-card,
+.onboarding-page .bg-card,
+.campaigns-page .bg-card {
+  background-color: transparent;
+}
+
+.chatgpt .retention-page .retention-note {
+  border-color: var(--retention-accent-border);
+  background: var(--retention-accent-soft);
+}
+
+.chatgpt .retention-page .retention-active-tab {
+  border-bottom-color: var(--retention-accent);
+}
+
+.chatgpt .retention-page button[aria-pressed="true"] {
+  border-color: var(--retention-accent);
+  background: var(--retention-accent);
+  color: #17121f;
+}
+
 /* Helix primary controls start as muted orange buttons. Hover reveals four
    L-shaped corners outside the button without moving it.
    Static cards keep a quiet brass border; interactive cards acquire an orange

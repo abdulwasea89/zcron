@@ -32,13 +32,13 @@ export function PaymentTrendChart({ data }: { data: PaymentTrendPoint[] }) {
   return (
     <div>
       {total === 0 ? (
-        <div className="flex h-[250px] flex-col items-center justify-center px-5 text-center">
+        <div className="flex h-[180px] flex-col items-center justify-center px-5 text-center sm:h-[210px] lg:h-[240px]">
           <p className="text-[13px] font-medium">No successful payments yet</p>
           <p className="mt-1 text-[12px] text-muted-foreground">Daily activity will appear here after a payment is recorded.</p>
         </div>
       ) : (
         <div className="px-4 pb-4 pt-6" role="img" aria-label={`Successful payments over the last 14 days: ${data.map((day) => `${day.label}, ${day.count}`).join("; ")}`}>
-          <ChartContainer config={{ count: { label: "Payments", color: "var(--chart-1)" } }} className="aspect-auto h-[250px] w-full">
+          <ChartContainer config={{ count: { label: "Payments", color: "var(--chart-1)" } }} className="aspect-auto h-[180px] w-full sm:h-[210px] lg:h-[240px]">
             <AreaChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">

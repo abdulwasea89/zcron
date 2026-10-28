@@ -206,7 +206,7 @@ export default function AttendanceRetentionPage() {
   }
 
   return (
-    <>
+    <div className="retention-page">
       <PageHeader title="Member retention" subtitle="Understand who may need support and what signals are driving the risk." />
 
       <section aria-label="Recent membership wins" className="mb-6 border border-[var(--border)] bg-card">
@@ -221,13 +221,13 @@ export default function AttendanceRetentionPage() {
       </section>
 
       <div className="mb-5 flex gap-2 border-b border-[var(--border)]" role="tablist" aria-label="Retention views">
-        <button type="button" role="tab" aria-selected={view === "drops"} onClick={() => setView("drops")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "drops" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Attendance trends <span className="ml-1 text-xs tabular-nums">{rows.length}</span></button>
-        <button type="button" role="tab" aria-selected={view === "risk"} onClick={() => setView("risk")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "risk" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Churn risk <span className="ml-1 text-xs tabular-nums">{summary ? summary.high + summary.medium : "—"}</span></button>
-        <button type="button" role="tab" aria-selected={view === "cases"} onClick={() => { setCaseMemberId(""); setView("cases"); }} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "cases" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Cases</button>
-        <button type="button" role="tab" aria-selected={view === "ladder"} onClick={() => setView("ladder")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "ladder" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Inactivity ladder</button>
-        <button type="button" role="tab" aria-selected={view === "winback"} onClick={() => setView("winback")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "winback" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Win-back & celebrations</button>
-        <button type="button" role="tab" aria-selected={view === "feedback"} onClick={() => setView("feedback")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "feedback" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Member feedback</button>
-        <button type="button" role="tab" aria-selected={view === "challenges"} onClick={() => setView("challenges")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "challenges" ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Challenges</button>
+        <button type="button" role="tab" aria-selected={view === "drops"} onClick={() => setView("drops")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "drops" ? "retention-active-tab border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Attendance trends <span className="ml-1 text-xs tabular-nums">{rows.length}</span></button>
+        <button type="button" role="tab" aria-selected={view === "risk"} onClick={() => setView("risk")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "risk" ? "retention-active-tab border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Churn risk <span className="ml-1 text-xs tabular-nums">{summary ? summary.high + summary.medium : "—"}</span></button>
+        <button type="button" role="tab" aria-selected={view === "cases"} onClick={() => { setCaseMemberId(""); setView("cases"); }} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "cases" ? "retention-active-tab border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Cases</button>
+        <button type="button" role="tab" aria-selected={view === "ladder"} onClick={() => setView("ladder")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "ladder" ? "retention-active-tab border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Inactivity ladder</button>
+        <button type="button" role="tab" aria-selected={view === "winback"} onClick={() => setView("winback")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "winback" ? "retention-active-tab border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Win-back & celebrations</button>
+        <button type="button" role="tab" aria-selected={view === "feedback"} onClick={() => setView("feedback")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "feedback" ? "retention-active-tab border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Member feedback</button>
+        <button type="button" role="tab" aria-selected={view === "challenges"} onClick={() => setView("challenges")} className={`border-b-2 px-3 py-2.5 text-sm font-medium ${view === "challenges" ? "retention-active-tab border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Challenges</button>
       </div>
 
       {view === "cases" ? <RetentionCasesPanel key={caseMemberId || "cases"} focusMemberId={caseMemberId} /> : view === "feedback" ? <NpsFeedbackPanel /> : view === "challenges" ? <ChallengesAdminPanel /> : view === "winback" ? <RetentionWinBackPanel /> : view === "ladder" ? <InactivityLadderPanel /> : <>
@@ -239,7 +239,7 @@ export default function AttendanceRetentionPage() {
           <Metric label="Moderate drop" count={moderateCount} tone={moderateCount ? "warning" : undefined} />
         </section>
 
-        <div className="mb-5 border border-info/25 bg-info-bg px-4 py-3 text-sm leading-6 text-foreground">
+        <div className="retention-note mb-5 border border-info/25 bg-info-bg px-4 py-3 text-sm leading-6 text-foreground">
           Each alert compares the member’s recent 14 days with their own previous 56-day attendance. A drop means their current weekly pace is half or less of their established routine. Members need at least 21 days of tenure and an average of one baseline visit per week to qualify.
         </div>
       </> : <>
@@ -249,7 +249,7 @@ export default function AttendanceRetentionPage() {
           <Metric label="Medium risk · 40–69" count={summary?.medium ?? 0} tone={summary?.medium ? "warning" : undefined} />
           <Metric label="Low risk · 0–39" count={summary?.low ?? 0} />
         </section>
-        <div className="mb-5 border border-info/25 bg-info-bg px-4 py-3 text-sm leading-6 text-foreground">Risk is a deterministic 0–100 support-priority score, not a probability of cancellation. It combines attendance changes, inactivity, membership/payment state, and early onboarding signals. Each row lists the signals and points behind its score.</div>
+        <div className="retention-note mb-5 border border-info/25 bg-info-bg px-4 py-3 text-sm leading-6 text-foreground">Risk is a deterministic 0–100 support-priority score, not a probability of cancellation. It combines attendance changes, inactivity, membership/payment state, and early onboarding signals. Each row lists the signals and points behind its score.</div>
       </>}
 
       <section className="border border-[var(--border)] bg-card">
@@ -319,6 +319,6 @@ export default function AttendanceRetentionPage() {
       </section>
       <p className="mt-3 text-xs leading-5 text-muted-foreground">Retention signals are decision support for staff. They do not contact members or change membership status automatically.</p>
       </>}
-    </>
+    </div>
   );
 }

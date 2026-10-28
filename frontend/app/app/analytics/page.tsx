@@ -15,7 +15,8 @@ import {
 
 import { OperatingReportCard } from "@/components/OperatingReportCard";
 import { PageHeader } from "@/components/PageHeader";
-import { Alert, Card, CardHeader, Select, Spinner, StatCard } from "@/components/ui";
+import { Alert, Button, Card, CardHeader, Spinner, StatCard } from "@/components/ui";
+import { Select as RadixSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ChartContainer,
   ChartLegend,
@@ -146,7 +147,8 @@ export default function AnalyticsPage() {
   const [error, setError] = useState("");
   const [selectedCurrency, setSelectedCurrency] = useState("");
   const currency = selectedCurrency || data?.currency || "USD";
-  const currencyRevenue = data?.revenue_by_currency[currency];
+  const revenueByCurrency = data?.revenue_by_currency ?? {};
+  const currencyRevenue = revenueByCurrency[currency];
   const totalRevenue = Number(currencyRevenue?.total_revenue ?? 0);
 
   async function load() {
@@ -230,13 +232,13 @@ export default function AnalyticsPage() {
       <PageHeader
         title="Analytics"
         subtitle="Revenue and membership at a glance"
-        action={data ? <Select label="Revenue currency" value={currency} onChange={(event) => setSelectedCurrency(event.target.value)}>{Array.from(new Set([data.currency, ...Object.keys(data.revenue_by_currency)])).sort().map((code) => <option key={code} value={code}>{code}</option>)}</Select> : null}
+        action={data ? <label className="block text-xs text-muted-foreground">Revenue currency<RadixSelect value={currency} onValueChange={setSelectedCurrency}><SelectTrigger aria-label="Revenue currency" className="mt-1 h-9 min-w-28"><SelectValue /></SelectTrigger><SelectContent>{Array.from(new Set([data.currency, ...Object.keys(revenueByCurrency)])).sort().map((code) => <SelectItem key={code} value={code}>{code}</SelectItem>)}</SelectContent></RadixSelect></label> : null}
       />
 
-      {error && <div className="mb-4"><Alert onDismiss={() => setError("")}>{error}</Alert></div>}
+      {error && data && <div className="mb-4"><Alert onDismiss={() => setError("")}>{error}</Alert></div>}
 
       {data === null ? (
-        <Spinner label="Loading analytics…" />
+        error ? <section className="border border-border bg-card p-6"><Alert>{error}</Alert><Button className="mt-4" onClick={() => void load()}>Try again</Button></section> : <Spinner label="Loading analytics…" />
       ) : (
         <div className="space-y-6">
           <OperatingReportCard />

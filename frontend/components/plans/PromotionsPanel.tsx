@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { z } from "zod";
 import { Alert, Button, Input } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { money } from "@/lib/format";
 import type { PlanOut } from "@/lib/types";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Glyph } from "@/components/Glyph";
 import {
   AlertDialog,
@@ -44,6 +47,7 @@ export function PromotionsPanel({ plans }: { plans: PlanOut[] }) {
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Promotion | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [composer, setComposer] = useState(false);
 
   async function load() {
     try {
@@ -60,6 +64,8 @@ export function PromotionsPanel({ plans }: { plans: PlanOut[] }) {
   async function create(event: React.FormEvent) {
     event.preventDefault();
     setError("");
+    const parsed = z.object({ code: z.string().trim().min(3).max(32).regex(/^[A-Z0-9_-]+$/), value: z.coerce.number().positive().max(type === "percent" ? 100 : Number.MAX_SAFE_INTEGER) }).safeParse({ code, value });
+    if (!parsed.success) { toast.error(parsed.error.issues[0]?.message ?? "Check the promo details."); return; }
     setBusy(true);
     try {
       await api.post("/promotions", {
@@ -71,20 +77,23 @@ export function PromotionsPanel({ plans }: { plans: PlanOut[] }) {
       setCode("");
       setValue("");
       await load();
+      setComposer(false);
+      toast.success("Promo code created.");
     } catch (e) {
-      setError((e as ApiError).message);
+      toast.error((e as ApiError).message);
     } finally {
       setBusy(false);
     }
   }
 
   async function toggle(promo: Promotion) {
-    setError("");
+      setError("");
     try {
       await api.patch(`/promotions/${promo.id}`, { active: !promo.active });
       await load();
+      toast.success(`Promo code ${promo.active ? "deactivated" : "activated"}.`);
     } catch (e) {
-      setError((e as ApiError).message);
+      toast.error((e as ApiError).message);
     }
   }
 
@@ -95,6 +104,7 @@ export function PromotionsPanel({ plans }: { plans: PlanOut[] }) {
       await api.del(`/promotions/${promoId}`);
       setDeleteTarget(null);
       await load();
+      toast.success("Promo code deleted.");
     } catch (e) {
       setError((e as ApiError).message);
     } finally {
@@ -103,7 +113,7 @@ export function PromotionsPanel({ plans }: { plans: PlanOut[] }) {
   }
 
   return (
-    <section className="mt-6">
+    <section>
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] pb-4">
         <div>
           <h2 className="text-base font-semibold text-foreground">Promo codes</h2>
@@ -111,15 +121,14 @@ export function PromotionsPanel({ plans }: { plans: PlanOut[] }) {
             Discounts apply to the plan price before tax. Joining fees stay separate.
           </p>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {promotions.length} {promotions.length === 1 ? "code" : "codes"}
-        </span>
+        <div className="flex shrink-0 items-center gap-3"><span className="text-xs text-muted-foreground">{promotions.length} {promotions.length === 1 ? "code" : "codes"}</span><Button onClick={() => setComposer(true)}>Create promo code</Button></div>
       </div>
 
       <div>
         {error && <div className="mb-4"><Alert onDismiss={() => setError("")}>{error}</Alert></div>}
 
-        <form onSubmit={create} className="grid grid-cols-1 gap-4 border-b border-[var(--border)] py-5 sm:grid-cols-2 xl:grid-cols-[minmax(160px,1.15fr)_minmax(150px,1.2fr)_minmax(150px,1.15fr)_minmax(130px,0.9fr)_auto] xl:items-end">
+        <Sheet open={composer} onOpenChange={setComposer}><SheetContent><SheetHeader><SheetTitle>Create promo code</SheetTitle><SheetDescription>Discounts apply to the plan price before tax. Joining fees stay separate.</SheetDescription></SheetHeader><SheetBody>
+        <form onSubmit={create} className="flex flex-col gap-4">
           <Input
             label="Code"
             labelVariant="sentence"
@@ -170,10 +179,11 @@ export function PromotionsPanel({ plans }: { plans: PlanOut[] }) {
             required
           />
 
-          <Button type="submit" loading={busy} className="w-full sm:col-span-2 xl:col-span-1">
+          <Button type="submit" loading={busy} className="w-full">
             Create code
           </Button>
         </form>
+        </SheetBody></SheetContent></Sheet>
 
         <div className="mt-1">
           {promotions.length === 0 ? (

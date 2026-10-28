@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { z } from "zod";
 import { PageHeader } from "@/components/PageHeader";
 import { ListToolbar } from "@/components/ListToolbar";
 import {
@@ -12,6 +14,8 @@ import {
   Spinner,
 } from "@/components/ui";
 import { LiveIndicator, useRealtimeEvent } from "@/components/Realtime";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Select as RadixSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useModuleGate } from "@/hooks/useModuleGate";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { api, ApiError } from "@/lib/api";
@@ -245,20 +249,33 @@ export default function InboxPage() {
 
   async function createInteractionLog(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const parsed = z.object({
+      channel: z.enum(["phone", "walk_in"]),
+      name: z.string().trim().min(1, "Contact name is required.").max(120),
+      handle: z.string().max(254),
+      body: z.string().trim().min(1, "Summary is required.").max(4000),
+    }).refine((value) => value.channel !== "phone" || value.handle.trim().length > 0, {
+      path: ["handle"], message: "Phone number is required for a phone call.",
+    }).safeParse({ channel: logChannel, name: logName, handle: logHandle, body: logBody });
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Check the interaction details.");
+      return;
+    }
     setLogBusy(true); setError("");
     try {
       const created = await api.post<InboxThread>("/inbox/conversations/ingest", {
-        channel: logChannel,
-        handle: logHandle.trim() || `walk-in-${crypto.randomUUID()}`,
-        contact_name: logName.trim(),
-        body: logBody.trim(),
+        channel: parsed.data.channel,
+        handle: parsed.data.handle.trim() || `walk-in-${crypto.randomUUID()}`,
+        contact_name: parsed.data.name,
+        body: parsed.data.body,
       });
       setLogOpen(false); setLogName(""); setLogHandle(""); setLogBody("");
       setFilter("open"); setQuery("");
       await openThread(created.id);
       void loadList(); void loadStats();
+      toast.success("Interaction saved to the inbox.");
     } catch (cause) {
-      setError((cause as ApiError).message || "Could not save the interaction.");
+      toast.error((cause as ApiError).message || "Could not save the interaction.");
     } finally { setLogBusy(false); }
   }
 
@@ -339,18 +356,17 @@ export default function InboxPage() {
         </div>}
       />
 
-      {logOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !logBusy) setLogOpen(false); }}>
-        <form onSubmit={(event) => void createInteractionLog(event)} role="dialog" aria-modal="true" aria-labelledby="interaction-log-title" className="w-full max-w-lg rounded-xl border border-border bg-surface p-5 shadow-2xl">
-          <div className="flex items-start justify-between gap-4"><div><h2 id="interaction-log-title" className="text-lg font-semibold text-foreground">Log an interaction</h2><p className="mt-1 text-sm text-muted-foreground">Record a phone call or an in-person visit in the shared inbox.</p></div><button type="button" disabled={logBusy} aria-label="Close" onClick={() => setLogOpen(false)} className="rounded-md px-2 py-1 text-muted-foreground hover:bg-foreground/5">×</button></div>
+      <Sheet open={logOpen} onOpenChange={setLogOpen}><SheetContent><SheetHeader><SheetTitle>Log an interaction</SheetTitle><SheetDescription>Record a phone call or an in-person visit in the shared inbox.</SheetDescription></SheetHeader><SheetBody>
+        <form onSubmit={(event) => void createInteractionLog(event)}>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <label className="text-xs text-muted-foreground">Interaction type<select value={logChannel} onChange={(event) => setLogChannel(event.target.value as "phone" | "walk_in")} className="mt-1.5 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"><option value="phone">Phone call</option><option value="walk_in">Walk-in visit</option></select></label>
+            <label className="text-xs text-muted-foreground">Interaction type<RadixSelect value={logChannel} onValueChange={(value) => setLogChannel(value as "phone" | "walk_in")}><SelectTrigger className="mt-1.5 h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="phone">Phone call</SelectItem><SelectItem value="walk_in">Walk-in visit</SelectItem></SelectContent></RadixSelect></label>
             <label className="text-xs text-muted-foreground">Contact name<input required maxLength={120} value={logName} onChange={(event) => setLogName(event.target.value)} className="mt-1.5 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" /></label>
             <label className="text-xs text-muted-foreground sm:col-span-2">{logChannel === "phone" ? "Phone number" : "Email or phone (optional)"}<input required={logChannel === "phone"} maxLength={254} value={logHandle} onChange={(event) => setLogHandle(event.target.value)} placeholder={logChannel === "walk_in" ? "Leave blank to label as walk-in" : "+1 555 0100"} className="mt-1.5 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" /></label>
             <label className="text-xs text-muted-foreground sm:col-span-2">Summary<textarea required maxLength={4000} rows={4} value={logBody} onChange={(event) => setLogBody(event.target.value)} placeholder="What did you discuss or resolve?" className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
           </div>
           <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="secondary" disabled={logBusy} onClick={() => setLogOpen(false)}>Cancel</Button><Button type="submit" disabled={logBusy} loading={logBusy}>Save to inbox</Button></div>
         </form>
-      </div>}
+      </SheetBody></SheetContent></Sheet>
 
       {error && (
         <div className="mb-3">
@@ -392,7 +408,7 @@ export default function InboxPage() {
             </div>
           </>}
         </section>
-      ) : <div className="mt-3 grid min-h-[520px] border-t border-border lg:h-[calc(100vh-15rem)] lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+      ) : <div className="mt-3 grid h-[calc(100dvh-8rem)] min-h-[420px] border-t border-border lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
         {/* Queue */}
         <section ref={queueRef} aria-label="Conversation queue" className={`${activeId ? "hidden lg:flex" : "flex"} min-w-0 flex-col border-b border-border lg:border-b-0 lg:border-r`}>
           <div className="flex items-center justify-between px-4 py-3">
@@ -485,28 +501,8 @@ export default function InboxPage() {
                   <p className="mt-1 text-xs text-muted-foreground">{thread.contact_handle}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <select
-                    aria-label="Assign conversation to staff"
-                    value={thread.assigned_to ?? ""}
-                    disabled={busy === thread.id}
-                    onChange={(event) => void act(thread.id, "assign", { user_id: event.target.value || null })}
-                    className="h-9 max-w-48 cursor-pointer rounded-md border border-foreground/20 bg-card px-2 text-xs text-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
-                  >
-                    <option value="">Unassigned</option>
-                    {thread.assigned_to && !team.some((member) => member.user_id === thread.assigned_to) && <option value={thread.assigned_to}>{thread.assigned_name ?? "Current assignee"}</option>}
-                    {team.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}{member.user_id === myId ? " (me)" : ` · ${titleCase(member.role)}`}</option>)}
-                  </select>
-                  <select
-                    aria-label="Conversation status"
-                    value={thread.status}
-                    disabled={busy === thread.id}
-                    onChange={(e) => act(thread.id, "status", { status: e.target.value })}
-                    className="h-9 cursor-pointer rounded-md border border-foreground/20 bg-card px-2 text-xs text-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
-                  >
-                    {["open", "pending", "snoozed", "resolved"].map((s) => (
-                      <option key={s} value={s}>{titleCase(s)}</option>
-                    ))}
-                  </select>
+                  <RadixSelect value={thread.assigned_to ?? "__unassigned__"} disabled={busy === thread.id} onValueChange={(value) => void act(thread.id, "assign", { user_id: value === "__unassigned__" ? null : value })}><SelectTrigger aria-label="Assign conversation to staff" className="h-9 max-w-48 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__unassigned__">Unassigned</SelectItem>{thread.assigned_to && !team.some((member) => member.user_id === thread.assigned_to) && <SelectItem value={thread.assigned_to}>{thread.assigned_name ?? "Current assignee"}</SelectItem>}{team.map((member) => <SelectItem key={member.user_id} value={member.user_id}>{member.name}{member.user_id === myId ? " (me)" : ` · ${titleCase(member.role)}`}</SelectItem>)}</SelectContent></RadixSelect>
+                  <RadixSelect value={thread.status} disabled={busy === thread.id} onValueChange={(value) => void act(thread.id, "status", { status: value })}><SelectTrigger aria-label="Conversation status" className="h-9 w-32 text-xs"><SelectValue /></SelectTrigger><SelectContent>{["open", "pending", "snoozed", "resolved"].map((s) => <SelectItem key={s} value={s}>{titleCase(s)}</SelectItem>)}</SelectContent></RadixSelect>
                 </div>
               </div>
 
@@ -571,9 +567,10 @@ export default function InboxPage() {
                     }}
                     rows={2}
                     placeholder="Write a reply… (Enter to send, Shift+Enter for a new line)"
-                    className="max-h-40 min-h-[44px] w-full resize-none rounded-md border border-foreground/20 bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+                    className="h-11 max-h-40 min-h-[44px] w-full resize-none rounded-md border border-foreground/20 bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
                   />
                   <Button
+                    className="h-11"
                     disabled={!reply.trim() || busy === thread.id}
                     onClick={sendReply}
                     loading={busy === thread.id}

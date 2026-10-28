@@ -110,7 +110,7 @@ export default function OnboardingPage() {
     finally { setBusy(false); }
   };
 
-  return <>
+  return <div className="onboarding-page">
     <PageHeader title="Member onboarding" subtitle="Help every new member build a routine in their first 90 days." />
 
     <section aria-label="Journey overview" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -180,5 +180,5 @@ export default function OnboardingPage() {
         </SheetFooter>
       </SheetContent>
     </Sheet>
-  </>;
+  </div>;
 }
