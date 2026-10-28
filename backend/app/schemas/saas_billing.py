@@ -36,6 +36,13 @@ class InvoiceOut(BaseModel):
     currency: str
     status: str
     created_at: datetime
+    source: Literal["stripe", "local"] = "local"
+    invoice_pdf_url: str | None = None
+
+
+class InvoicePageOut(BaseModel):
+    items: list[InvoiceOut]
+    has_more: bool = False
 
 
 class CancelSubscriptionRequest(BaseModel):

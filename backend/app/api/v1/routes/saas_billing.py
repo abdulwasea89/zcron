@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from fastapi.responses import JSONResponse
@@ -20,7 +21,7 @@ from app.core.constants import SaasTier, SaasStatus, TIER_MEMBER_CAP, TIER_PRICE
 from app.core.security import now_utc
 from app.core.tenancy import TenantContext
 from app.models.organization import Organization
-from app.schemas.saas_billing import BillingPortalOut, InvoiceOut, SaasStatusOut, TierChangeRequest
+from app.schemas.saas_billing import BillingPortalOut, InvoiceOut, InvoicePageOut, SaasStatusOut, TierChangeRequest
 from app.core.config import settings
 from app.integrations.stripe_client import platform_stripe
 from app.services import saas_billing_service as billing
@@ -167,16 +168,35 @@ async def confirm_checkout(data: SubscriptionCheckoutConfirm,
     return await billing.status(session, org=org)
 
 
-@router.get("/invoices", response_model=list[InvoiceOut])
+@router.get("/invoices", response_model=InvoicePageOut)
 async def invoices(
+    starting_after: str | None = None,
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_SETTINGS)),
+    org: Organization = Depends(get_org),
     session: AsyncSession = Depends(get_session),
 ):
-    return [
+    if org.stripe_customer_id and platform_stripe.live:
+        import stripe
+        result = await workspace.stripe_call(
+            stripe.Invoice.list, customer=org.stripe_customer_id, limit=100,
+            **({"starting_after": starting_after} if starting_after else {}),
+        )
+        return InvoicePageOut(
+            items=[InvoiceOut(
+                id=invoice["id"], amount=(invoice.get("total") or 0) / 100,
+                currency=(invoice.get("currency") or "usd").upper(),
+                status=invoice.get("status") or "draft",
+                created_at=datetime.fromtimestamp(invoice["created"], timezone.utc),
+                source="stripe", invoice_pdf_url=invoice.get("invoice_pdf"),
+            ) for invoice in result.get("data", [])],
+            has_more=bool(result.get("has_more")),
+        )
+    rows = await billing.list_invoices(session, org_id=ctx.org_id)
+    return InvoicePageOut(items=[
         InvoiceOut(id=p.id, amount=p.amount, currency=p.currency, status=p.status.value,
                    created_at=p.created_at)
-        for p in await billing.list_invoices(session, org_id=ctx.org_id)
-    ]
+        for p in rows
+    ])
 
 
 @router.get("/invoices/{invoice_id}/pdf")

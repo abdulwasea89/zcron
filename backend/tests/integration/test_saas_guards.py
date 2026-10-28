@@ -8,6 +8,7 @@ signups, no payroll) until billing is restored.
 from __future__ import annotations
 
 import uuid
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlmodel import select
@@ -155,3 +156,30 @@ async def test_active_org_permits_writes(client, db):
     r = await client.post("/api/v1/plans", headers=headers, json={
         "name": "Second Plan", "price": 79.0, "billing_type": "drop_in"})
     assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_platform_invoice_failure_is_subscription_scoped_and_event_idempotent(client, db, monkeypatch):
+    from app.services import saas_billing_service
+
+    org_id, _org_code, _plan_id, _headers = await _provision_gym_with_plan(client)
+    await _set_org(db, org_id, stripe_customer_id="cus_workspace", stripe_subscription_id="sub_workspace",
+                   saas_status=SaasStatus.ACTIVE)
+    monkeypatch.setattr(saas_billing_service, "_notify_owner", AsyncMock())
+    event = {"id": "evt_invoice_failed_once", "type": "invoice.payment_failed",
+             "data": {"object": {"customer": "cus_workspace", "subscription": "sub_workspace"}}}
+
+    first = await client.post("/api/v1/webhooks/stripe", json=event)
+    replay = await client.post("/api/v1/webhooks/stripe", json=event)
+    assert first.status_code == replay.status_code == 200
+    org = await db.get(Organization, org_id)
+    await db.refresh(org)
+    assert org.saas_status == SaasStatus.PAST_DUE
+    assert org.saas_retry_count == 0
+
+    wrong_subscription = {"id": "evt_other_subscription", "type": "invoice.payment_failed",
+                          "data": {"object": {"customer": "cus_workspace", "subscription": "sub_other"}}}
+    response = await client.post("/api/v1/webhooks/stripe", json=wrong_subscription)
+    assert response.status_code == 200
+    await db.refresh(org)
+    assert org.saas_retry_count == 0

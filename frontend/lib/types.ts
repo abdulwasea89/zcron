@@ -262,6 +262,8 @@ export interface InvoiceOut {
   currency: string;
   status: string;
   created_at: string;
+  source: "stripe" | "local";
+  invoice_pdf_url: string | null;
 }
 
 export interface ApiError {

@@ -20,7 +20,7 @@ are acknowledged and ignored so Stripe stops retrying.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
@@ -138,12 +138,21 @@ async def handle_platform_event(session: AsyncSession, event: dict) -> dict:
     if etype == "invoice.payment_succeeded":
         org = await _org_by_customer(session, obj.get("customer"))
         invoice_sub = obj.get("subscription") or ((obj.get("parent") or {}).get("subscription_details") or {}).get("subscription")
-        if org is not None and org.saas_status != SaasStatus.CANCELLED and invoice_sub == org.stripe_subscription_id:
+        if (org is not None and org.stripe_subscription_id
+                and org.saas_status != SaasStatus.CANCELLED
+                and invoice_sub == org.stripe_subscription_id):
             org.saas_status = SaasStatus.ACTIVE
             org.saas_grace_until = None
             org.saas_retry_count = 0
             org.saas_state_changed_at = now_utc()
-            org.saas_current_period_end = now_utc() + timedelta(days=30)
+            line_period_ends = [
+                line.get("period", {}).get("end")
+                for line in (obj.get("lines") or {}).get("data", [])
+                if line.get("period", {}).get("end")
+            ]
+            period_end = obj.get("period_end") or (max(line_period_ends) if line_period_ends else None)
+            if period_end:
+                org.saas_current_period_end = datetime.fromtimestamp(period_end, timezone.utc).replace(tzinfo=None)
             session.add(org)
             await record_audit(session, action="saas.payment_succeeded", organization_id=org.id,
                                entity_type="organization", entity_id=org.id)
@@ -151,7 +160,8 @@ async def handle_platform_event(session: AsyncSession, event: dict) -> dict:
 
     if etype == "invoice.payment_failed":
         org = await _org_by_customer(session, obj.get("customer"))
-        if org is not None:
+        invoice_sub = obj.get("subscription") or ((obj.get("parent") or {}).get("subscription_details") or {}).get("subscription")
+        if org is not None and org.stripe_subscription_id and invoice_sub == org.stripe_subscription_id:
             await saas_billing_service.handle_failed_charge(session, org=org)
         return {"handled": etype}
 

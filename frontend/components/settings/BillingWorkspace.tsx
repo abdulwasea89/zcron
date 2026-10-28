@@ -11,6 +11,7 @@ import type { InvoiceOut, SaasStatusOut } from "@/lib/types";
 
 type VaultOut = { currency: string; available_credit: number; has_more: boolean; transactions: { id: string; amount: number; currency: string; created: number; description: string; type: string }[] };
 type SubscriptionOut = { cancel_at_period_end: boolean; stripe_status: string | null; period_end: string | null; scheduled_tier: string | null };
+type InvoicePageOut = { items: InvoiceOut[]; has_more: boolean };
 
 export function BillingWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [status, setStatus] = useState<SaasStatusOut | null>(null);
@@ -20,6 +21,8 @@ export function BillingWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [portalBusy, setPortalBusy] = useState(false);
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState("all");
+  const [invoiceHasMore, setInvoiceHasMore] = useState(false);
+  const [invoiceBusy, setInvoiceBusy] = useState(false);
   const [vault, setVault] = useState<VaultOut | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionOut | null>(null);
   const [busy, setBusy] = useState(false);
@@ -29,10 +32,11 @@ export function BillingWorkspace({ embedded = false }: { embedded?: boolean }) {
     try {
       const [s, inv] = await Promise.all([
         api.get<SaasStatusOut>("/saas-billing/status"),
-        api.get<InvoiceOut[]>("/saas-billing/invoices"),
+        api.get<InvoicePageOut>("/saas-billing/invoices"),
       ]);
       setStatus(s);
-      setInvoices(inv);
+      setInvoices(inv.items);
+      setInvoiceHasMore(inv.has_more);
       const [v, sub] = await Promise.allSettled([
         api.get<VaultOut>("/saas-billing/vault"),
         api.get<SubscriptionOut>("/saas-billing/subscription"),
@@ -132,6 +136,21 @@ export function BillingWorkspace({ embedded = false }: { embedded?: boolean }) {
       setError((e as ApiError).message);
     } finally {
       setPortalBusy(false);
+    }
+  }
+
+  async function loadMoreInvoices() {
+    if (!invoices?.length || invoiceBusy) return;
+    setInvoiceBusy(true);
+    try {
+      const params = new URLSearchParams({ starting_after: invoices[invoices.length - 1].id });
+      const page = await api.get<InvoicePageOut>(`/saas-billing/invoices?${params}`);
+      setInvoices((current) => [...(current ?? []), ...page.items]);
+      setInvoiceHasMore(page.has_more);
+    } catch (e) {
+      setError((e as ApiError).message || "Could not load older invoices.");
+    } finally {
+      setInvoiceBusy(false);
     }
   }
 
@@ -258,16 +277,18 @@ export function BillingWorkspace({ embedded = false }: { embedded?: boolean }) {
                         <Badge tone={statusTone(inv.status)}>{titleCase(inv.status)}</Badge>
                       </td>
                       <td className="px-5 py-3.5 text-right">
-                        <a
-                          href={`/api/download/saas-billing/invoices/${inv.id}/pdf`}
-                          download
+                        {inv.source === "local" || inv.invoice_pdf_url ? <a
+                          href={inv.source === "stripe" ? inv.invoice_pdf_url! : `/api/download/saas-billing/invoices/${inv.id}/pdf`}
+                          download={inv.source === "local"}
+                          target={inv.source === "stripe" ? "_blank" : undefined}
+                          rel={inv.source === "stripe" ? "noopener noreferrer" : undefined}
                           className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--primary)] hover:underline"
                         >
                           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                           </svg>
                           PDF
-                        </a>
+                        </a> : <span className="text-xs text-muted-foreground">—</span>}
                       </td>
                     </tr>
                   ))}
@@ -276,6 +297,7 @@ export function BillingWorkspace({ embedded = false }: { embedded?: boolean }) {
             </div>
           )}
         </div>
+        {invoiceHasMore && <div className="flex justify-center pt-3"><Button variant="secondary" loading={invoiceBusy} onClick={() => void loadMoreInvoices()}>Load older invoices</Button></div>}
       </div>
     </>
   );
