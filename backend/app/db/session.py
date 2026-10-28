@@ -71,6 +71,23 @@ async def init_db() -> None:
             await conn.run_sync(_upgrade_sqlite_payment_method_schema)
             await conn.run_sync(_upgrade_sqlite_recurring_billing_schema)
             await conn.run_sync(_upgrade_sqlite_late_migration_columns)
+            await conn.run_sync(_upgrade_sqlite_mfa_secrets)
+
+
+def _upgrade_sqlite_mfa_secrets(connection) -> None:
+    from sqlalchemy import inspect, text
+
+    if "users" not in inspect(connection).get_table_names():
+        return
+    from app.core.mfa_encryption import encrypt_mfa_secret
+
+    rows = connection.execute(text("SELECT id, mfa_secret FROM users WHERE mfa_secret IS NOT NULL"))
+    for user_id, secret in rows:
+        if not secret.startswith("enc:v1:"):
+            connection.execute(
+                text("UPDATE users SET mfa_secret = :secret WHERE id = :user_id"),
+                {"secret": encrypt_mfa_secret(secret), "user_id": user_id},
+            )
 
 
 def _upgrade_sqlite_late_migration_columns(connection) -> None:
@@ -485,20 +502,3 @@ def _upgrade_sqlite_recurring_billing_schema(connection) -> None:
                 connection.exec_driver_sql(
                     f'ALTER TABLE "{table}" ADD COLUMN "{name}" {definition}'
                 )
-            await conn.run_sync(_upgrade_sqlite_mfa_secrets)
-
-
-def _upgrade_sqlite_mfa_secrets(connection) -> None:
-    from sqlalchemy import inspect, text
-
-    if "users" not in inspect(connection).get_table_names():
-        return
-    from app.core.mfa_encryption import encrypt_mfa_secret
-
-    rows = connection.execute(text("SELECT id, mfa_secret FROM users WHERE mfa_secret IS NOT NULL"))
-    for user_id, secret in rows:
-        if not secret.startswith("enc:v1:"):
-            connection.execute(
-                text("UPDATE users SET mfa_secret = :secret WHERE id = :user_id"),
-                {"secret": encrypt_mfa_secret(secret), "user_id": user_id},
-            )
