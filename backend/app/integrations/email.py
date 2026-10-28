@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from dataclasses import dataclass, field
 
 import resend
@@ -36,8 +37,8 @@ class SentEmail:
     attachments: list[str] = field(default_factory=list)
 
 
-# Dev outbox — inspectable in tests / local dev.
-outbox: list[SentEmail] = []
+# Test/dev outbox — bounded so codes and links are not retained indefinitely.
+outbox: deque[SentEmail] = deque(maxlen=100)
 
 
 def _send_sync(params: resend.Emails.SendParams) -> dict:
@@ -146,18 +147,15 @@ async def send_email_tracked(
     Stub mode captures the message locally and returns an unaccepted result.
     """
 
-    record = SentEmail(to=to, subject=subject, body=body, attachments=attachments or [])
-    outbox.append(record)
-
     # SMTP first: it delivers to any recipient without a verified domain (Gmail
     # App Password), unlike Resend's shared test sender.
     if smtp_config or settings.smtp_active:
         try:
             await asyncio.to_thread(_send_smtp_sync, to, subject, body, smtp_config)
-            logger.info("Email sent via SMTP to=%s subject=%s", to, subject)
+            logger.info("Email sent via SMTP")
             return EmailSendResult(True)
         except Exception as exc:
-            logger.warning("SMTP send failed: to=%s error=%s", to, exc)
+            logger.warning("SMTP send failed (%s)", type(exc).__name__)
             raise EmailDeliveryError(str(exc)) from exc
 
     if settings.resend_api_key:
@@ -170,15 +168,17 @@ async def send_email_tracked(
             }
             result = await asyncio.to_thread(_send_sync, params)
             provider_id = str(result.get("id") or "") or None
-            logger.info("Email sent to=%s subject=%s id=%s", to, subject, provider_id or "?")
+            logger.info("Email sent via Resend id=%s", provider_id or "?")
             return EmailSendResult(True, provider_id)
         except Exception as exc:
             # Do NOT swallow silently — that made failed invites look successful.
-            logger.warning("Resend send failed: to=%s error=%s", to, exc)
+            logger.warning("Resend send failed (%s)", type(exc).__name__)
             raise EmailDeliveryError(str(exc)) from exc
 
     # Stub mode only captures the message locally; nothing leaves the process.
-    logger.info("[email-stub] to=%s subject=%s body=%s", to, subject, body)
+    if settings.app_env.strip().lower() in {"development", "dev", "test"}:
+        outbox.append(SentEmail(to=to, subject=subject, body=body, attachments=attachments or []))
+    logger.info("Email stub active; message not delivered")
     return EmailSendResult(False)
 
 
