@@ -12,6 +12,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 import os
@@ -54,6 +55,14 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
     )
+
+    @model_validator(mode="after")
+    def require_strong_production_secret(self) -> Settings:
+        if self.app_env.strip().lower() in {"prod", "production"} and (
+            self.secret_key == "dev-insecure-change-me" or len(self.secret_key) < 32
+        ):
+            raise ValueError("Production requires a SECRET_KEY of at least 32 characters.")
+        return self
 
     # ------------------------------------------------------------------ app
     app_env: str = "development"
