@@ -486,7 +486,6 @@ export interface MfaStatus {
 export interface MfaEnrollResponse {
   secret: string;
   otpauth_uri: string;
-  current_code: string;
 }
 
 export interface ProfileOut {

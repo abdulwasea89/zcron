@@ -20,6 +20,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import totp
+from app.core.mfa_encryption import decrypt_mfa_secret, encrypt_mfa_secret
 from app.core.security import now_utc, verify_password
 from app.models.user import User
 from app.services.audit_service import record_audit
@@ -31,16 +32,13 @@ async def begin_enrollment(session: AsyncSession, *, user: User, issuer: str) ->
     if user.mfa_enabled:
         raise HTTPException(status_code=409, detail="MFA is already enabled.")
     secret = totp.generate_secret()
-    user.mfa_secret = secret
+    user.mfa_secret = encrypt_mfa_secret(secret)
     session.add(user)
     await record_audit(session, action="mfa.enroll_started", actor_user_id=user.id,
                        entity_type="user", entity_id=user.id)
     return {
         "secret": secret,
         "otpauth_uri": totp.provisioning_uri(secret, account_name=user.email, issuer=issuer),
-        # Surfacing the current code makes local/dev enrollment runnable without
-        # an authenticator app; harmless because the secret is already returned.
-        "current_code": totp.now_code(secret, for_time=now_utc()),
     }
 
 
@@ -49,7 +47,7 @@ async def confirm_enrollment(session: AsyncSession, *, user: User, code: str) ->
 
     if not user.mfa_secret:
         raise HTTPException(status_code=409, detail="Start MFA enrollment first.")
-    if not totp.verify(user.mfa_secret, code, for_time=now_utc()):
+    if not totp.verify(decrypt_mfa_secret(user.mfa_secret), code, for_time=now_utc()):
         raise HTTPException(status_code=400, detail="Invalid MFA code.")
     user.mfa_enabled = True
     session.add(user)
@@ -76,4 +74,6 @@ def check_code(user: User, code: str | None) -> bool:
         return True
     if not code:
         return False
-    return totp.verify(user.mfa_secret or "", code, for_time=now_utc())
+    return bool(user.mfa_secret) and totp.verify(
+        decrypt_mfa_secret(user.mfa_secret), code, for_time=now_utc()
+    )

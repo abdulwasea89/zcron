@@ -36,7 +36,7 @@ class User(UUIDModel, TimestampModel, table=True):
 
     # MFA (Section 5.5)
     mfa_enabled: bool = False
-    mfa_secret: str | None = None
+    mfa_secret: str | None = None  # Fernet ciphertext; decrypted only for TOTP checks.
 
     # Auth hardening (Section 5.7)
     failed_login_count: int = 0

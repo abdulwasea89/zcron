@@ -97,7 +97,6 @@ class MfaDisable(BaseModel):
 class MfaEnrollResponse(BaseModel):
     secret: str
     otpauth_uri: str
-    current_code: str
 
 
 class MfaStatus(BaseModel):

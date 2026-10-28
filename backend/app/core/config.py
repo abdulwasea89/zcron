@@ -12,6 +12,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
+from cryptography.fernet import Fernet
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -62,6 +63,11 @@ class Settings(BaseSettings):
             self.secret_key == "dev-insecure-change-me" or len(self.secret_key) < 32
         ):
             raise ValueError("Production requires a SECRET_KEY of at least 32 characters.")
+        if self.app_env.strip().lower() in {"prod", "production"}:
+            try:
+                Fernet(self.mfa_encryption_key.encode())
+            except (AttributeError, ValueError, TypeError) as exc:
+                raise ValueError("Production requires a valid Fernet MFA_ENCRYPTION_KEY.") from exc
         return self
 
     # ------------------------------------------------------------------ app
@@ -72,6 +78,7 @@ class Settings(BaseSettings):
 
     # --------------------------------------------------------------- security
     secret_key: str = "dev-insecure-change-me"
+    mfa_encryption_key: str = os.getenv("MFA_ENCRYPTION_KEY", "")
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
