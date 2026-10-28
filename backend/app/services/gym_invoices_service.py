@@ -210,7 +210,7 @@ async def record_payment(session: AsyncSession, *, org_id: str, invoice_id: str,
 
 
 async def void_invoice(session: AsyncSession, *, org_id: str, invoice_id: str,
-                       actor_id: str) -> GymInvoice:
+                       actor_id: str, reason: str) -> GymInvoice:
     invoice = await _owned(session, org_id=org_id, invoice_id=invoice_id)
     paid = await _paid(session, invoice)
     if invoice.status not in {"draft", "sent"} or paid:
@@ -218,5 +218,6 @@ async def void_invoice(session: AsyncSession, *, org_id: str, invoice_id: str,
     invoice.status = "void"
     session.add(invoice)
     await record_audit(session, action="gym_invoice.voided", organization_id=org_id,
-                       actor_user_id=actor_id, entity_type="gym_invoice", entity_id=invoice.id)
+                       actor_user_id=actor_id, entity_type="gym_invoice", entity_id=invoice.id,
+                       metadata={"reason": reason})
     return invoice

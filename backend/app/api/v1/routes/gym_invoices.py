@@ -11,7 +11,12 @@ from app.models.gym_invoice import GymInvoice
 from app.models.membership import OrganizationMember
 from app.models.organization import Organization
 from app.models.user import User
-from app.schemas.gym_invoices import GymInvoiceCreate, GymInvoiceOut, GymInvoicePaymentCreate
+from app.schemas.gym_invoices import (
+    GymInvoiceCreate,
+    GymInvoiceOut,
+    GymInvoicePaymentCreate,
+    GymInvoiceVoid,
+)
 from app.services import gym_invoices_service as service
 
 router = APIRouter()
@@ -101,9 +106,12 @@ async def record_payment(
              dependencies=[Depends(writable_gym_only)])
 async def void_invoice(
     invoice_id: str,
+    data: GymInvoiceVoid,
     ctx: TenantContext = Depends(require_capability(Capability.MANAGE_GYM_INVOICES)),
     session: AsyncSession = Depends(get_session),
     _org: Organization = Depends(writable_gym_only),
 ):
-    invoice = await service.void_invoice(session, org_id=ctx.org_id, invoice_id=invoice_id, actor_id=ctx.user_id)
+    invoice = await service.void_invoice(
+        session, org_id=ctx.org_id, invoice_id=invoice_id, actor_id=ctx.user_id, reason=data.reason
+    )
     return await _out(session, invoice)

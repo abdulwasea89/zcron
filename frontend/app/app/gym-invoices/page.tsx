@@ -30,6 +30,8 @@ export default function GymInvoicesPage() {
   const [paying, setPaying] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [voiding, setVoiding] = useState<Invoice | null>(null);
+  const [voidReason, setVoidReason] = useState("");
 
   async function load() {
     setError("");
@@ -49,10 +51,10 @@ export default function GymInvoicesPage() {
     } catch (exception) { toast.error((exception as ApiError).message); }
     finally { setBusy(""); }
   }
-  async function act(invoice: Invoice, action: "send" | "void") {
+  async function act(invoice: Invoice, action: "send" | "void", reason?: string): Promise<boolean> {
     setBusy(invoice.id);
-    try { await api.post(`/gym-invoices/${invoice.id}/${action}`); await load(); }
-    catch (exception) { toast.error((exception as ApiError).message); }
+    try { await api.post(`/gym-invoices/${invoice.id}/${action}`, action === "void" ? { reason } : undefined); await load(); return true; }
+    catch (exception) { toast.error((exception as ApiError).message); return false; }
     finally { setBusy(""); }
   }
   async function recordPayment(event: React.FormEvent) {
@@ -62,6 +64,12 @@ export default function GymInvoicesPage() {
       setPaying(null); setPaymentAmount(""); await load();
     } catch (exception) { toast.error((exception as ApiError).message); }
     finally { setBusy(""); }
+  }
+
+  async function voidInvoice(event: React.FormEvent) {
+    event.preventDefault();
+    if (!voiding || !voidReason.trim()) return;
+    if (await act(voiding, "void", voidReason.trim())) setVoiding(null);
   }
 
   if (!ready) return <Spinner label="Loading invoices…" />;
@@ -81,10 +89,11 @@ export default function GymInvoicesPage() {
       {invoices.map((invoice) => <tr key={invoice.id}><td className="px-3 py-3"><div className="font-medium">{invoice.invoice_number}</div><div className="text-xs text-muted-foreground">{invoice.description}</div></td><td className="px-3 py-3">{invoice.member_name || invoice.member_email}</td><td className="px-3 py-3 tabular-nums">{invoice.due_date}</td><td className="px-3 py-3 tabular-nums">{money(Number(invoice.total), invoice.currency)}</td><td className="px-3 py-3 tabular-nums">{money(Number(invoice.paid_amount), invoice.currency)}</td><td className="px-3 py-3 tabular-nums font-medium">{money(Number(invoice.balance_due), invoice.currency)}</td><td className="px-3 py-3"><Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge></td><td className="px-3 py-3 text-right">
         {invoice.status === "draft" && <Button variant="secondary" disabled={busy !== ""} loading={busy === invoice.id} onClick={() => void act(invoice, "send")}>Send</Button>}
         {["sent", "partial", "overdue"].includes(invoice.status) && <Button variant="secondary" disabled={busy !== ""} onClick={() => { setPaying(invoice); setPaymentAmount(""); }}>Record payment</Button>}
-        {["draft", "sent"].includes(invoice.status) && Number(invoice.paid_amount) === 0 && <Button className="ml-1" variant="ghost" disabled={busy !== ""} onClick={() => void act(invoice, "void")}>Void</Button>}
+        {["draft", "sent"].includes(invoice.status) && Number(invoice.paid_amount) === 0 && <Button className="ml-1" variant="ghost" disabled={busy !== ""} onClick={() => { setVoiding(invoice); setVoidReason(""); }}>Void</Button>}
       </td></tr>)}
       {invoices.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">No member invoices yet. Create one above to track an amount owed.</td></tr>}
     </tbody></table></div>}
     {paying && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setPaying(null); }}><form onSubmit={recordPayment} className="w-full max-w-md space-y-4 border border-border bg-background p-5" role="dialog" aria-modal="true" aria-labelledby="payment-title"><div><h2 id="payment-title" className="text-base font-semibold">Record invoice payment</h2><p className="mt-1 text-sm text-muted-foreground">Balance due: {money(Number(paying.balance_due), paying.currency)}</p></div><Input label="Amount (leave blank to settle balance)" type="number" min="0.01" max={paying.balance_due} step="0.01" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} /><label className="block text-xs text-muted-foreground">Method<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="mt-1 block h-10 w-full border border-border bg-background px-3 text-sm text-foreground"><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="mobile_wallet">Mobile wallet</option></select></label><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setPaying(null)}>Cancel</Button><Button type="submit" disabled={busy !== ""} loading={busy === paying.id}>Record payment</Button></div></form></div>}
+    {voiding && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setVoiding(null); }}><form onSubmit={voidInvoice} className="w-full max-w-md space-y-4 border border-border bg-background p-5" role="dialog" aria-modal="true" aria-labelledby="void-title"><div><h2 id="void-title" className="text-base font-semibold">Void invoice</h2><p className="mt-1 text-sm text-muted-foreground">{voiding.invoice_number} · The reason will be saved in the audit log.</p></div><label className="block text-xs text-muted-foreground">Reason<textarea required maxLength={1000} value={voidReason} onChange={(event) => setVoidReason(event.target.value)} className="mt-1 block min-h-24 w-full border border-border bg-background p-3 text-sm text-foreground" /></label><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setVoiding(null)}>Cancel</Button><Button type="submit" variant="danger" disabled={busy !== "" || !voidReason.trim()} loading={busy === voiding.id}>Void invoice</Button></div></form></div>}
   </main>;
 }

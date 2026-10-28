@@ -7,7 +7,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 | Priority | Feature | Status | Verification | Commit / push | Remaining limitations |
 |---:|---|---|---|---|---|
 | 1 | Member payments and receipts | Complete | Full backend suite: 617 passed, 2 optional PostgreSQL tests skipped. Focused payment verification/recovery tests: 9 passed. Ruff passed and Alembic reports `p1q2r3s4t5u6` as the single head. GitHub Production checks passed on Python 3.12, Python 3.13, and frontend for `2aa7b5c`. | `75ba0ee`, `f244301`, `5285336`, `d2f260c`, `edc271a`, and `2aa7b5c` pushed | Live Stripe credentials and webhook delivery are not exercised. Stale claims without a durable payment/provider reference still require manual review. |
-| 2 | Member invoices and receivables | Not started | Not verified | — | To be assessed |
+| 2 | Member invoices and receivables | In progress (CI pending) | Invoice/refund unit tests: 14 passed. Ruff, invoice-page ESLint, TypeScript, and production build passed locally. | Feature commit pending | Live email-provider delivery is not verified. |
 | 3 | Refunds, credits, and disputes | Not started | Not verified | — | To be assessed |
 | 4 | Audit log | Not started | Not verified | — | To be assessed |
 | 5 | Data requests and exports | Not started | Not verified | — | To be assessed |
@@ -43,6 +43,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 - Priority 1: Owners and managers can recheck a recorded pending or failed card payment against the gym's connected Stripe account. Only an amount- and currency-matched success is fulfilled; other outcomes remain visible without guessing.
 - Priority 1: Replayed failed idempotency claims return the recorded failure instead of being treated as successful operations.
 - Priority 1: A five-minute worker rechecks recorded pending card intents after ten minutes, at most every thirty minutes per payment. It uses the connected account, only settles exact amount/currency matches through the existing webhook fulfillment path, and leaves mismatches or uncertain provider results pending for review.
+- Priority 2: Voiding a gym member invoice now requires a nonblank reason, captured from the admin page and retained in the invoice audit event.
 
 ## Verification and scope
 

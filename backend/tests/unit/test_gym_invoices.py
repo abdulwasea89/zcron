@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -8,6 +9,7 @@ from fastapi import HTTPException
 from app.core.constants import PaymentStatus
 from app.models.gym_invoice import GymInvoice
 from app.models.payment import Payment
+from app.schemas.gym_invoices import GymInvoiceVoid
 from app.services import gym_invoices_service as invoices
 
 
@@ -99,3 +101,39 @@ async def test_invoice_payment_rejects_amount_above_balance(monkeypatch):
             note=None, paid_on=None, actor_id="owner", idempotency_key="overpay-key",
         )
     assert error.value.status_code == 422
+
+
+def test_invoice_void_reason_must_not_be_blank():
+    with pytest.raises(ValueError, match="A reason is required"):
+        GymInvoiceVoid(reason="  ")
+    assert GymInvoiceVoid(reason="  Duplicate charge  ").reason == "Duplicate charge"
+
+
+@pytest.mark.asyncio
+async def test_void_invoice_records_reason_in_audit(monkeypatch):
+    invoice = GymInvoice(
+        id="inv", organization_id="org", member_id="member", invoice_number="GINV-1",
+        description="Training", issue_date=date.today(), due_date=date.today(), status="sent",
+        subtotal=Decimal("100.00"), tax_amount=Decimal("0"), total=Decimal("100.00"), currency="USD",
+    )
+
+    class Session:
+        async def get(self, model, *_args, **_kwargs):
+            return invoice if model is GymInvoice else SimpleNamespace(organization_id="org")
+
+        def add(self, _row):
+            pass
+
+    async def paid(*_args, **_kwargs):
+        return Decimal("0.00")
+
+    audit = AsyncMock()
+    monkeypatch.setattr(invoices, "_paid", paid)
+    monkeypatch.setattr(invoices, "record_audit", audit)
+
+    result = await invoices.void_invoice(
+        Session(), org_id="org", invoice_id="inv", actor_id="owner", reason="Duplicate charge",
+    )
+
+    assert result.status == "void"
+    assert audit.await_args.kwargs["metadata"] == {"reason": "Duplicate charge"}

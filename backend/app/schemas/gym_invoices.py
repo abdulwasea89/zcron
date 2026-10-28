@@ -28,6 +28,18 @@ class GymInvoicePaymentCreate(BaseModel):
     paid_on: date | None = None
 
 
+class GymInvoiceVoid(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def nonblank_reason(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("A reason is required to void an invoice.")
+        return value
+
+
 class GymInvoiceOut(BaseModel):
     id: str
     invoice_number: str
