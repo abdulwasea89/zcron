@@ -29,6 +29,19 @@ def test_gym_matches_base_matrix_for_every_role(role):
     )
 
 
+@pytest.mark.parametrize("role", [Role.OWNER, Role.MANAGER, Role.TRAINER, Role.FRONT_DESK])
+def test_member_form_collection_is_staff_only(role):
+    assert role_has(role, Capability.COLLECT_MEMBER_FORMS, industry="gym") is True
+    assert role_has(role, Capability.VIEW_PRIVATE_MEMBER_PROFILE, industry="gym") is (
+        role in {Role.OWNER, Role.MANAGER}
+    )
+
+
+def test_members_cannot_collect_or_review_signed_forms():
+    assert role_has(Role.MEMBER, Capability.COLLECT_MEMBER_FORMS, industry="gym") is False
+    assert role_has(Role.MEMBER, Capability.VIEW_PRIVATE_MEMBER_PROFILE, industry="gym") is False
+
+
 def test_vertical_capabilities_denied_for_gym():
     assert role_has(Role.MANAGER, Capability.MANAGE_COMPANIES, industry="gym") is False
     assert role_has(Role.MANAGER, Capability.MANAGE_COURSES, industry="gym") is False

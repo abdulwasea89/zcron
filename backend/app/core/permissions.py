@@ -55,6 +55,7 @@ class Capability(str, Enum):
 
     # ---- Retention / churn (#33, #34) ----
     VIEW_RETENTION = "view_retention"        # attendance-drop + churn-risk roster
+    COLLECT_MEMBER_FORMS = "collect_member_forms"  # upload staff-collected signed documents
 
     # ---- Marketing (#39) ----
     RUN_CAMPAIGNS = "run_campaigns"          # compose and send segmented campaigns
@@ -95,6 +96,7 @@ _MATRIX: dict[Capability, set[Role]] = {
     Capability.MANAGE_INBOX: {Role.OWNER, Role.MANAGER, Role.FRONT_DESK},
     Capability.MANAGE_VISITORS: {Role.OWNER, Role.MANAGER, Role.FRONT_DESK},
     Capability.VIEW_RETENTION: {Role.OWNER, Role.MANAGER},
+    Capability.COLLECT_MEMBER_FORMS: {Role.OWNER, Role.MANAGER, Role.FRONT_DESK, Role.TRAINER},
     Capability.RUN_CAMPAIGNS: {Role.OWNER, Role.MANAGER},
 }
 

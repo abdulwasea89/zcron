@@ -294,6 +294,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
     { label: "Staff", href: "/app/staff", description: "Team members, roles and shifts" },
     { label: "Payroll", href: "/app/payroll", description: "Pay runs and staff entries" },
     { label: "Receipts", href: "/app/receipts", description: "Review submitted receipts" },
+    { label: "Waivers & forms", href: "/app/forms", description: "Manage forms and signed evidence" },
   ].filter((item) => industry.modules.includes(NAV_MODULE_BY_HREF[item.href]));
 
   // Grouped rail (Notion settings modal): Account / Preferences / Billing / Security.
