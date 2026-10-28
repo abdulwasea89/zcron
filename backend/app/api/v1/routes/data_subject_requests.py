@@ -301,7 +301,7 @@ async def export_member_data(
     )
     attendance = (await session.execute(select(Attendance).where(
         Attendance.organization_id == ctx.org_id, Attendance.member_id == member.id,
-    ).order_by(Attendance.checked_in_at.desc()).limit(5000))).scalars().all()
+    ).order_by(Attendance.checked_in_at.desc()).limit(5001))).scalars().all()
     class_bookings = (await session.execute(
         select(ClassBooking, ClassSession)
         .join(ClassSession, ClassSession.id == ClassBooking.class_session_id)
@@ -312,23 +312,23 @@ async def export_member_data(
             ClassSession.category == "class",
         )
         .order_by(ClassSession.starts_at.desc())
-        .limit(5000)
+        .limit(5001)
     )).all()
     payments = (await session.execute(select(Payment).where(
         Payment.organization_id == ctx.org_id, Payment.member_id == member.id,
-    ).order_by(Payment.created_at.desc()).limit(5000))).scalars().all()
+    ).order_by(Payment.created_at.desc()).limit(5001))).scalars().all()
     subscriptions = (await session.execute(select(Subscription).where(
         Subscription.organization_id == ctx.org_id, Subscription.member_id == member.id,
-    ).order_by(Subscription.created_at.desc()).limit(1000))).scalars().all()
+    ).order_by(Subscription.created_at.desc()).limit(1001))).scalars().all()
     retention_cases = (await session.execute(select(Task).where(
         Task.organization_id == ctx.org_id, Task.related_member_id == member.id, Task.category == "retention",
-    ).order_by(Task.created_at.desc()).limit(5000))).scalars().all()
+    ).order_by(Task.created_at.desc()).limit(5001))).scalars().all()
     training_packages = (await session.execute(select(TrainerPackage).where(
         TrainerPackage.organization_id == ctx.org_id, TrainerPackage.member_id == member.id,
-    ).order_by(TrainerPackage.created_at.desc()).limit(5000))).scalars().all()
+    ).order_by(TrainerPackage.created_at.desc()).limit(5001))).scalars().all()
     training_logs = (await session.execute(select(TrainerSessionLog).where(
         TrainerSessionLog.organization_id == ctx.org_id, TrainerSessionLog.client_member_id == member.id,
-    ).order_by(TrainerSessionLog.performed_at.desc()).limit(5000))).scalars().all()
+    ).order_by(TrainerSessionLog.performed_at.desc()).limit(5001))).scalars().all()
     inbox_messages = (await session.execute(
         select(InboxMessage, InboxConversation.channel)
         .join(InboxConversation, InboxConversation.id == InboxMessage.conversation_id)
@@ -338,8 +338,14 @@ async def export_member_data(
             InboxConversation.member_id == member.id,
         )
         .order_by(InboxMessage.created_at.desc())
-        .limit(5000)
+        .limit(5001)
     )).all()
+    truncation_limits = {
+        "attendance": (attendance, 5000), "class_bookings": (class_bookings, 5000),
+        "payments": (payments, 5000), "subscriptions": (subscriptions, 1000),
+        "retention_cases": (retention_cases, 5000), "training_packages": (training_packages, 5000),
+        "training_sessions": (training_logs, 5000), "messages": (inbox_messages, 5000),
+    }
     return {
         "account": {
             "email": user.email, "full_name": user.full_name, "phone": user.phone,
@@ -366,30 +372,31 @@ async def export_member_data(
                            "in_app_updated_at": member.marketing_in_app_consent_at,
                        }},
         "attendance": [{"checked_in_at": item.checked_in_at, "method": item.method.value,
-                        "source": item.source.value, "note": item.note} for item in attendance],
+                        "source": item.source.value, "note": item.note} for item in attendance[:5000]],
         "class_bookings": [{"status": booking.status.value, "booked_at": booking.created_at,
                             "class_title": class_session.title, "starts_at": class_session.starts_at,
                             "ends_at": class_session.ends_at}
-                           for booking, class_session in class_bookings],
+                           for booking, class_session in class_bookings[:5000]],
         "messages": [{"at": message.created_at, "direction": message.direction.value,
                       "channel": channel.value, "body": message.body,
                       "delivery_status": message.delivery_status}
-                     for message, channel in inbox_messages],
+                     for message, channel in inbox_messages[:5000]],
         "payments": [{"created_at": item.created_at, "amount": item.amount, "currency": item.currency,
                       "tax_amount": item.tax_amount, "tax_included": item.tax_included,
                       "status": item.status.value, "method": item.method.value, "kind": item.kind.value}
-                     for item in payments],
+                     for item in payments[:5000]],
         "subscriptions": [{"created_at": item.created_at, "status": item.status.value,
                            "started_at": item.started_at,
-                           "current_period_end": item.current_period_end} for item in subscriptions],
+                           "current_period_end": item.current_period_end} for item in subscriptions[:1000]],
         "retention_cases": [{"created_at": item.created_at, "next_action": item.description,
-                             "completed": item.done, "outcome": item.case_outcome} for item in retention_cases],
+                             "completed": item.done, "outcome": item.case_outcome} for item in retention_cases[:5000]],
         "training_packages": [{"name": item.name, "sessions": item.total_sessions,
                                "used_sessions": item.used_sessions, "granted_at": item.granted_at,
                                "expires_at": item.expires_at, "cancelled_at": item.cancelled_at}
-                              for item in training_packages],
+                              for item in training_packages[:5000]],
         "training_sessions": [{"performed_at": item.performed_at, "duration_minutes": item.duration_minutes,
                                "focus": item.focus, "notes": item.notes, "package_id": item.package_id}
-                              for item in training_logs],
-        "export_limitations": "This workspace export includes up to 5,000 rows per attendance, payment, retention case, training package and training session category, and 1,000 subscriptions. Processor records and backups are not included.",
+                              for item in training_logs[:5000]],
+        "truncated_sections": [name for name, (rows, limit) in truncation_limits.items() if len(rows) > limit],
+        "export_limitations": "This workspace export includes up to 5,000 rows per section (1,000 subscriptions). The truncated_sections list identifies sections over those limits. Processor records and backups are not included.",
     }

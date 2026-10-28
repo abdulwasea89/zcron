@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.constants import Channel, MessageDirection, SenderKind
+from app.models.attendance import Attendance
 from app.models.inbox import InboxConversation, InboxMessage
 from app.models.membership import OrganizationMember
 from tests.integration.test_member_detail import _member_id, _provision, _signup_and_pay
@@ -29,6 +30,9 @@ async def test_owner_can_record_review_export_and_resolve_member_data_request(cl
         direction=MessageDirection.INBOUND, sender_kind=SenderKind.CONTACT,
         channel=Channel.EMAIL, body="Please update my contact details.",
     ))
+    db.add_all(Attendance(
+        organization_id=member.organization_id, member_id=member_id,
+    ) for _ in range(5001))
     await db.commit()
 
     consent = await client.get(f"/api/v1/privacy/members/{member_id}/consent", headers=headers)
@@ -62,9 +66,12 @@ async def test_owner_can_record_review_export_and_resolve_member_data_request(cl
 
     export = await client.get(f"/api/v1/privacy/members/{member_id}/export", headers=headers)
     assert export.status_code == 200, export.text
-    assert export.json()["account"]["email"] == email
-    assert export.json()["subscriptions"]
-    assert export.json()["messages"][0]["body"] == "Please update my contact details."
+    export_body = export.json()
+    assert export_body["account"]["email"] == email
+    assert export_body["subscriptions"]
+    assert export_body["messages"][0]["body"] == "Please update my contact details."
+    assert len(export_body["attendance"]) == 5000
+    assert export_body["truncated_sections"] == ["attendance"]
     session = await client.post("/api/v1/classes", headers=headers, json={
         "title": "Privacy export class", "starts_at": "2026-12-01T10:00:00",
     })

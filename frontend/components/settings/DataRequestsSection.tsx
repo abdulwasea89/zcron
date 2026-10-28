@@ -174,7 +174,12 @@ export function DataRequestsSection({ onNavigate }: { onNavigate?: () => void })
       link.download = `member-data-${request.member_id}.json`;
       link.click();
       URL.revokeObjectURL(url);
-      toast.success("Member export downloaded.");
+      const truncated = data.truncated_sections;
+      if (Array.isArray(truncated) && truncated.length) {
+        toast.warning(`Export downloaded with truncated sections: ${truncated.join(", ")}.`);
+      } else {
+        toast.success("Member export downloaded.");
+      }
     } catch (error) {
       toast.error((error as ApiError).message || "Could not export member data.");
     } finally {

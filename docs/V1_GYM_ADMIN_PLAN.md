@@ -10,7 +10,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 | 2 | Member invoices and receivables | Complete | Invoice/refund unit tests: 14 passed. Ruff, invoice-page ESLint, TypeScript, and production build passed locally. GitHub Production checks passed on Python 3.12, Python 3.13, and frontend for `7753f27`. | `7753f27` pushed | Live email-provider delivery is not verified. |
 | 3 | Refunds, credits, and disputes | Complete | 35 focused backend integration/unit tests passed; Ruff, payment/member-sheet ESLint, TypeScript, and production build passed. GitHub Production checks passed on Python 3.12, Python 3.13, and frontend for `312b8be`. | `312b8be` pushed | Live Stripe refunds and dispute submission are not verified. |
 | 4 | Audit log | Complete | 47 focused audit, sensitive-access, finance-export, member-detail, and privacy-export tests passed; AuditWorkspace ESLint passed. GitHub Production checks passed on Python 3.12, Python 3.13, and frontend for `312b8be`. | Verified on `main`; no feature-code change needed | Hash-chain verification compares entries to the database-stored chain head; a privileged database operator could rewrite both. No external WORM anchor is included in Version 1. |
-| 5 | Data requests and exports | Not started | Not verified | — | To be assessed |
+| 5 | Data requests and exports | Complete (CI pending) | Privacy-request integration tests: 4 passed, including a 5,001-row attendance export confirming a 5,000-row cap and explicit `truncated_sections`. Ruff, DataRequestsSection ESLint, TypeScript, and production build passed locally. | Feature commit pending | Workspace exports still omit external processor data and backups; the export reports these limitations. |
 | 6 | Gym's software subscription | Not started | Not verified | — | To be assessed |
 | 7 | Member import | Not started | Not verified | — | To be assessed |
 | 8 | Shared inbox | Not started | Not verified | — | To be assessed |
@@ -47,6 +47,7 @@ For each priority: inspect the existing workflow, implement the remaining work, 
 - Priority 3: The Payments page now continues to offer refunds after a partial refund, so admins can refund the remaining eligible balance.
 - Priority 3: Owner/manager member details now show tenant-scoped credit balances and the 50 most recent ledger entries; opening the view is audit logged.
 - Priority 4: The existing audit workflow records financial changes, exports, and sensitive profile/receipt/payroll reads. Payroll details are redacted from manager-visible audit events; admins can search and verify the organization hash chain. Focused audit and privacy tests passed without a new feature-code change.
+- Priority 5: Member exports probe one row beyond each section limit, list exactly which sections are truncated, and show a warning after download when data was capped. Erasure review still records manual checks for linked records, processors, and retention/backups before closure.
 
 ## Verification and scope
 
