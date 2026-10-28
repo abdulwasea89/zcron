@@ -17,6 +17,8 @@ from sqlmodel import select
 from app.core.security import ACCESS, safe_decode
 from app.db.session import async_session_maker
 from app.models.membership import OrganizationMember
+from app.models.organization import Organization
+from app.models.user import User
 from app.realtime import manager
 
 router = APIRouter()
@@ -41,7 +43,15 @@ async def _authorize(token: str) -> tuple[str, str] | None:
                 )
             )
         ).scalar_one_or_none()
-    if membership is None or membership.banned:
+        user = await session.get(User, user_id)
+        org = await session.get(Organization, org_id)
+    if (
+        membership is None
+        or membership.banned
+        or user is None
+        or not user.is_active
+        or (org is not None and org.mfa_required and not user.mfa_enabled)
+    ):
         return None
     return org_id, user_id
 

@@ -133,6 +133,19 @@ async def get_tenant(
                 detail="Complete workspace setup before using this workspace.",
             )
 
+    if org is not None and org.mfa_required and not user.mfa_enabled:
+        allowed_for_mfa_setup = {
+            "/api/v1/auth/me",
+            "/api/v1/auth/me/profile",
+            "/api/v1/auth/mfa",
+            "/api/v1/organizations/me",
+        }
+        if request.url.path not in allowed_for_mfa_setup:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Enable multi-factor authentication to access this organization.",
+            )
+
     session_id = payload.get("session_id")
     if session_id:
         auth_session = await session.get(AuthSession, session_id)
