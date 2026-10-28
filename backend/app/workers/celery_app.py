@@ -57,19 +57,20 @@ def _run(coro: Awaitable) -> object:
 
 
 async def _for_each_org(fn: Callable[[object, str], Awaitable[dict]]) -> dict:
-    """Open a session, run ``fn(session, org_id)`` for every org, commit once."""
+    """Run each tenant sweep in its own transaction."""
 
     results: dict[str, object] = {}
     async with async_session_maker() as session:
         await set_rls_context(session, bypass=True)
         org_ids = (await session.execute(select(Organization.id))).scalars().all()
-        for org_id in org_ids:
-            try:
+    for org_id in org_ids:
+        try:
+            async with async_session_maker() as session:
                 await set_rls_context(session, organization_id=org_id)
                 results[org_id] = await fn(session, org_id)
-            except Exception as exc:  # one org failing must not stop the sweep
-                results[org_id] = {"error": str(exc)}
-        await session.commit()
+                await session.commit()
+        except Exception as exc:  # one org failing must not stop the sweep
+            results[org_id] = {"error": str(exc)}
     return {"orgs": len(results), "results": results}
 
 
@@ -78,14 +79,10 @@ async def _for_each_org(fn: Callable[[object, str], Awaitable[dict]]) -> dict:
 def reconcile_stuck_task() -> dict:
     from app.workers.payment_reconciliation import reconcile_stuck
 
-    async def _go():
-        async with async_session_maker() as session:
-            await set_rls_context(session, bypass=True)
-            out = await reconcile_stuck(session)  # all orgs at once
-            await session.commit()
-            return out
+    async def _per_org(session, org_id):
+        return await reconcile_stuck(session, org_id=org_id)
 
-    return _run(_go())
+    return _run(_for_each_org(_per_org))
 
 
 @celery_app.task(name="payments.verify_pending")
@@ -122,17 +119,11 @@ def expire_and_remind_task() -> dict:
 def enforce_saas_lifecycle_task() -> dict:
     from app.services.saas_billing_service import enforce_lifecycle
 
-    async def _go():
-        async with async_session_maker() as session:
-            await set_rls_context(session, bypass=True)
-            orgs = (await session.execute(select(Organization))).scalars().all()
-            for org in orgs:
-                await set_rls_context(session, organization_id=org.id)
-                await enforce_lifecycle(session, org=org)
-            await session.commit()
-            return {"orgs": len(orgs)}
+    async def _per_org(session, org_id):
+        org = await session.get(Organization, org_id)
+        return await enforce_lifecycle(session, org=org) if org is not None else {}
 
-    return _run(_go())
+    return _run(_for_each_org(_per_org))
 
 
 @celery_app.task(name="receipts.weekly_spot_audit")

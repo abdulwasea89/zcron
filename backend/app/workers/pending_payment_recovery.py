@@ -8,6 +8,7 @@ from sqlmodel import select
 
 from app.core.constants import PaymentKind, PaymentMethod, PaymentStatus
 from app.core.security import now_utc
+from app.db.rls import set_rls_context
 from app.db.session import async_session_maker
 from app.integrations.stripe_connect import connect_stripe
 from app.models.organization import Organization
@@ -26,6 +27,7 @@ async def recover_pending_payments(session_factory=async_session_maker, *, now=N
         return result
     now = now or now_utc()
     async with session_factory() as session:
+        await set_rls_context(session, bypass=True)
         candidates = (
             await session.execute(
                 select(Payment.id, Payment.organization_id)
@@ -54,6 +56,7 @@ async def recover_pending_payments(session_factory=async_session_maker, *, now=N
             outcome_key = None
             checked = False
             async with session_factory.begin() as session:
+                await set_rls_context(session, organization_id=org_id)
                 payment = (
                     await session.execute(
                         select(Payment)
