@@ -63,9 +63,10 @@ export function useRealtime(onEvent: (e: RtEvent) => void): RtStatus {
         if (!res.ok) throw new Error("no ticket");
         const { token } = (await res.json()) as { token: string };
 
-        ws = new WebSocket(`${wsBase()}/api/v1/ws?token=${encodeURIComponent(token)}`);
+        ws = new WebSocket(`${wsBase()}/api/v1/ws`);
 
         ws.onopen = () => {
+          ws?.send(token);
           attempt = 0;
           setStatus("live");
           heartbeat = setInterval(() => ws?.readyState === WebSocket.OPEN && ws.send("ping"), HEARTBEAT_MS);

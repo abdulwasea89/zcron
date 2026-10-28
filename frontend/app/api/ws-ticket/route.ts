@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { getAccessToken, getOrgId } from "@/lib/session";
+import { BackendError, backend } from "@/lib/backend";
 
-// Bridges the httpOnly access-token cookie to the browser WebSocket, which
-// can't read cookies or set headers. Returns the short-lived (15-min) access
-// token as a one-off ticket; the long-lived refresh token never leaves the server.
+// Exchange the httpOnly session cookie for a 30-second, WebSocket-only ticket.
 export async function GET() {
-  const token = await getAccessToken();
-  if (!token) return NextResponse.json({ detail: "unauthorized" }, { status: 401 });
-  return NextResponse.json({ token, orgId: await getOrgId() });
+  try {
+    const data = await backend<{ token: string }>("/auth/ws-ticket", { method: "POST" });
+    return NextResponse.json({ token: data.token });
+  } catch (error) {
+    const status = error instanceof BackendError ? error.status : 502;
+    const detail = error instanceof Error ? error.message : "Could not create a realtime ticket.";
+    return NextResponse.json({ detail }, { status });
+  }
 }

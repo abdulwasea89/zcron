@@ -37,9 +37,8 @@ class ConnectionManager:
         self._lock = asyncio.Lock()
 
     async def connect(self, org_id: str, user_id: str, websocket: WebSocket) -> None:
-        """Accept and register a socket under ``org_id`` and ``user_id``."""
+        """Register an already accepted socket under its org and user."""
 
-        await websocket.accept()
         async with self._lock:
             self._by_org[org_id].add(websocket)
             self._by_user[user_id].add(websocket)

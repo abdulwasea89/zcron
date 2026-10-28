@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_client_ip, get_current_user, get_session, get_tenant, require_role
 from app.core.config import settings
 from app.core.constants import Role
-from app.core.security import safe_decode
+from app.core.security import create_websocket_ticket, safe_decode
 from app.core.tenancy import TenantContext
 from app.models.membership import OrganizationMember
 from app.models.user import User
@@ -351,6 +351,24 @@ def _session_id_from_request(request: Request) -> str | None:
         return None
     payload = safe_decode(auth[7:])
     return payload.get("session_id") if payload else None
+
+
+@router.post("/ws-ticket")
+async def websocket_ticket(
+    request: Request,
+    tenant: TenantContext = Depends(get_tenant),
+):
+    session_id = _session_id_from_request(request)
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Refresh your session before connecting.")
+    return {
+        "token": create_websocket_ticket(
+            user_id=tenant.user_id,
+            org_id=tenant.org_id,
+            role=tenant.role.value,
+            session_id=session_id,
+        )
+    }
 
 
 # --------------------------------------------------------------------- MFA

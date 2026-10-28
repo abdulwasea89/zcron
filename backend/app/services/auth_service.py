@@ -385,7 +385,9 @@ async def refresh_tokens(
 
     role = Role(payload["role"])
     org_id = payload["org_id"]
-    access = create_access_token(user_id=user.id, org_id=org_id, role=role.value)
+    access = create_access_token(
+        user_id=user.id, org_id=org_id, role=role.value, session_id=auth_session.id
+    )
     auth_session.last_activity_at = now_utc()
     session.add(auth_session)
     return LoginResponse(

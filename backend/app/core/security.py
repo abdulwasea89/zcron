@@ -23,6 +23,7 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 ACCESS = "access"
 REFRESH = "refresh"
+WEBSOCKET = "websocket"
 
 # Password complexity (Section 4.2): 12+ chars, mixed case, number, symbol.
 _PWD_MIN_LEN = 12
@@ -119,6 +120,19 @@ def create_refresh_token(*, user_id: str, org_id: str | None, role: str | None) 
         role=role,
         token_type=REFRESH,
         expires_delta=timedelta(days=settings.refresh_token_expire_days),
+    )
+
+
+def create_websocket_ticket(
+    *, user_id: str, org_id: str, role: str, session_id: str
+) -> str:
+    return _create_token(
+        subject=user_id,
+        org_id=org_id,
+        role=role,
+        token_type=WEBSOCKET,
+        expires_delta=timedelta(seconds=30),
+        extra={"session_id": session_id},
     )
 
 
