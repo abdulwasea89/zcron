@@ -109,8 +109,14 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "reminder_created_at": "DATETIME",
             "reminder_email_accepted": "BOOLEAN NOT NULL DEFAULT 0",
         },
-        "payments": {"payer_contributions": "JSON NOT NULL DEFAULT '[]'", "tax_included": "BOOLEAN NOT NULL DEFAULT 0",
-                     "provider_checked_at": "DATETIME"},
+        "payments": {
+            "payer_contributions": "JSON NOT NULL DEFAULT '[]'",
+            "tax_included": "BOOLEAN NOT NULL DEFAULT 0",
+            "provider_checked_at": "DATETIME",
+            # The Alembic migration exists, but local SQLite uses this additive
+            # upgrader instead of Alembic when an existing DB is reopened.
+            "gym_invoice_id": "VARCHAR REFERENCES gym_invoices(id)",
+        },
         "organization_members": {
             "family_billing_mode": "VARCHAR NOT NULL DEFAULT 'shared_plan'",
             "marketing_whatsapp_consent": "BOOLEAN NOT NULL DEFAULT 0",
@@ -200,6 +206,10 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
         connection.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_payments_provider_checked_at "
             "ON payments (provider_checked_at)"
+        )
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_payments_gym_invoice_id "
+            "ON payments (gym_invoice_id)"
         )
     if "tasks" in tables:
         connection.exec_driver_sql(
