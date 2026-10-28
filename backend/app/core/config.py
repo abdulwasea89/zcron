@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     max_login_attempts: int = 10
     login_lockout_minutes: int = 30
     failed_login_window_minutes: int = 15
+    login_max_per_ip: int = 30
+    login_max_per_email: int = 10
 
     # --------------------------------------------------------------- database
     # Toggle: USE_CLOUD_DB=yes -> use CLOUD_DATABASE_URL (Neon/Supabase Postgres).

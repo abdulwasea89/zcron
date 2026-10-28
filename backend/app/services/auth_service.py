@@ -14,6 +14,7 @@ organization_id (Security Rule, Section 9.2).
 
 from __future__ import annotations
 
+import hashlib
 from datetime import timedelta
 
 from fastapi import HTTPException, status
@@ -31,6 +32,7 @@ from app.core.security import (
     password_complexity_errors,
     verify_password,
 )
+from app.core.rate_limit import rate_limiter
 from app.integrations.email import send_email, send_email_safe
 from app.integrations.hibp import password_is_pwned
 from app.models.membership import OrganizationMember
@@ -273,13 +275,29 @@ async def login(
 ) -> LoginResponse:
     """Unified login. Vague errors throughout (Security Rule #4)."""
 
-    user = await _get_user_by_email(session, email)
+    normalized_email = email.strip().lower()
+    email_key = hashlib.sha256(normalized_email.encode()).hexdigest()
+    allowed_email, _ = await rate_limiter.hit(
+        f"login:email:{email_key}", settings.login_max_per_email,
+        settings.failed_login_window_minutes * 60,
+    )
+    allowed_ip, _ = await rate_limiter.hit(
+        f"login:ip:{ip or 'unknown'}", settings.login_max_per_ip,
+        settings.failed_login_window_minutes * 60,
+    )
+    if not allowed_email or not allowed_ip:
+        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+
+    user = await _get_user_by_email(session, normalized_email)
     if user is None:
         raise HTTPException(status_code=401, detail=_VAGUE)
     if _is_locked(user):
         raise HTTPException(status_code=423, detail="Account temporarily locked. Try again later.")
     if not verify_password(password, user.hashed_password):
         await _register_failure(session, user)
+        # Persist the counter before raising; the request dependency rolls back
+        # transactions when an HTTPException escapes the route.
+        await session.commit()
         raise HTTPException(status_code=401, detail=_VAGUE)
     if not user.email_verified:
         raise HTTPException(status_code=403, detail="Email not verified.")
