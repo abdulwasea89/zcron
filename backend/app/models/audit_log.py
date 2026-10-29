@@ -23,3 +23,4 @@ class AuditLog(UUIDModel, TimestampModel, table=True):
     metadata_json: str | None = None
     previous_hash: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
     entry_hash: str | None = Field(default=None, sa_column=Column(String(64), nullable=True, index=True))
+    chain_key: str | None = Field(default=None, index=True)

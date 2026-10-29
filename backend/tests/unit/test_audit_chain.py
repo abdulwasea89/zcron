@@ -32,6 +32,45 @@ def test_hash_chain_reports_preexisting_unhashed_events():
     }
 
 
+def test_lane_key_is_covered_by_hash_without_changing_legacy_main_chain_digest():
+    entry = AuditLog(organization_id="gym", action="privacy.data_accessed", chain_key="read:staff")
+    entry.entry_hash = audit_entry_digest(entry)
+    assert verify_audit_chain([entry], entry.entry_hash)["valid"] is True
+    entry.chain_key = "read:other-staff"
+    assert verify_audit_chain([entry], entry.entry_hash)["valid"] is False
+
+
+@pytest.mark.asyncio
+async def test_read_audit_lane_advances_without_locking_organization():
+    from app.models.audit_chain_head import AuditChainHead
+    head = AuditChainHead(organization_id="gym", chain_key="read:staff")
+
+    class Session:
+        statements = []
+        entries = []
+
+        def get_bind(self):
+            return SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+
+        async def execute(self, statement):
+            self.statements.append(str(statement))
+            return SimpleNamespace(scalar_one=lambda: head)
+
+        def add(self, item):
+            if isinstance(item, AuditLog):
+                self.entries.append(item)
+
+    session = Session()
+    first = await record_audit(session, organization_id="gym", actor_user_id="staff",
+                               action="privacy.data_accessed", chain_key="read:staff")
+    second = await record_audit(session, organization_id="gym", actor_user_id="staff",
+                                action="privacy.data_accessed", chain_key="read:staff")
+    assert second.previous_hash == first.entry_hash
+    assert head.head_hash == second.entry_hash
+    assert len(session.entries) == 2
+    assert all("organizations" not in statement for statement in session.statements)
+
+
 @pytest.mark.asyncio
 async def test_record_audit_advances_the_organization_chain():
     organization = SimpleNamespace(audit_chain_head=None)

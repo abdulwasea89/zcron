@@ -35,6 +35,7 @@ async def record_read_access(session: AsyncSession, request: Request | None) -> 
     is_export = path.endswith(("/export", ".csv", ".zip"))
     await record_audit(session, action="privacy.data_accessed", organization_id=context.org_id,
                        actor_user_id=context.user_id, entity_type=area,
+                       chain_key=f"read:{context.user_id}",
                        ip_address=client_ip, user_agent=request.headers.get("user-agent", "")[:512],
                        metadata={"route": route, "role": context.role.value, "identifiers": identifiers,
                                  "access_type": "export" if is_export else "read"})

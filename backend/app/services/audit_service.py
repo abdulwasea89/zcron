@@ -12,9 +12,12 @@ import hashlib
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
+from app.models.audit_chain_head import AuditChainHead
 from app.models.organization import Organization
 from app.models.user import User
 
@@ -35,6 +38,8 @@ def audit_entry_digest(entry: AuditLog) -> str:
         "created_at": entry.created_at.isoformat(),
         "previous_hash": entry.previous_hash,
     }
+    if entry.chain_key is not None:
+        content["chain_key"] = entry.chain_key
     canonical = json.dumps(content, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
 
@@ -52,14 +57,32 @@ async def record_audit(
     ip_address: str | None = None,
     user_agent: str | None = None,
     metadata: dict | None = None,
+    chain_key: str | None = None,
 ) -> AuditLog:
     previous_hash = None
     organization = None
+    chain_head = None
     if organization_id and hasattr(session, "execute"):
-        organization = (await session.execute(
-            select(Organization).where(Organization.id == organization_id).with_for_update()
-        )).scalar_one_or_none()
-        previous_hash = organization.audit_chain_head if organization else None
+        if chain_key:
+            values = {"organization_id": organization_id, "chain_key": chain_key}
+            dialect = session.get_bind().dialect.name
+            insert = pg_insert if dialect == "postgresql" else sqlite_insert if dialect == "sqlite" else None
+            if insert:
+                await session.execute(insert(AuditChainHead).values(**values).on_conflict_do_nothing(
+                    index_elements=["organization_id", "chain_key"]
+                ))
+            chain_head = (await session.execute(
+                select(AuditChainHead).where(
+                    AuditChainHead.organization_id == organization_id,
+                    AuditChainHead.chain_key == chain_key,
+                ).with_for_update()
+            )).scalar_one()
+            previous_hash = chain_head.head_hash
+        else:
+            organization = (await session.execute(
+                select(Organization).where(Organization.id == organization_id).with_for_update()
+            )).scalar_one_or_none()
+            previous_hash = organization.audit_chain_head if organization else None
     entry = AuditLog(
         action=action,
         organization_id=organization_id,
@@ -72,12 +95,17 @@ async def record_audit(
         user_agent=user_agent,
         metadata_json=json.dumps(metadata, default=str) if metadata else None,
         previous_hash=previous_hash,
+        chain_key=chain_key,
     )
-    if organization:
+    if organization or chain_head:
         # shortcut: the head shares the database, add an external anchor to detect privileged database rewrites.
         entry.entry_hash = audit_entry_digest(entry)
-        organization.audit_chain_head = entry.entry_hash
-        session.add(organization)
+        if chain_head:
+            chain_head.head_hash = entry.entry_hash
+            session.add(chain_head)
+        else:
+            organization.audit_chain_head = entry.entry_hash
+            session.add(organization)
     session.add(entry)
     return entry
 

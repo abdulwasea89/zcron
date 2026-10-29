@@ -63,11 +63,17 @@ async def test_private_reads_audit_scope_without_search_values(path):
     req.state.tenant = TenantContext('actor', 'gym', Role.MANAGER)
     entries = []
     class AuditSession:
+        def get_bind(self):
+            return SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+
         def add(self, entry):
-            entries.append(entry)
+            if hasattr(entry, "action"):
+                entries.append(entry)
 
         async def execute(self, _statement):
-            return SimpleNamespace(scalar_one_or_none=lambda: None)
+            head = SimpleNamespace(head_hash=None)
+            return SimpleNamespace(scalar_one=lambda: head,
+                                   scalar_one_or_none=lambda: head)
 
     await record_read_access(AuditSession(), req)
     assert len(entries) == 1

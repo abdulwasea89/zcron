@@ -6,6 +6,7 @@ Importing this package imports every table module so that
 
 from app.models.attendance import Attendance
 from app.models.audit_log import AuditLog
+from app.models.audit_chain_head import AuditChainHead
 from app.models.cash import CashReconciliation
 from app.models.campaign import Campaign, CampaignDelivery, CampaignPaymentAttribution
 from app.models.celebration import MemberCelebration
@@ -58,6 +59,7 @@ __all__ = [
     "CampaignPaymentAttribution",
     "PaymentRefund",
     "AuditLog",
+    "AuditChainHead",
     "Attendance",
     "AuthSession",
     "CashReconciliation",

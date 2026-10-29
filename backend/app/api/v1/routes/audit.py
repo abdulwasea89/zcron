@@ -10,6 +10,7 @@ from app.api.deps import get_session, require_capability
 from app.core.permissions import Capability, role_has
 from app.core.tenancy import TenantContext
 from app.models.audit_log import AuditLog
+from app.models.audit_chain_head import AuditChainHead
 from app.models.organization import Organization
 from app.schemas.audit import AuditActionGroup, AuditLogOut, AuditLogPage
 from app.services import audit_service as audit
@@ -26,7 +27,23 @@ async def audit_integrity(
     entries = (await session.execute(
         select(AuditLog).where(AuditLog.organization_id == ctx.org_id)
     )).scalars().all()
-    return audit.verify_audit_chain(entries, org.audit_chain_head if org else None)
+    state_entries = [entry for entry in entries if entry.chain_key is None]
+    result = audit.verify_audit_chain(state_entries, org.audit_chain_head if org else None)
+    heads = (await session.execute(
+        select(AuditChainHead).where(AuditChainHead.organization_id == ctx.org_id)
+    )).scalars().all()
+    entries_by_chain: dict[str | None, list[AuditLog]] = {}
+    for entry in entries:
+        entries_by_chain.setdefault(entry.chain_key, []).append(entry)
+    heads_by_chain = {head.chain_key: head for head in heads}
+    read_chains = {}
+    for chain_key in (set(entries_by_chain) | set(heads_by_chain)) - {None}:
+        head = heads_by_chain.get(chain_key)
+        lane = entries_by_chain.get(chain_key, [])
+        read_chains[chain_key] = audit.verify_audit_chain(lane, head.head_hash if head else None)
+    result["read_chains"] = read_chains
+    result["valid"] = result["valid"] and all(chain["valid"] for chain in read_chains.values())
+    return result
 
 
 @router.get("", response_model=AuditLogPage)
