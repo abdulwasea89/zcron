@@ -21,7 +21,8 @@ def upgrade() -> None:
         "organization_members",
         sa.Column("daily_brief_email", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
-    op.alter_column("organization_members", "daily_brief_email", server_default=None)
+    with op.batch_alter_table("organization_members") as batch:
+        batch.alter_column("daily_brief_email", server_default=None)
 
 
 def downgrade() -> None:

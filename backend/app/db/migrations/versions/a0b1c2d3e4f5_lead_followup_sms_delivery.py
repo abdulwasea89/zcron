@@ -20,8 +20,10 @@ def upgrade() -> None:
             "ck_lead_followup_sms_status",
             "sms_status IN ('pending', 'sent', 'failed', 'skipped')",
         )
-    op.alter_column("lead_followups", "sms_status", server_default=None)
-    op.alter_column("lead_followups", "sms_attempts", server_default=None)
+    with op.batch_alter_table("lead_followups") as batch:
+        batch.alter_column("sms_status", server_default=None)
+    with op.batch_alter_table("lead_followups") as batch:
+        batch.alter_column("sms_attempts", server_default=None)
 
 
 def downgrade() -> None:

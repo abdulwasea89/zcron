@@ -26,7 +26,8 @@ def upgrade() -> None:
             "organization_members",
             sa.Column(f"marketing_{channel}_consent_at", sa.DateTime(), nullable=True),
         )
-        op.alter_column("organization_members", f"marketing_{channel}_consent", server_default=None)
+        with op.batch_alter_table("organization_members") as batch:
+            batch.alter_column(f"marketing_{channel}_consent", server_default=None)
 
 
 def downgrade() -> None:

@@ -19,7 +19,8 @@ depends_on = None
 def upgrade() -> None:
     op.add_column("leads", sa.Column("sms_followup_consent", sa.Boolean(), nullable=False, server_default=sa.false()))
     op.add_column("leads", sa.Column("sms_followup_consent_at", sa.DateTime(), nullable=True))
-    op.alter_column("leads", "sms_followup_consent", server_default=None)
+    with op.batch_alter_table("leads") as batch:
+        batch.alter_column("sms_followup_consent", server_default=None)
 
 
 def downgrade() -> None:

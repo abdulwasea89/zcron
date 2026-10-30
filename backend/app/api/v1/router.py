@@ -46,6 +46,7 @@ from app.api.v1.routes import (
     promotions,
     receipts,
     referrals,
+    retail,
     retention,
     saas_billing,
     space,
@@ -79,6 +80,7 @@ api_router.include_router(inbox_webhooks.router, prefix="/inbox", tags=["inbox-w
 api_router.include_router(front_desk.router, prefix="/front-desk", tags=["front-desk"])
 api_router.include_router(staff.router, prefix="/staff", tags=["staff"])
 api_router.include_router(payroll.router, prefix="/payroll", tags=["payroll"])
+api_router.include_router(retail.router, prefix="/retail", tags=["retail"])
 api_router.include_router(expenses.router, prefix="/expenses", tags=["expenses"])
 api_router.include_router(finance.router, prefix="/finance", tags=["finance"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])

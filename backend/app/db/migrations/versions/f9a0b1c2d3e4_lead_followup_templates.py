@@ -14,7 +14,8 @@ def upgrade() -> None:
         "organizations",
         sa.Column("lead_followup_templates", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
     )
-    op.alter_column("organizations", "lead_followup_templates", server_default=None)
+    with op.batch_alter_table("organizations") as batch:
+        batch.alter_column("lead_followup_templates", server_default=None)
 
 
 def downgrade() -> None:

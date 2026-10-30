@@ -21,7 +21,7 @@ depends_on = None
 def upgrade() -> None:
     with op.batch_alter_table("leads") as batch:
         batch.add_column(sa.Column(
-            "first_contacted_by_user_id", sa.String(), sa.ForeignKey("users.id"), nullable=True,
+            "first_contacted_by_user_id", sa.String(), sa.ForeignKey("users.id", name="fk_leads_first_contacted_by_user_id"), nullable=True,
         ))
 
     connection = op.get_bind()

@@ -26,17 +26,21 @@ def upgrade() -> None:
     op.add_column("membership_plans", sa.Column("included_credits", sa.Integer(), nullable=True))
     op.add_column("organization_members", sa.Column("family_owner_member_id", sa.String(), nullable=True))
     op.create_index("ix_organization_members_family_owner_member_id", "organization_members", ["family_owner_member_id"])
-    op.create_foreign_key("fk_members_family_owner", "organization_members", "organization_members", ["family_owner_member_id"], ["id"])
+    with op.batch_alter_table("organization_members") as batch:
+        batch.create_foreign_key("fk_members_family_owner", "organization_members", ["family_owner_member_id"], ["id"])
     op.add_column("subscriptions", sa.Column("credits_allowance", sa.Integer(), nullable=True))
     op.add_column("attendance", sa.Column("credit_subscription_id", sa.String(), nullable=True))
-    op.create_foreign_key("fk_attendance_credit_subscription", "attendance", "subscriptions", ["credit_subscription_id"], ["id"])
+    with op.batch_alter_table("attendance") as batch:
+        batch.create_foreign_key("fk_attendance_credit_subscription", "subscriptions", ["credit_subscription_id"], ["id"])
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_attendance_credit_subscription", "attendance", type_="foreignkey")
+    with op.batch_alter_table("attendance") as batch:
+        batch.drop_constraint("fk_attendance_credit_subscription", type_="foreignkey")
     op.drop_column("attendance", "credit_subscription_id")
     op.drop_column("subscriptions", "credits_allowance")
-    op.drop_constraint("fk_members_family_owner", "organization_members", type_="foreignkey")
+    with op.batch_alter_table("organization_members") as batch:
+        batch.drop_constraint("fk_members_family_owner", type_="foreignkey")
     op.drop_index("ix_organization_members_family_owner_member_id", table_name="organization_members")
     op.drop_column("organization_members", "family_owner_member_id")
     for name in ("included_credits", "off_peak_end", "off_peak_start", "family_capacity", "audience"):

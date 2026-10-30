@@ -131,3 +131,5 @@ __all__ = [
 ]
 
 from app.models.member_credit import MemberCreditAccount, MemberCreditEntry
+
+from app.models.retail import RetailProduct, RetailStockMovement  # noqa: F401
