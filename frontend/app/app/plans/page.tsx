@@ -313,7 +313,7 @@ export default function PlansPage() {
           if (!open) setShowForm(false);
         }}
       >
-        <SheetContent forceMount className="data-[state=closed]:pointer-events-none data-[state=closed]:invisible">
+        <SheetContent className="data-[state=closed]:pointer-events-none data-[state=closed]:invisible">
           <PlanForm
             key={editing?.id ?? "new"}
             plan={editing}

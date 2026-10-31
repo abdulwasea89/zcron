@@ -66,11 +66,10 @@ const SheetContent = React.forwardRef<
 >(({ className, children, side = "right", ...props }, ref) => {
   const { placement, motion } = SIDES[side]
   return (
-    <SheetPortal forceMount>
+    <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         ref={ref}
-        forceMount
         className={cn(
           "fixed z-50 flex w-full flex-col border-[var(--border)] bg-card shadow-2xl shadow-black/25 data-[state=closed]:pointer-events-none data-[state=closed]:invisible",
           placement,

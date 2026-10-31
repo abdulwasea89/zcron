@@ -5,6 +5,25 @@ import subprocess
 import sys
 from pathlib import Path
 
+from sqlalchemy import create_engine
+
+from app.db.session import _upgrade_sqlite_late_migration_columns
+
+
+def test_existing_sqlite_audit_logs_gain_chain_key():
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE audit_logs (id TEXT PRIMARY KEY)")
+        connection.exec_driver_sql("INSERT INTO audit_logs (id) VALUES ('existing')")
+        _upgrade_sqlite_late_migration_columns(connection)
+        _upgrade_sqlite_late_migration_columns(connection)
+        connection.exec_driver_sql("INSERT INTO audit_logs (id, chain_key) VALUES ('new', 'lane')")
+        assert connection.exec_driver_sql("SELECT id, chain_key FROM audit_logs ORDER BY id").all() == [
+            ("existing", None), ("new", "lane")
+        ]
+        indexes = connection.exec_driver_sql("PRAGMA index_list(audit_logs)").all()
+        assert any(row[1] == "ix_audit_logs_chain_key" for row in indexes)
+
 
 def test_fresh_sqlite_upgrade_creates_foreign_keys_and_retail_tables(tmp_path):
     db_path = tmp_path / "fresh.sqlite"

@@ -136,7 +136,7 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
             "lead_followup_templates": "JSON NOT NULL DEFAULT '{}'",
             "lead_capture_webhook_token": "VARCHAR(64)",
         },
-        "audit_logs": {"previous_hash": "VARCHAR(64)", "entry_hash": "VARCHAR(64)"},
+        "audit_logs": {"previous_hash": "VARCHAR(64)", "entry_hash": "VARCHAR(64)", "chain_key": "VARCHAR(255)"},
         "leads": {
             "sms_followup_consent": "BOOLEAN NOT NULL DEFAULT 0",
             "sms_followup_consent_at": "DATETIME",
@@ -197,6 +197,10 @@ def _upgrade_sqlite_late_migration_columns(connection) -> None:
                     f'ALTER TABLE "{table}" ADD COLUMN "{name}" {definition}'
                 )
                 existing.add(name)
+    if "audit_logs" in tables:
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_chain_key ON audit_logs (chain_key)"
+        )
     if "campaign_deliveries" in tables:
         connection.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_campaign_deliveries_provider_message_id "
