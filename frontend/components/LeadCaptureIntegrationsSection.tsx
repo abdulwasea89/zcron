@@ -71,13 +71,12 @@ export function LeadCaptureIntegrationsSection() {
     catch { toast.error("Could not copy. Select and copy the value manually."); }
   }
 
-  return <div className="mt-6 space-y-4 border-t border-border pt-5">
-    <div><h3 className="text-sm font-semibold text-foreground">Ad and external form leads</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Secure webhooks add new submissions to your Leads pipeline. Intake does not grant marketing consent.</p></div>
-    <p className="text-xs leading-5 text-muted-foreground">For other form builders and ad providers, use the normalized webhook below with Make, Zapier, or any service that can send a JSON webhook. Intake never grants email or SMS permission.</p>
+  return <div className="mt-6 space-y-4">
+    <p className="text-xs leading-5 text-muted-foreground">New leads appear in your pipeline. Marketing consent is not assumed.</p>
     {PROVIDERS.map((provider) => {
       const item = items[provider];
       const title = TITLES[provider];
-      return <div key={provider} className="space-y-3 border border-border p-4">
+      return <div key={provider} className="space-y-3 border border-border p-4 transition-colors hover:border-[var(--ring-accent)]">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="text-sm font-medium text-foreground">{title}</h4><p className="text-xs text-muted-foreground">{item.connected ? "Connected" : "Not connected"}</p></div><div className="flex gap-2"><Button variant="secondary" disabled={busy !== null} onClick={() => void connect(provider)}>{busy === provider ? "Saving…" : item.connected ? "Rotate secret" : "Enable"}</Button>{item.connected && <Button variant="danger" disabled={busy !== null} onClick={() => void disconnect(provider)}>Disconnect</Button>}</div></div>
         {item.connected && item.webhook_url && item.secret && <div className="space-y-2 bg-foreground/[0.035] p-3 text-xs">
           <p className="font-medium text-foreground">Webhook URL</p><p className="break-all font-mono text-[11px] text-muted-foreground">{item.webhook_url}</p><Button variant="secondary" onClick={() => void copy(item.webhook_url!)}>Copy URL</Button>

@@ -45,6 +45,9 @@ const SECTION_KEYWORDS: Record<string, string[]> = {
   invoice: ["legal", "tax", "vat", "address", "payment terms"],
   payments: ["stripe", "connect", "payments"],
   channels: ["inbox", "email", "sms", "whatsapp", "telegram", "line", "twilio", "smtp", "webhook", "instagram", "messenger", "wechat", "meta", "chat"],
+  channel_webhooks: ["webhook", "callback", "provider", "url"],
+  lead_integrations: ["lead", "ads", "forms", "integrations"],
+  followups: ["lead", "follow", "templates", "sms", "email"],
   billing: ["subscription", "plan", "tier", "saas", "invoice"],
   audit: ["audit", "log", "activity", "trail", "history"],
   sessions: ["sessions", "devices", "login"],
@@ -163,6 +166,8 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
     if (!org) return;
     const valid = [
       "account", "organization", "preferences", "tools", "billing", "sessions", "security", "audit", "channels",
+      "channel_webhooks", "lead_integrations",
+      ...(role === "owner" ? ["followups"] : []),
       ...(role === "owner" || role === "manager" ? ["privacy"] : []),
       ...(invoice ? ["invoice"] : []),
       ...(org.industry !== "office" ? ["payments"] : []),
@@ -308,7 +313,12 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
           ],
         },
         { label: "Preferences", items: [{ id: "preferences", label: "Preferences", icon: NAV_ICON.sliders }] },
-        { label: "Communications", items: [{ id: "channels", label: "Inbox channels", icon: NAV_ICON.message }] },
+        { label: "Communications", items: [
+          { id: "channels", label: "Inbox channels", icon: NAV_ICON.message },
+          { id: "channel_webhooks", label: "Webhooks", icon: NAV_ICON.message },
+          { id: "lead_integrations", label: "Lead integrations", icon: NAV_ICON.message },
+          ...(role === "owner" ? [{ id: "followups", label: "Follow-ups", icon: NAV_ICON.message }] : []),
+        ] },
         ...(toolLinks.length ? [{ label: "Workspace", items: [{ id: "tools", label: "Workspace tools", icon: NAV_ICON.building }] }] : []),
         {
           label: "Billing",
@@ -377,7 +387,8 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
                         key={item.id}
                         type="button"
                         onClick={() => selectTab(item.id)}
-                        className={`flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors ${
+                        aria-current={isActive ? "page" : undefined}
+                        className={`flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors ${g.label === "Communications" && item.id !== "channels" ? "pl-6" : ""} ${
                           isActive
                             ? "bg-foreground/[0.06] font-medium text-foreground"
                             : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
@@ -425,7 +436,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
                 <ReadValue>{titleCase(org.saas_tier)}</ReadValue>
               </Row>
               <Row label="Subscription" description="Billing status of the plan">
-                <Badge tone={statusTone(org.saas_status)}>{titleCase(org.saas_status)}</Badge>
+                <ReadValue><Badge tone={statusTone(org.saas_status)}>{titleCase(org.saas_status)}</Badge></ReadValue>
               </Row>
               <Row label="Member cap" description="Seat limit for your current plan">
                 <ReadValue>{org.member_cap ?? "Unlimited"}</ReadValue>
@@ -462,17 +473,19 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
                 <ThemePicker />
               </Row>
               <Row label="Connection" description="Live data sync status">
-                <LiveIndicator />
+                <ReadValue><LiveIndicator /></ReadValue>
               </Row>
               {(role === "owner" || role === "manager") && (
                 <Row label="Daily owner brief" description="Email me a copy of the daily brief alongside the in-app notification">
-                  <input
-                    aria-label="Email me the daily owner brief"
-                    type="checkbox"
-                    checked={dailyBriefEmail}
-                    onChange={(event) => setDailyBriefEmail(event.target.checked)}
-                    className="size-4 accent-brand"
-                  />
+                  <div className="sm:text-right">
+                    <input
+                      aria-label="Email me the daily owner brief"
+                      type="checkbox"
+                      checked={dailyBriefEmail}
+                      onChange={(event) => setDailyBriefEmail(event.target.checked)}
+                      className="size-4 accent-brand"
+                    />
+                  </div>
                 </Row>
               )}
               <Row
@@ -489,14 +502,26 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
 
             <Section id="channels" title="Inbox channels" description="Connect the providers your team uses to message members" hidden={active !== "channels"}>
               <InboxChannelsSection />
-              <LeadCaptureIntegrationsSection />
-              {role === "owner" && <LeadFollowupTemplatesSection />}
             </Section>
+
+            {active === "channel_webhooks" && <Section id="channel_webhooks" title="Webhooks" description="Incoming message URLs for your connected channels">
+              <InboxWebhooks onOpenChannels={() => selectTab("channels")} />
+            </Section>}
+
+            {active === "lead_integrations" && <section id="settings-lead_integrations">
+              <h2 className="text-[18px] font-semibold tracking-tight text-foreground">Lead integrations</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Connect lead forms and ad providers</p>
+              <LeadCaptureIntegrationsSection />
+            </section>}
+
+            {role === "owner" && active === "followups" && <Section id="followups" title="Follow-ups" description="Manage lead follow-up templates">
+              <LeadFollowupTemplatesSection />
+            </Section>}
 
             <Section id="tools" title="Workspace tools" description="Manage the less frequent administrative work" hidden={active !== "tools"}>
               {toolLinks.map((item) => (
                 <Row key={item.href} label={item.label} description={item.description}>
-                  <Link href={item.href} onClick={onNavigate} className="text-sm font-medium text-brand hover:underline">
+                  <Link href={item.href} onClick={onNavigate} className="block text-sm font-medium text-brand hover:underline sm:text-right">
                     Open {item.label.toLowerCase()} →
                   </Link>
                 </Row>
@@ -536,7 +561,7 @@ export function SettingsView({ onNavigate }: { onNavigate?: () => void }) {
                   label="Stripe Connect"
                   description="Member fees flow directly into your bank account"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 sm:justify-end">
                     <Badge tone={statusTone(org.stripe_connect_status)}>
                       {titleCase(org.stripe_connect_status)}
                     </Badge>
@@ -723,37 +748,79 @@ interface InboxConnection {
 }
 
 const INBOX_PROVIDERS = [
-  { id: "email", title: "Email", detail: "Send with SMTP or Resend. Add Resend inbound signing secret to receive member emails.", fields: [
+  { id: "email", title: "Email", detail: "Send and receive email with SMTP or Resend.", fields: [
     ["host", "SMTP host (optional with Resend)", "text"], ["port", "Port", "number"], ["username", "SMTP username", "text"], ["password", "SMTP password", "password"], ["from_email", "Sender email", "email"], ["resend_api_key", "Resend API key (optional)", "password"], ["inbound_webhook_secret", "Resend inbound webhook secret (optional)", "password"],
   ] },
-  { id: "sms", title: "SMS · Twilio", detail: "Send and receive SMS, and optionally forward gym calls and follow up on missed lead calls.", fields: [
+  { id: "sms", title: "SMS · Twilio", detail: "Send and receive text messages with Twilio.", fields: [
     ["account_sid", "Account SID", "text"], ["auth_token", "Auth Token", "password"], ["from_number", "Twilio phone number", "text"], ["forward_to_number", "Gym call-forward number (optional, international format)", "tel"],
   ] },
-  { id: "whatsapp", title: "WhatsApp · Twilio", detail: "Connect an approved WhatsApp sender in Twilio.", fields: [
+  { id: "whatsapp", title: "WhatsApp · Twilio", detail: "Message members using your Twilio sender.", fields: [
     ["account_sid", "Account SID", "text"], ["auth_token", "Auth Token", "password"], ["from_number", "WhatsApp sender", "text"],
   ] },
-  { id: "telegram", title: "Telegram", detail: "Connect a bot; Acron registers its secure webhook automatically.", fields: [
+  { id: "telegram", title: "Telegram", detail: "Connect your Telegram bot.", fields: [
     ["bot_token", "Bot token", "password"],
   ] },
-  { id: "line", title: "LINE", detail: "Connect a LINE Official Account messaging API channel.", fields: [
+  { id: "line", title: "LINE", detail: "Connect your LINE Official Account.", fields: [
     ["access_token", "Channel access token", "password"], ["channel_secret", "Channel secret", "password"],
   ] },
-  { id: "instagram", title: "Instagram Messaging", detail: "Connect an Instagram professional account through Meta webhooks and Graph API.", fields: [
+  { id: "instagram", title: "Instagram Messaging", detail: "Connect your professional Instagram account.", fields: [
     ["sender_id", "Instagram account ID", "text"], ["page_access_token", "Page access token", "password"], ["app_secret", "Meta app secret", "password"], ["verify_token", "Webhook verify token", "password"],
   ] },
-  { id: "messenger", title: "Facebook Messenger and lead ads", detail: "Connect your Page inbox and optionally capture leads from approved Facebook forms.", fields: [
+  { id: "messenger", title: "Facebook Messenger and lead ads", detail: "Connect your Facebook Page and lead forms.", fields: [
     ["sender_id", "Facebook Page ID", "text"], ["page_access_token", "Page access token", "password"], ["app_secret", "Meta app secret", "password"], ["verify_token", "Webhook verify token", "password"],
     ["lead_form_ids", "Lead form IDs (optional, comma-separated)", "text"],
   ] },
-  { id: "wechat", title: "WeChat Official Account", detail: "Connect a WeChat Official Account using its customer-service API and plaintext-mode callback.", fields: [
+  { id: "wechat", title: "WeChat Official Account", detail: "Connect your WeChat Official Account.", fields: [
     ["app_id", "App ID", "text"], ["app_secret", "App secret", "password"], ["verify_token", "Webhook token", "password"],
   ] },
-  { id: "web_chat", title: "Member web chat", detail: "Enable a public, rate-limited chat link for members and prospects.", fields: [],
+  { id: "web_chat", title: "Member web chat", detail: "Share a chat link with members and prospects.", fields: [],
   },
 ] as const;
 
+function InboxWebhooks({ onOpenChannels }: { onOpenChannels: () => void }) {
+  const [connections, setConnections] = useState<InboxConnection[] | null>(null);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api.get<InboxConnection[]>("/inbox/channels")
+      .then((items) => { if (active) setConnections(items); })
+      .catch((e) => { if (active) setError((e as ApiError).message || "Could not load webhooks."); });
+    return () => { active = false; };
+  }, []);
+
+  const urls = (connections ?? []).flatMap((connection) => {
+    if (!connection.connected) return [];
+    const title = INBOX_PROVIDERS.find((provider) => provider.id === connection.channel)?.title ?? connection.channel;
+    return [
+      ...(connection.webhook_url && connection.channel !== "telegram" && connection.channel !== "web_chat" ? [{ title, url: connection.webhook_url }] : []),
+      ...(connection.channel === "sms" && connection.voice_webhook_url ? [{ title: "Twilio Voice", url: connection.voice_webhook_url }] : []),
+    ];
+  });
+
+  async function copy(url: string) {
+    try { await navigator.clipboard.writeText(url); setCopied(url); setError(""); }
+    catch { setError("Could not copy the URL. Select and copy it manually."); }
+  }
+
+  return <div className="space-y-4 py-4">
+    {error && <Alert>{error}</Alert>}
+    {!connections && !error && <p role="status" className="text-sm text-muted-foreground">Loading webhooks…</p>}
+    {connections && urls.length === 0 && <p className="text-sm text-muted-foreground">No webhook URLs yet. Connect a channel to get started.</p>}
+    {urls.map(({ title, url }) => <div key={title} className="space-y-2 border-b border-border pb-4">
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="break-all font-mono text-xs text-muted-foreground">{url}</p>
+      <Button variant="secondary" onClick={() => void copy(url)}>{copied === url ? "Copied" : "Copy URL"}</Button>
+    </div>)}
+    <p className="text-xs leading-5 text-muted-foreground">Add each URL in your provider settings. Telegram registers its webhook automatically. A public HTTPS API URL is required.</p>
+    <Button variant="secondary" onClick={onOpenChannels}>Manage channels</Button>
+  </div>;
+}
+
 function InboxChannelsSection() {
   const [connections, setConnections] = useState<InboxConnection[]>([]);
+  const [showMore, setShowMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -814,45 +881,52 @@ function InboxChannelsSection() {
   const connectionFor = (id: string) => connections.find((item) => item.channel === id);
   if (loading) return <p className="py-4 text-sm text-muted-foreground">Loading connected providers…</p>;
 
-  return <div className="space-y-4">
-    <p className="text-sm leading-6 text-muted-foreground">Provider credentials are encrypted before storage. Only workspace owners can manage connections. Sending and webhook delivery require a publicly reachable HTTPS API URL.</p>
-    {error && <Alert>{error}</Alert>}
-    {notice && <Alert tone="success">{notice}</Alert>}
-    {INBOX_PROVIDERS.map((provider) => {
+  return <div className="py-4">
+    {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+    {notice && <div className="mb-4" role="status"><Alert tone="success">{notice}</Alert></div>}
+    <div className="overflow-hidden rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
+    {INBOX_PROVIDERS.filter((provider, index) => showMore || index < 4 || connectionFor(provider.id)?.connected).map((provider) => {
       const connection = connectionFor(provider.id);
       const isEditing = editing === provider.id;
-      return <div key={provider.id} className="rounded-lg border border-[var(--border)] px-4 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><div className="flex items-center gap-2"><h3 className="text-sm font-medium text-foreground">{provider.title}</h3><Badge tone={connection?.connected ? "success" : "neutral"}>{connection?.connected ? "Connected" : "Not connected"}</Badge></div>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{provider.detail}</p>
-            {connection?.connected_at && <p className="mt-1 text-[11px] text-muted-foreground">Verified {new Date(connection.connected_at).toLocaleString()}</p>}
+      return <div key={provider.id} className="px-4 py-4 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-medium text-foreground">{provider.title}</h3>
+              <Badge tone={connection?.connected ? "success" : "neutral"}>{connection?.connected ? "Connected" : "Not connected"}</Badge>
+            </div>
+            {isEditing && <p className="mt-1 text-xs leading-5 text-muted-foreground">{provider.detail}</p>}
           </div>
-          {!isEditing && <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => startEdit(provider.id)}>{connection?.connected ? "Update" : "Connect"}</Button>
+          {!isEditing && <div className="flex shrink-0 gap-2">
+            <Button variant="secondary" disabled={busy} onClick={() => startEdit(provider.id)}>{connection?.connected ? "Update" : "Connect"}</Button>
             {connection?.connected && <Button variant="danger" disabled={busy} onClick={() => void disconnect(provider.id)}>Disconnect</Button>}
           </div>}
         </div>
-        {connection?.connected && connection.webhook_url && provider.id !== "telegram" && <div className="mt-3 rounded-md bg-foreground/[0.035] p-3">
-          <p className="text-xs font-medium text-foreground">{provider.id === "web_chat" ? "Member chat link" : "Provider webhook URL"}</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{connection.webhook_url}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void copyWebhook(connection.webhook_url!)}>Copy {provider.id === "web_chat" ? "link" : "URL"}</Button><span className="text-[11px] text-muted-foreground">{provider.id === "web_chat" ? "Share this page with members and prospects." : "Add this URL in your provider’s webhook settings. Keep it private."}</span></div>
+        {connection?.connected && connection.webhook_url && provider.id !== "telegram" && <div className="mt-4 rounded-md bg-foreground/[0.035] p-3">
+          <p className="text-xs font-medium text-foreground">{provider.id === "web_chat" ? "Member chat link" : "Provider webhook URL"}</p>
+          <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{connection.webhook_url}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void copyWebhook(connection.webhook_url!)}>Copy {provider.id === "web_chat" ? "link" : "URL"}</Button>{provider.id !== "web_chat" && <span className="text-[11px] text-muted-foreground">Add this URL in your provider settings. Keep it private.</span>}</div>
         </div>}
-        {provider.id === "messenger" && <p className="mt-3 text-xs leading-5 text-muted-foreground">For lead ads, enter the form IDs to allow, subscribe the Meta callback to leadgen, and grant the Page token lead-retrieval access. Intake does not grant marketing consent. Leaving form IDs empty disables ad intake.</p>}
         {connection?.connected && provider.id === "sms" && connection.voice_webhook_url && <div className="mt-3 rounded-md bg-foreground/[0.035] p-3">
           <p className="text-xs font-medium text-foreground">Twilio Voice webhook URL</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{connection.voice_webhook_url}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void copyWebhook(connection.voice_webhook_url!)}>Copy URL</Button><span className="text-[11px] text-muted-foreground">Set this as the Twilio phone number’s incoming voice URL. Calls ring the configured gym number for 20 seconds; missed calls create a staff task, and SMS is sent only with lead consent.</span></div>
+          <div className="mt-2 flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void copyWebhook(connection.voice_webhook_url!)}>Copy URL</Button><span className="text-[11px] text-muted-foreground">Set this as your Twilio number’s incoming voice URL.</span></div>
         </div>}
         {isEditing && <div className="mt-4 border-t border-[var(--border)] pt-4">
+          {connection?.connected && <p className="mb-3 text-xs text-muted-foreground">Enter your credentials again to update this connection. Saved secrets are not shown.</p>}
+          {provider.id === "messenger" && <p className="mb-3 text-xs text-muted-foreground">For lead ads, allow the form IDs below, subscribe the Meta callback to leadgen, and grant lead-retrieval access. Lead intake does not grant marketing consent.</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             {provider.fields.map(([key, label, type]) => <label key={key} className="block text-xs text-muted-foreground">{label}
               <input type={type} inputMode={type === "number" ? "numeric" : undefined} autoComplete="off" value={values[key] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))} className="mt-1.5 h-9 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-foreground outline-none focus:border-brand" />
             </label>)}
             {provider.id === "email" && <label className="flex items-center gap-2 self-end pb-2 text-xs text-muted-foreground"><input type="checkbox" checked={values.use_tls !== "false"} onChange={(event) => setValues((current) => ({ ...current, use_tls: String(event.target.checked) }))} />Use STARTTLS</label>}
           </div>
-          <p className="mt-3 text-[11px] text-muted-foreground">{connection?.connected ? "Enter the provider credentials again to replace the saved connection. Saved secrets are never shown." : "Credentials are only sent to the Acron backend for verification and encrypted storage."}</p>
-          <div className="mt-4 flex justify-end gap-2"><Button variant="secondary" disabled={busy} onClick={() => { setEditing(null); setValues({}); }}>Cancel</Button><Button disabled={busy} loading={busy} onClick={() => void submit(provider.id)}>{connection?.connected ? "Save connection" : "Verify and connect"}</Button></div>
+          <div className="mt-4 flex justify-end gap-2"><Button variant="secondary" disabled={busy} onClick={() => { setEditing(null); setValues({}); }}>Cancel</Button><Button disabled={busy} loading={busy} onClick={() => void submit(provider.id)}>{connection?.connected ? "Save connection" : provider.id === "web_chat" ? "Enable chat" : "Verify and connect"}</Button></div>
         </div>}
       </div>;
     })}
-    <div className="rounded-md border border-dashed border-[var(--border)] p-3 text-xs leading-5 text-muted-foreground">To enable provider webhooks, set <code>INBOX_PUBLIC_WEBHOOK_BASE_URL</code> to your public HTTPS API address and <code>INBOX_ENCRYPTION_KEY</code> in the backend environment. Telegram webhook registration is automatic; configure the displayed URLs in Twilio, Meta, LINE, WeChat, or Resend. Resend inbound email requires the email.received event and the webhook signing secret.</div>
+    </div>
+    <button type="button" onClick={() => setShowMore((value) => !value)} aria-expanded={showMore} className="mt-3 rounded-md px-1 py-1 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+      {showMore ? "Show fewer channels" : "Show more channels"}
+    </button>
   </div>;
 }

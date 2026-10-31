@@ -157,7 +157,7 @@ export function BillingWorkspace({ embedded = false }: { embedded?: boolean }) {
   const body = status && (
     <>
       <Row label="Manage billing" description="Update your payment method and billing details securely in Stripe.">
-        <Button variant="secondary" loading={portalBusy} onClick={openPortal}>Open billing portal</Button>
+        <div className="sm:text-right"><Button variant="secondary" loading={portalBusy} onClick={openPortal}>Open billing portal</Button></div>
       </Row>
       <Row label="Current tier" description="Your SaaS plan">
         <div className="flex items-center justify-end gap-2">
