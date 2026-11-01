@@ -425,7 +425,7 @@ export function MemberDetailSheet({
             {data && m && <>
               <MemberProfileCard key={m.member_id} memberId={m.member_id} profile={data.profile} canManage={canManage} onSaved={() => load(m.member_id)} />
               <MemberTagsCard key={`tags:${m.member_id}`} memberId={m.member_id} tags={m.tags ?? []} canManage={canManage} onSaved={() => load(m.member_id)} />
-              <FamilyPlanCard key={data.member.member_id} detail={data} canManage={canManage} onSaved={() => load(m.member_id)} />
+              <FamilyPlanCard key={`family:${m.member_id}`} detail={data} canManage={canManage} onSaved={() => load(m.member_id)} />
               {m.role === "member" && <Card>
                 <CardHeader title="Trainers" subtitle="Staff assigned to this member" action={canManage ? <Button variant="secondary" onClick={() => void openAssign()}>Assign trainer</Button> : undefined} />
                 {data.trainer_assignments.length === 0 ? <p className="px-5 pb-5 text-sm text-muted-foreground">No trainer assigned.</p> : <ul className="divide-y divide-foreground/[0.08]">{data.trainer_assignments.map((trainer) => <li key={trainer.trainer_member_id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm"><span>{trainer.trainer_name}</span>{canManage && <button type="button" onClick={() => void unassignTrainer(trainer.trainer_member_id)} className="text-xs text-muted-foreground hover:text-danger">Remove</button>}</li>)}</ul>}

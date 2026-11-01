@@ -3,7 +3,8 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApiError, api } from "@/lib/api";
-import { Button, Select } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 type ImportResult = { created: number; updated: number; skipped: number; errors: { row: number; error: string }[] };
@@ -29,16 +30,17 @@ export function MemberImportSheet({ open, onOpenChange, onImported }: {
     const link = document.createElement("a");
     link.href = url; link.download = "member-import-template.csv"; link.click(); URL.revokeObjectURL(url);
   }
-  async function submit(apply: boolean) {
-    if (!file || busy) return;
-    if (!/\.(csv|xlsx)$/i.test(file.name) || file.size > 2_000_000) {
+  async function submit(apply: boolean, selectedFile?: File) {
+    const upload = selectedFile ?? file;
+    if (!upload || busy) return;
+    if (!/\.(csv|xlsx)$/i.test(upload.name) || upload.size > 2_000_000) {
       toast.error("Choose a CSV or .xlsx workbook up to 2 MB."); return;
     }
     setBusy(true);
     try {
       const form = new FormData();
-      form.append("file", file);
-      form.append("column_mapping", headers.length ? JSON.stringify(mapping) : "null");
+      form.append("file", upload);
+      form.append("column_mapping", !selectedFile && headers.length ? JSON.stringify(mapping) : "null");
       if (apply) {
         if (!preview?.rows.length) return;
         form.append("fill_missing", String(fillMissing));
@@ -65,19 +67,30 @@ export function MemberImportSheet({ open, onOpenChange, onImported }: {
         <div className="space-y-2">
           <label htmlFor="member-import-file" className="block text-xs font-medium">CSV or Excel · up to 2 MB</label>
           <input ref={fileInput} id="member-import-file" type="file" disabled={busy} accept=".csv,.xlsx" onChange={(event) => {
-            setFile(event.target.files?.[0] ?? null); setHeaders([]); setMapping({}); invalidate();
+            const selectedFile = event.target.files?.[0] ?? null;
+            setFile(selectedFile); setHeaders([]); setMapping({}); invalidate();
+            if (selectedFile) void submit(false, selectedFile);
           }} className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-2" />
         </div>
         {headers.length > 0 && <section className="grid gap-3 sm:grid-cols-2" aria-label="Column mapping">
-          {Object.entries(fields).map(([field, label]) => <Select key={field} label={label} disabled={busy} value={mapping[field] || ""} onChange={(event) => {
-            const next = { ...mapping }; if (event.target.value) next[field] = event.target.value; else delete next[field];
-            setMapping(next); invalidate();
-          }}><option value="">{field === "email" ? "Choose a column" : "Do not import"}</option>{headers.map((header) => <option key={header} value={header}>{header}</option>)}</Select>)}
+          {Object.entries(fields).map(([field, label]) => <div key={field}>
+            <label htmlFor={`member-import-${field}`} className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</label>
+            <Select disabled={busy} value={String(headers.indexOf(mapping[field]) + 1)} onValueChange={(value) => {
+              const next = { ...mapping }; const header = headers[Number(value) - 1];
+              if (header) next[field] = header; else delete next[field];
+              setMapping(next); invalidate();
+            }}>
+              <SelectTrigger id={`member-import-${field}`} className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="0">{field === "email" ? "Choose a column" : "Do not import"}</SelectItem>{headers.map((header, index) => <SelectItem key={header} value={String(index + 1)}>{header}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>)}
         </section>}
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={fillMissing} disabled={busy} onChange={(event) => { setFillMissing(event.target.checked); importKey.current = ""; }} />
           Fill blank display names and phones on matching gym members. Existing values and shared account details are preserved; staff profiles are skipped.
         </label>
-        <p className="text-xs leading-5 text-muted-foreground">New members are pending activation; an activation email is attempted. No plans, payments, consent, or roles are imported. Duplicate emails within the file need correction. Different email addresses are never merged automatically.</p>
+        <p className="text-xs leading-5 text-muted-foreground">Only email, name, and phone are imported. Other columns, including goals, emergency contacts, ID references, and health notes, are not imported. New members are pending activation; an activation email is attempted. Duplicate emails need correction.</p>
+        {busy && !preview && <p role="status" className="text-xs text-muted-foreground">Preparing preview…</p>}
+        {file && !busy && !preview && <p className="text-xs text-muted-foreground">Preview the file before importing. If you change a column mapping, preview it again.</p>}
         {preview && <section aria-live="polite" className="space-y-3 border border-border p-4">
           <h3 className="text-sm font-semibold">Preview · {rows.length} rows</h3>
           {rows.length === 0 ? <p className="text-sm">Choose an email column, then preview again.</p> : <>
@@ -93,7 +106,7 @@ export function MemberImportSheet({ open, onOpenChange, onImported }: {
           <ul className="max-h-52 space-y-1 overflow-y-auto text-xs text-muted-foreground">{result.errors.map((error, index) => <li key={`${error.row}-${index}`}>Row {error.row}: {error.error}</li>)}</ul>
         </section>}
       </SheetBody>
-      <SheetFooter><Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>Close</Button>
+      <SheetFooter className="flex-wrap"><Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>Close</Button>
         <Button variant="secondary" disabled={!file || busy} onClick={() => void submit(false)}>Preview</Button>
         <Button disabled={!file || busy || !rows.some((row) => row.action !== "error")} loading={busy} onClick={() => void submit(true)}>Import reviewed rows</Button>
       </SheetFooter>
