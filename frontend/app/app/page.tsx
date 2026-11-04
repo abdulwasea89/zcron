@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { PaymentTrendChart, type PaymentTrendPoint } from "@/components/PaymentTrendChart";
-import { Badge } from "@/components/ui";
+import { Card } from "@/components/ui";
+import { Users, CircleDollarSign, CircleCheck, ClipboardCheck, Grid2X2, ChartPie, FileText, Plus, ChevronRight, Check, Circle, CalendarDays, CreditCard, type LucideIcon } from "lucide-react";
+import { DashboardEmptyState, DashboardRetry } from "@/components/DashboardUI";
+import { dashboardName, dashboardNumber } from "@/lib/dashboard-format";
+import "./dashboard.css";
 import { WorkspaceAction } from "@/components/WorkspaceAction";
 import { DashboardTaskList } from "@/components/DashboardTaskList";
 import { backend } from "@/lib/backend";
 import {
   fmtDate,
   dateKeyInTimeZone,
-  gymStatusLabel,
-  gymStatusTone,
   money,
   statusTone,
   titleCase,
@@ -35,7 +37,6 @@ type RetentionSummary = { scored: number; high: number; medium: number; revenue_
 type RetentionRiskAction = { member_id: string; name: string | null; phone: string | null; band: string };
 type LeadResponseSummary = { uncontacted: number };
 
-const PRIMARY_ACTION_CLASS = "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-xs font-medium text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
 type ChecklistFlag = Exclude<keyof SetupChecklist, "steps">;
 
@@ -71,43 +72,17 @@ const STEP_HREF: Record<string, string> = {
   done: "/app",
 };
 
-function Icon({ d, className }: { d: string; className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d={d} />
-    </svg>
-  );
+function Icon({ d: Glyph, className }: { d: LucideIcon; className?: string }) {
+  return <Glyph className={className} aria-hidden="true" />;
 }
 
-const ICONS = {
-  members: "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
-  revenue: "M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-  checkin: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-  approvals: "M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z",
-  seats: "M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z",
-  percent: "M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6zM13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z",
-  invoice: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z",
-} as const;
+const ICONS = { members: Users, revenue: CircleDollarSign, checkin: CircleCheck, approvals: ClipboardCheck, seats: Grid2X2, percent: ChartPie, invoice: FileText };
 
-function ProgressBar({ value, tone = "brand" }: { value: number; tone?: "brand" | "success" }) {
+function ProgressBar({ value, label }: { value: number; label: string }) {
   const pct = Math.max(0, Math.min(100, value));
-  return (
-    <div role="progressbar" aria-label="Progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-1 w-full overflow-hidden bg-foreground/[0.08]">
-      <div
-        className={`h-full ${tone === "success" ? "bg-success" : "bg-brand"}`}
-        style={{ width: `${pct}%` }}
-      />
-    </div>
-  );
+  return <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="dash-progress">
+    <div className="dash-progress-fill" style={{ width: `${pct}%` }} />
+  </div>;
 }
 
 function paymentTrend(payments: PaymentOut[], timeZone: string): PaymentTrendPoint[] {
@@ -184,7 +159,7 @@ export default async function DashboardPage() {
     day: "numeric",
   });
 
-  const firstName = profile?.full_name?.trim().split(/\s+/)[0] ?? null;
+  const firstName = dashboardName(profile?.full_name, profile?.email);
   const timeZone = org?.timezone || "UTC";
   const todayKey = dateKeyInTimeZone(new Date(), timeZone);
   const openTasks = (tasks ?? []).filter((task) => !task.done).sort((a, b) =>
@@ -202,23 +177,20 @@ export default async function DashboardPage() {
       dueLabel: !task.deadline ? "No due date" : overdue ? `Overdue · ${fmtDate(task.deadline)}` : dueToday ? "Due today" : fmtDate(task.deadline),
     };
   });
-  const greeting = firstName ? `Welcome back, ${firstName}` : "Dashboard";
+  const greeting = firstName ? `Welcome back, ${firstName}` : "Welcome back";
 
-  // ── KPI strip ───────────────────────────────────────────────────────────
-  const stats: { label: string; value: string; icon: string; href: string; accent?: boolean }[] =
-    !canViewBusinessMetrics ? [] : isOffice
-      ? [
-          { label: "Seats occupied", value: metrics ? String(metrics.occupied_seats ?? 0) : "—", icon: ICONS.seats, href: "/app/members" },
-          { label: "Occupancy", value: metrics ? `${Math.round(metrics.occupancy_pct ?? 0)}%` : "—", icon: ICONS.percent, href: "/app/space", accent: true },
-          { label: "Monthly space revenue", value: metrics ? money(metrics.space_mrr ?? 0, currency) : "—", icon: ICONS.revenue, href: "/app/payments" },
-          { label: "Outstanding invoices", value: metrics ? money(metrics.outstanding_invoices ?? 0, currency) : "—", icon: ICONS.invoice, href: "/app/invoices" },
-        ]
-      : [
-          { label: "Active members", value: metrics ? String(metrics.active_members) : "—", icon: ICONS.members, href: "/app/members" },
-          { label: "Today's revenue", value: metrics ? money(metrics.today_revenue, currency) : "—", icon: ICONS.revenue, href: "/app/payments", accent: true },
-          { label: "Check-ins today", value: metrics ? String(metrics.today_check_ins) : "—", icon: ICONS.checkin, href: "/app/attendance" },
-          { label: "Pending approvals", value: metrics ? String(metrics.pending_approvals) : "—", icon: ICONS.approvals, href: "/app/approvals" },
-        ];
+  const stats: { label: string; value: number | null; currency?: string; suffix?: string; icon: LucideIcon; href: string; context: string }[] =
+    !canViewBusinessMetrics ? [] : isOffice ? [
+      { label: "Seats occupied", value: metrics?.occupied_seats ?? (metrics ? 0 : null), icon: ICONS.seats, href: "/app/members", context: "Current occupancy" },
+      { label: "Occupancy", value: metrics ? Math.round(metrics.occupancy_pct ?? 0) : null, suffix: "%", icon: ICONS.percent, href: "/app/space", context: "Of available seats" },
+      { label: "Monthly space revenue", value: metrics?.space_mrr ?? (metrics ? 0 : null), currency, icon: ICONS.revenue, href: "/app/payments", context: "Monthly recurring revenue" },
+      { label: "Outstanding invoices", value: metrics?.outstanding_invoices ?? (metrics ? 0 : null), currency, icon: ICONS.invoice, href: "/app/invoices", context: "Awaiting payment" },
+    ] : [
+      { label: "Active members", value: metrics?.active_members ?? null, icon: ICONS.members, href: "/app/members", context: "Current memberships" },
+      { label: "Today's revenue", value: metrics?.today_revenue ?? null, currency, icon: ICONS.revenue, href: "/app/payments", context: "Payments received today" },
+      { label: "Check-ins today", value: metrics?.today_check_ins ?? null, icon: ICONS.checkin, href: "/app/attendance", context: "Visits recorded today" },
+      { label: "Pending approvals", value: metrics?.pending_approvals ?? null, icon: ICONS.approvals, href: "/app/approvals", context: "Ready for review" },
+    ];
 
   // ── Setup checklist ─────────────────────────────────────────────────────
   const checklistItems = (checklist?.steps?.length
@@ -293,7 +265,7 @@ export default async function DashboardPage() {
   }
 
   // ── Quick actions ───────────────────────────────────────────────────────
-  const quickActions: { label: string; href: string; icon: string }[] = isFrontDesk
+  const quickActions: { label: string; href: string; icon: LucideIcon }[] = isFrontDesk
     ? [
         { label: "Check in a member", href: "/app/attendance", icon: ICONS.checkin },
         { label: "Log a cash payment", href: "/app/cash", icon: ICONS.invoice },
@@ -345,231 +317,94 @@ export default async function DashboardPage() {
       ? "warning"
       : statusTone(saas?.saas_status ?? "active");
 
-  return (
-    <>
-      <header className="mb-7 flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="mono-label mb-2 text-[10px] text-brand">GYM OPERATIONS</p>
-          <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground sm:text-[34px]">{greeting}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{today}<span className="mx-2 text-border-strong">/</span>{org?.name ?? "Workspace"}</p>
-        </div>
-        <nav aria-label="Quick actions" className="flex flex-wrap gap-2">
-          {quickActions.slice(0, 1).map((action, index) => (
-            <WorkspaceAction key={action.href} href={action.href} primary={index === 0} className={index === 0 ? PRIMARY_ACTION_CLASS : "inline-flex h-8 items-center gap-2 border border-border bg-background px-3 text-xs font-medium text-foreground no-underline transition-colors hover:bg-foreground/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"}>
-              {index === 0 ? <span aria-hidden="true" className="text-base leading-none">+</span> : <Icon d={action.icon} className="h-4 w-4 text-muted-foreground" />}
-              {action.label}
-            </WorkspaceAction>
-          ))}
+  const nextStepAction = nextStep?.key === "stripe" || nextStep?.key === "stripe_connected" ? "Connect payout account" : "Continue setup";
+  const actionDescriptions: Record<string, string> = {
+    "/app/plans": "Build a plan your members can join.",
+    "/app/cash": "Record a payment received in person.",
+    "/app/attendance": "Record a member’s visit.",
+    "/app/receipts": "Verify payments waiting for review.",
+    "/app/tasks": "Organize and complete your next steps.",
+    "/app/staff#my-clients": "View your assigned members.",
+    "/app/training": "Track a member’s training session.",
+    "/app/classes": "See sessions and bookings.",
+    "/app/my-pay": "Review your pay and earnings.",
+    "/app/companies": "Manage your company accounts.",
+    "/app/invoices": "Create and track an invoice.",
+    "/app/courses": "Set up your next course.",
+    "/app/members": "Add someone to your workspace.",
+  };
+
+  return <div className="dashboard">
+    <header className="dash-header">
+      <div><h1>{greeting}</h1><p className="dash-muted">{today}</p></div>
+      {quickActions.slice(0, 1).map(action => <WorkspaceAction key={action.href} href={action.href} primary className="dash-button dash-primary"><Plus aria-hidden="true" />{action.label}</WorkspaceAction>)}
+    </header>
+
+    {canManageWorkspace && saas?.saas_status === "past_due" && !saas.read_only && <div className="dash-notice" role="status"><strong>Payment failed.</strong> {saas.retry_count > 0 ? `Stripe retry #${saas.retry_count} failed. ` : ""}Update your card in <Link href="/app/billing" className="dash-button dash-ghost">Billing<ChevronRight aria-hidden="true" /></Link> to avoid interruption.</div>}
+    {canManageWorkspace && saas?.read_only && <div className="dash-notice" role="status"><strong>Account is read-only.</strong> Update billing to restore full access.<Link href="/app/billing" className="dash-button dash-ghost">Billing<ChevronRight aria-hidden="true" /></Link></div>}
+    {canManageWorkspace && saas?.saas_status === "suspended" && <div className="dash-notice" role="status"><strong>Account suspended.</strong> Contact support to reactivate your workspace.</div>}
+
+    {canViewBusinessMetrics && <section aria-label="Key metrics" className="dash-kpis">
+      {stats.map(stat => stat.value === null ? <Card key={stat.label} className="dash-card"><p className="dash-stat-label">{stat.label}</p><DashboardRetry>Metric unavailable.</DashboardRetry></Card> :
+        <Link href={stat.href} key={stat.label} className="dash-stat" title={`${stat.label}: ${dashboardNumber(stat.value, stat.currency)}${stat.suffix ?? ""}`}>
+          <Card className="dash-card">
+            <span className="dash-stat-label">{stat.label}<Icon d={stat.icon} /></span>
+            <span className={`dash-stat-value${stat.value === 0 ? " dash-zero" : ""}`}>{dashboardNumber(stat.value, stat.currency, true)}{stat.suffix}</span>
+            <span className="dash-stat-context">{stat.value === 0 ? (stat.label === "Pending approvals" ? "You’re all caught up" : "No activity yet") : stat.context}</span>
+          </Card>
+        </Link>)}
+    </section>}
+
+    <div className="dash-action-grid">
+      <Card className="dash-card">
+        <DashboardTaskList tasks={priorityTasks} attention={attention} unavailable={tasks === null} storageKey={`acron-dashboard:${org?.id ?? "unknown"}`} />
+      </Card>
+      <Card className="dash-card">
+        <div className="dash-section-heading"><h2>Quick actions</h2></div>
+        <nav className="dash-quick-list" aria-label="Quick actions">
+          {quickActions.slice(1).map(action => <WorkspaceAction key={action.href} href={action.href} className="dash-quick-action">
+            <span className="dash-icon-tile"><Icon d={action.icon} /></span>
+            <span className="dash-quick-copy"><strong>{action.label}</strong><span className="dash-meta">{actionDescriptions[action.href] ?? "Open your workspace tools."}</span></span><ChevronRight aria-hidden="true" />
+          </WorkspaceAction>)}
+          {canViewBusinessMetrics && <Link href="/app/analytics" className="dash-quick-action"><span className="dash-icon-tile"><ChartPie aria-hidden="true" /></span><span className="dash-quick-copy"><strong>Analytics</strong><span className="dash-meta">Explore your workspace performance.</span></span><ChevronRight aria-hidden="true" /></Link>}
         </nav>
-      </header>
+      </Card>
+    </div>
 
-      {isTrainer && <section className="mb-7 grid gap-5 lg:grid-cols-2" aria-label="Trainer workspace">
-        <div className="border border-border bg-background">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold">My clients</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">Members assigned to you</p>
-            </div>
-            <span className="text-xs tabular-nums text-muted-foreground">{trainerClients?.length ?? 0}</span>
-          </div>
-          {(trainerClients ?? []).length > 0 ? <ul className="divide-y divide-border">
-            {(trainerClients ?? []).slice(0, 5).map((client) => <li key={client.member_id}>
-              <Link href={`/app/members?member=${encodeURIComponent(client.member_id)}`} className="flex items-center justify-between gap-3 px-4 py-3 text-sm no-underline hover:bg-foreground/[0.025]">
-                <span className="min-w-0 truncate font-medium">{client.member_name || client.member_email}</span>
-                <Badge tone={client.member_status === "active" ? "success" : "neutral"}>{titleCase(client.member_status)}</Badge>
-              </Link>
-            </li>)}
-          </ul> : <p className="px-4 py-5 text-sm text-muted-foreground">No members are assigned to you yet.</p>}
-          {(trainerClients?.length ?? 0) > 5 && <Link href="/app/staff#my-clients" className="block border-t border-border px-4 py-2.5 text-xs text-brand no-underline hover:underline">View all {trainerClients?.length} clients</Link>}
-        </div>
-        <div className="border border-border bg-background">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold">My upcoming classes</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">Your next scheduled sessions</p>
-            </div>
-            <Link href="/app/classes" className="text-xs text-brand no-underline hover:underline">Schedule</Link>
-          </div>
-          {upcomingTrainerClasses.length ? <ul className="divide-y divide-border">
-            {upcomingTrainerClasses.map((session) => <li key={session.id} className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{session.title}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{fmtDate(session.starts_at)} · {new Date(session.starts_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
-              </div>
-              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{session.booked_count}/{session.capacity}</span>
-            </li>)}
-          </ul> : <p className="px-4 py-5 text-sm text-muted-foreground">No upcoming classes assigned to you.</p>}
-        </div>
-      </section>}
+    {canViewBusinessMetrics && <Card className="dash-card">
+      <div className="dash-section-heading"><h2>Payment activity</h2><Link href="/app/payments" className="dash-button dash-ghost">View payments<ChevronRight aria-hidden="true" /></Link></div>
+      {trend === null ? <DashboardRetry>Payment activity couldn’t load.</DashboardRetry> : <PaymentTrendChart data={trend} actionHref={isOffice ? "/app/invoices" : "/app/cash"} actionLabel={isOffice ? "Create an invoice" : "Log a cash payment"} />}
+    </Card>}
 
-      {mySchedule && <section className="mb-7 border border-border bg-background" aria-labelledby="my-shifts-title">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <h2 id="my-shifts-title" className="text-sm font-semibold">My upcoming shifts</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">Your planned work times</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link href="/app/my-pay" className="text-xs text-brand no-underline hover:underline">My pay</Link>
-            <span className="text-xs tabular-nums text-muted-foreground">{mySchedule.length}</span>
-          </div>
-        </div>
-        {mySchedule.length ? <ul className="divide-y divide-border">
-          {mySchedule.slice(0, 5).map((shift) => <li key={shift.id} className="flex items-center justify-between gap-3 px-4 py-3">
-            <span className="text-sm">{fmtDate(shift.starts_at)} · {new Date(shift.starts_at + (shift.starts_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–{new Date(shift.ends_at + (shift.ends_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
-            {shift.note && <span className="truncate text-xs text-muted-foreground">{shift.note}</span>}
-          </li>)}
-        </ul> : <p className="px-4 py-4 text-sm text-muted-foreground">No upcoming shifts assigned.</p>}
-      </section>}
+    {isTrainer && <section className="dash-trainer-grid" aria-label="Trainer workspace">
+      <Card className="dash-card"><div className="dash-section-heading"><h2>My clients</h2><span className="dash-badge">{trainerClients?.length ?? "—"} assigned</span></div>
+        {trainerClients === null ? <DashboardRetry>Clients couldn’t load.</DashboardRetry> : trainerClients.length ? <ul className="dash-record-list">{trainerClients.slice(0,5).map(client => <li key={client.member_id}><Link href={`/app/members?member=${encodeURIComponent(client.member_id)}`}><span>{client.member_name || client.member_email}</span><span className="dash-badge" data-tone={client.member_status === "active" ? "success" : "neutral"}>{titleCase(client.member_status)}</span></Link></li>)}</ul> : <DashboardEmptyState icon={<Users />} title="No clients assigned" href="/app/staff#my-clients" action="View my clients">Assigned members will appear here so you can follow their progress.</DashboardEmptyState>}
+        {(trainerClients?.length ?? 0) > 5 && <Link href="/app/staff#my-clients" className="dash-button dash-ghost">View all {trainerClients?.length} clients<ChevronRight aria-hidden="true" /></Link>}
+      </Card>
+      <Card className="dash-card"><div className="dash-section-heading"><h2>Upcoming classes</h2><Link href="/app/classes" className="dash-button dash-ghost">Schedule<ChevronRight aria-hidden="true" /></Link></div>
+        {trainerClasses === null ? <DashboardRetry>Classes couldn’t load.</DashboardRetry> : upcomingTrainerClasses.length ? <ul className="dash-record-list">{upcomingTrainerClasses.map(session => <li key={session.id}><div>{session.title}<p className="dash-meta">{fmtDate(session.starts_at)} · {new Date(session.starts_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone })}</p></div><span className="dash-badge">{session.booked_count}/{session.capacity}</span></li>)}</ul> : <DashboardEmptyState icon={<CalendarDays />} title="No upcoming classes" href="/app/classes" action="View schedule">Your assigned sessions and bookings will appear here.</DashboardEmptyState>}
+      </Card>
+    </section>}
 
-      {canManageWorkspace && saas?.saas_status === "past_due" && !saas.read_only && (
-        <div className="mb-5 border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-[13px] text-[var(--danger)]">
-          <strong>Payment failed.</strong>{" "}
-          {saas.retry_count > 0 ? "Stripe retry #" + saas.retry_count + " failed. " : ""}
-          Update your card in <Link className="font-semibold underline" href="/app/billing">Billing</Link> to avoid interruption.
-        </div>
-      )}
-      {canManageWorkspace && saas?.read_only && (
-        <div className="mb-5 border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-[13px] text-[var(--danger)]">
-          <strong>Account is read-only.</strong> Update billing to restore full access.
-        </div>
-      )}
-      {canManageWorkspace && saas?.saas_status === "suspended" && (
-        <div className="mb-5 border border-[var(--warning-border)] bg-[var(--warning-bg)] px-4 py-3 text-[13px] text-[var(--warning)]">
-          <strong>Account suspended.</strong> Contact support to reactivate your workspace.
-        </div>
-      )}
+    {["trainer", "front_desk", "manager"].includes(currentUser?.role ?? "") && <Card className="dash-card"><div className="dash-section-heading"><h2>My upcoming shifts</h2><Link href="/app/my-pay" className="dash-button dash-ghost">My pay<ChevronRight aria-hidden="true" /></Link></div>
+      {mySchedule === null ? <DashboardRetry>Shifts couldn’t load.</DashboardRetry> : mySchedule.length ? <ul className="dash-record-list">{mySchedule.slice(0,5).map(shift => <li key={shift.id}><div>{fmtDate(shift.starts_at)}<p className="dash-meta">{new Date(shift.starts_at + (shift.starts_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone })}–{new Date(shift.ends_at + (shift.ends_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone })}</p></div>{shift.note && <span className="dash-meta">{shift.note}</span>}</li>)}</ul> : <DashboardEmptyState icon={<CalendarDays />} title="No upcoming shifts" href="/app/my-pay" action="View my pay">Your scheduled working hours will appear here once assigned.</DashboardEmptyState>}
+    </Card>}
 
-      {canViewBusinessMetrics && <section aria-labelledby="snapshot-title" className="mb-7">
-        <div className="mb-3 flex items-end justify-between gap-4">
-          <div>
-            <p className="mono-label text-[10px] text-muted-foreground">LIVE SNAPSHOT</p>
-            <h2 id="snapshot-title" className="mt-1 text-sm font-semibold">Your gym at a glance</h2>
-          </div>
-          <Link href="/app/analytics" className="shrink-0 text-xs font-medium text-brand no-underline hover:underline">All analytics <span aria-hidden="true">↗</span></Link>
-        </div>
-        <div className="grid grid-cols-2 gap-px overflow-hidden border border-border bg-border sm:grid-cols-4">
-          {stats.map((stat) => (
-            <Link key={stat.label} href={stat.href} className="group min-w-0 bg-background px-4 py-3 text-foreground no-underline transition-colors hover:bg-foreground/[0.035] focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</span>
-                <Icon d={stat.icon} className={`h-4 w-4 shrink-0 ${stat.accent ? "text-brand" : "text-muted-foreground"}`} />
-              </div>
-              <span className={`mt-1 block truncate text-xl font-semibold tracking-tight tabular-nums ${stat.accent ? "text-brand" : "text-foreground"}`}>{stat.value}</span>
-            </Link>
-          ))}
-        </div>
-      </section>}
+    {canManageWorkspace && <Card className="dash-card">
+      <div className="dash-section-heading"><h2>Workspace setup</h2>{checklist && <span className="dash-badge" data-tone={remaining === 0 ? "success" : "neutral"}>{remaining === 0 ? "Complete" : `${doneSteps} of ${totalSteps} complete`}</span>}</div>
+      {checklist === null ? <DashboardRetry>Setup status couldn’t load.</DashboardRetry> : <>
+        <div className="dash-setup-progress"><ProgressBar value={setupPct} label="Workspace setup completion" /><span className="dash-meta">{setupPct}%</span></div>
+        {nextStep ? <div className="dash-next-step"><div><span className="dash-meta">Next step</span><strong>{nextStep.label}</strong></div><WorkspaceAction href={STEP_HREF[nextStep.key] ?? "/app/settings"} className="dash-button dash-primary">{nextStepAction}<ChevronRight aria-hidden="true" /></WorkspaceAction></div> : <div className="dash-next-step"><CircleCheck aria-hidden="true" /><p>{allSetCopy}</p></div>}
+        {checklistItems.length > 0 && <details className="dash-checklist"><summary><ChevronRight aria-hidden="true" />View all setup steps</summary><ul>{checklistItems.map(item => <li key={item.key}>{item.done ? <Check data-complete="true" aria-label="Complete" /> : <Circle aria-label="Incomplete" />}<span>{item.label}</span>{!item.done && <WorkspaceAction href={STEP_HREF[item.key] ?? "/app/settings"} label={`Open: ${item.label}`} className="dash-button dash-ghost">Open<ChevronRight aria-hidden="true" /></WorkspaceAction>}</li>)}</ul></details>}
+      </>}
+    </Card>}
 
-      {canViewBusinessMetrics && <section className="mb-5 min-w-0 border border-border bg-background" aria-labelledby="payments-title">
-        <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
-          <div>
-            <p className="mono-label text-[10px] text-muted-foreground">LAST 14 DAYS</p>
-            <h2 id="payments-title" className="mt-1 text-base font-semibold tracking-tight">Payment activity</h2>
-          </div>
-          <Link href="/app/payments" className="shrink-0 text-xs font-medium text-brand no-underline hover:underline">View payments <span aria-hidden="true">↗</span></Link>
-        </div>
-        <div className="min-w-0 overflow-hidden">
-          {trend === null ? (
-            <p className="px-5 py-8 text-sm text-muted-foreground">Payment activity is temporarily unavailable.</p>
-          ) : (
-            <PaymentTrendChart data={trend} />
-          )}
-        </div>
-      </section>}
-
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <div className="min-w-0 space-y-4">
-          {(tasks !== null || attention.length > 0 || canManageWorkspace) && <section className="min-w-0 border border-border bg-background" aria-labelledby="priorities-title">
-            <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-              <div>
-                <p className="mono-label text-[10px] text-brand">TODAY</p>
-                <h2 id="priorities-title" className="mt-1 text-base font-semibold tracking-tight">Your priorities</h2>
-                <p className="mt-1 text-xs text-muted-foreground">Follow up on leads, member risk, approvals, and tasks.</p>
-              </div>
-              <span className="shrink-0 border border-border px-2.5 py-1 text-xs font-medium tabular-nums">{attention.length + openTasks.length} open</span>
-            </div>
-            <DashboardTaskList tasks={priorityTasks} attention={attention} storageKey={`acron-dashboard:${org?.id ?? "unknown"}`} />
-          </section>}
-
-        </div>
-
-        <aside className="min-w-0 space-y-4" aria-label="Common tasks and workspace setup">
-          {quickActions.length > 1 && <nav className="border border-border bg-background" aria-label="Common tasks">
-            <div className="border-b border-border px-4 py-3">
-              <p className="mono-label text-[10px] text-muted-foreground">SHORTCUTS</p>
-              <h2 className="mt-1 text-sm font-semibold">Common tasks</h2>
-            </div>
-            <div className="divide-y divide-border">
-              {quickActions.slice(1).map((action) => (
-                <WorkspaceAction key={action.href} href={action.href} className="flex min-h-11 items-center gap-3 px-4 text-[12px] font-medium text-foreground no-underline transition-colors hover:bg-foreground/[0.025] focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-brand">
-                  <Icon d={action.icon} className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1">{action.label}</span><span aria-hidden="true" className="text-muted-foreground">↗</span>
-                </WorkspaceAction>
-              ))}
-            </div>
-          </nav>}
-
-
-        </aside>
-      </div>
-
-      {canManageWorkspace && <section className="mt-4 border border-border bg-background" aria-labelledby="setup-title">
-        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 id="setup-title" className="text-sm font-semibold">Workspace setup</h2>
-              {checklist !== null && <span className="text-xs tabular-nums text-muted-foreground">{doneSteps}/{totalSteps}</span>}
-            </div>
-            <p className="mt-1 truncate text-xs text-muted-foreground">
-              {checklist === null ? "Setup status is temporarily unavailable." : nextStep ? `Next: ${nextStep.label}` : allSetCopy}
-            </p>
-          </div>
-          {checklist !== null && nextStep && <div className="w-full sm:w-28"><ProgressBar value={setupPct} /></div>}
-          {checklist !== null && nextStep && <WorkspaceAction href={STEP_HREF[nextStep.key] ?? "/app/settings"} className="inline-flex min-h-8 shrink-0 items-center text-xs font-semibold text-brand no-underline hover:underline">Continue setup <span aria-hidden="true" className="ml-1">→</span></WorkspaceAction>}
-        </div>
-        {checklistItems.length > 0 && <details className="border-t border-border px-4 py-2.5 text-xs">
-          <summary className="cursor-pointer font-medium text-muted-foreground">View all setup steps</summary>
-          <ul className="mt-3 grid list-none gap-2.5 p-0 sm:grid-cols-2">
-            {checklistItems.map((item) => (
-              <li key={item.key} className="flex items-center gap-2">
-                <span className={item.done ? "text-success" : "text-muted-foreground"} aria-label={item.done ? "Complete" : "Incomplete"}>{item.done ? "✓" : "○"}</span>
-                <span className="min-w-0 flex-1">{item.label}</span>
-                {!item.done && <WorkspaceAction href={STEP_HREF[item.key] ?? "/app/settings"} label={"Open: " + item.label} className="text-brand no-underline hover:underline">Open</WorkspaceAction>}
-              </li>
-            ))}
-          </ul>
-        </details>}
-      </section>}
-
-
-
-      {canManageWorkspace && <section className="mt-8 border border-border" aria-labelledby="subscription-title">
-        <div className="flex items-center gap-3 border-b border-border px-5 py-4">
-          <h2 id="subscription-title" className="text-[13px] font-semibold">Workspace plan</h2>
-          {org && <Badge tone={gymStatusTone(org.gym_status)}>{gymStatusLabel(org.gym_status)}</Badge>}
-          <Link href="/app/billing" className="ml-auto shrink-0 text-[12px] font-medium text-brand no-underline hover:underline">Manage plan ↗</Link>
-        </div>
-        <dl className="grid grid-cols-2 gap-px bg-border text-[12px] lg:grid-cols-4">
-          <div className="min-w-0 bg-background px-5 py-4">
-            <dt className="text-muted-foreground">Plan</dt>
-            <dd className="mt-1 font-semibold">{saas ? titleCase(saas.saas_tier) : "Unavailable"}</dd>
-          </div>
-          <div className="min-w-0 bg-background px-5 py-4">
-            <dt className="text-muted-foreground">Status</dt>
-            <dd className="mt-1">{saas ? <Badge tone={saasBadgeTone}>{titleCase(saas.saas_status)}</Badge> : "—"}</dd>
-          </div>
-          <div className="min-w-0 bg-background px-5 py-4">
-            <dt className="text-muted-foreground">Members</dt>
-            <dd className="mt-1 font-semibold">{saas ? saas.current_member_count + " / " + (saas.member_cap ?? "Unlimited") : "—"}
-              {memberCapPct !== null && <div className="mt-2 max-w-32"><ProgressBar value={memberCapPct} /></div>}
-            </dd>
-          </div>
-          <div className="min-w-0 bg-background px-5 py-4">
-            <dt className="text-muted-foreground">Renews</dt>
-            <dd className="mt-1 font-semibold">{saas?.current_period_end ? fmtDate(saas.current_period_end) : "—"}</dd>
-          </div>
-        </dl>
-      </section>}
-    </>
-  );
+    {canManageWorkspace && <Card className="dash-card">
+      {saas === null ? <><h2>Workspace plan</h2><DashboardRetry>Plan details couldn’t load.</DashboardRetry></> : <div className="dash-plan">
+        <div><h2>Workspace plan</h2><div className="dash-plan-name"><CreditCard aria-hidden="true" /><strong>{titleCase(saas.saas_tier)}</strong><span className="dash-badge" data-tone={saasBadgeTone}>{titleCase(saas.saas_status)}</span>{org && <span className="dash-badge" data-tone={org.gym_status === "open" ? "success" : "neutral"}>{titleCase(org.gym_status)}</span>}</div></div>
+        <div className="dash-plan-meter"><span className="dash-meta">{dashboardNumber(saas.current_member_count)} of {saas.member_cap === null ? "unlimited" : dashboardNumber(saas.member_cap)} members</span>{memberCapPct !== null && <ProgressBar value={memberCapPct} label="Member capacity used" />}</div>
+        <div className="dash-plan-footer"><span className="dash-meta">{saas.current_period_end ? `Renews ${fmtDate(saas.current_period_end)}` : "No renewal scheduled"}</span><Link href="/app/billing" className="dash-button dash-secondary">Manage plan<ChevronRight aria-hidden="true" /></Link></div>
+      </div>}
+    </Card>}
+  </div>;
 }

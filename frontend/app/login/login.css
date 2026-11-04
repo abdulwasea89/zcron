@@ -1,0 +1,20 @@
+.auth-frame:has(.auth-login-form) .auth-form-panel {
+  position: relative;
+  isolation: isolate;
+}
+.auth-frame:has(.auth-login-form) .auth-form-panel::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100%, 820px);
+  height: 560px;
+  background:
+    radial-gradient(ellipse 180px 100px at 50% 48%, color-mix(in srgb, var(--foreground) 9%, transparent), transparent 85%),
+    conic-gradient(from 155deg at 50% -8%, transparent 0deg, color-mix(in srgb, var(--foreground) 4%, transparent) 10deg, color-mix(in srgb, var(--foreground) 14%, transparent) 25deg, color-mix(in srgb, var(--foreground) 4%, transparent) 40deg, transparent 50deg);
+  mask-image: linear-gradient(to bottom, #000 15%, #0009 55%, transparent 95%);
+  filter: blur(18px);
+}

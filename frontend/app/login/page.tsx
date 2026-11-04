@@ -69,12 +69,11 @@ function LoginForm() {
 
   return (
     <AuthShell
-      eyebrow="Venue management, simplified"
       title={needsMfa ? "One more quick check" : "Welcome back"}
-      description={needsMfa ? "Enter the code from your authenticator app to continue securely." : "Sign in to pick up where your organization left off."}
-      footer={<>New to Acron? <Link href="/register" className="auth-link">Create your organization</Link></>}
+      description={needsMfa ? "Enter the code from your authenticator app to continue securely." : undefined}
+      footer={<>New to Zcron? <Link href="/register" className="auth-link">Create your organization</Link></>}
     >
-      <div className="auth-form-card">
+      <div className="auth-form-card auth-login-form">
         {error && (
           <div className="mb-5">
             <Alert onDismiss={() => setError("")}>{error}</Alert>
@@ -87,6 +86,7 @@ function LoginForm() {
               <Input
                 ref={emailRef}
                 label="Work email"
+                labelVariant="sentence"
                 type="email"
                 autoComplete="email"
                 required
@@ -98,6 +98,7 @@ function LoginForm() {
 
               <Input
                 label="Password"
+                labelVariant="sentence"
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
                 required
@@ -119,6 +120,7 @@ function LoginForm() {
 
               <Input
                 label="Org code"
+                labelVariant="sentence"
                 value={orgCode}
                 onChange={(e) => { setOrgCode(e.target.value.toUpperCase()); setFieldErrors((p) => ({ ...p, orgCode: "" })); }}
                 placeholder="IRON-PULS-3K9"
@@ -149,11 +151,12 @@ function LoginForm() {
           ) : (
             <>
               <div className="rounded-xl bg-[var(--primary-light)] px-4 py-3.5 text-sm leading-relaxed text-[var(--primary)]">
-                Open your authenticator app and enter the 6-digit code for Acron.
+                Open your authenticator app and enter the 6-digit code for Zcron.
               </div>
 
               <Input
                 label="Authenticator code"
+                labelVariant="sentence"
                 inputMode="numeric"
                 maxLength={6}
                 required

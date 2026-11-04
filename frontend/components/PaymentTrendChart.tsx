@@ -1,64 +1,46 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
+import { CircleDollarSign } from "lucide-react";
 import { ChartContainer } from "@/components/ui/chart";
+import { Button } from "@/components/ui";
+import { DashboardEmptyState } from "@/components/DashboardUI";
 
-export type PaymentTrendPoint = {
-  date: string;
-  label: string;
-  axisLabel: string;
-  count: number;
-};
+export type PaymentTrendPoint = { date: string; label: string; axisLabel: string; count: number };
 
-function PaymentTooltip({ active, payload }: {
-  active?: boolean;
-  payload?: Array<{ payload: PaymentTrendPoint; value: number }>;
-}) {
+function PaymentTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: PaymentTrendPoint; value: number }> }) {
   if (!active || !payload?.length) return null;
   const point = payload[0].payload;
-  return (
-    <div className="border border-border bg-background px-3 py-2 text-[12px] shadow-sm">
-      <p className="font-medium">{point.label}</p>
-      <p className="mt-1 text-muted-foreground">{point.count} {point.count === 1 ? "payment" : "payments"}</p>
-    </div>
-  );
+  return <div className="dash-chart-tooltip"><strong>{point.label}</strong><p className="dash-meta">{point.count} {point.count === 1 ? "payment" : "payments"}</p></div>;
 }
 
-export function PaymentTrendChart({ data }: { data: PaymentTrendPoint[] }) {
+export function PaymentTrendChart({ data, actionHref, actionLabel }: { data: PaymentTrendPoint[]; actionHref: string; actionLabel: string }) {
   const gradientId = `payment-fill-${useId().replace(/:/g, "")}`;
-  const total = data.reduce((sum, day) => sum + day.count, 0);
-
-  return (
-    <div>
-      {total === 0 ? (
-        <div className="flex h-[180px] flex-col items-center justify-center px-5 text-center sm:h-[210px] lg:h-[240px]">
-          <p className="text-[13px] font-medium">No successful payments yet</p>
-          <p className="mt-1 text-[12px] text-muted-foreground">Daily activity will appear here after a payment is recorded.</p>
-        </div>
-      ) : (
-        <div className="px-4 pb-4 pt-6" role="img" aria-label={`Successful payments over the last 14 days: ${data.map((day) => `${day.label}, ${day.count}`).join("; ")}`}>
-          <ChartContainer config={{ count: { label: "Payments", color: "var(--chart-1)" } }} className="aspect-auto h-[180px] w-full sm:h-[210px] lg:h-[240px]">
-            <AreaChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--color-count)" stopOpacity={0.34} />
-                  <stop offset="100%" stopColor="var(--color-count)" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
-              <XAxis dataKey="axisLabel" tickLine={false} axisLine={false} tickMargin={10} interval={0} />
-              <YAxis hide allowDecimals={false} domain={[0, "auto"]} />
-              <Tooltip cursor={false} content={<PaymentTooltip />} />
-              <Area type="monotone" dataKey="count" stroke="var(--color-count)" strokeWidth={2} fill={`url(#${gradientId})`} fillOpacity={1} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} isAnimationActive={false} />
-            </AreaChart>
-          </ChartContainer>
-        </div>
-      )}
-      <div className="border-t border-border px-5 py-4">
-        <p className="text-[13px] font-semibold">{total} successful {total === 1 ? "payment" : "payments"} in this period</p>
-        <p className="mt-1 text-[12px] text-muted-foreground">{data[0]?.label} – {data[data.length - 1]?.label}</p>
+  const [days, setDays] = useState(14);
+  const visible = data.slice(-days);
+  const total = visible.reduce((sum, day) => sum + day.count, 0);
+  return <div>
+    <div className="dash-section-heading">
+      <span className="dash-meta">Successful payments · daily count</span>
+      <div className="dash-chart-range" role="group" aria-label="Payment date range">
+        {[7,14].map(range => <Button key={range} variant="ghost" className="dash-button dash-ghost" aria-pressed={days === range} onClick={() => setDays(range)}>{range} days</Button>)}
       </div>
     </div>
-  );
+    {total === 0 ? <DashboardEmptyState icon={<CircleDollarSign />} title="No payments yet" href={actionHref} action={actionLabel}>
+      Record a payment to see your daily activity here. No successful payments in the last {days} days.
+    </DashboardEmptyState> : <div className="dash-chart" role="img" aria-label={`Successful payments over the last ${days} days: ${visible.map(day => `${day.label}, ${day.count}`).join("; ")}`}>
+      <ChartContainer config={{ count: { label: "Payments", color: "var(--brand)" } }} className="aspect-auto h-full w-full">
+        <AreaChart data={visible} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+          <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--color-count)" stopOpacity={0.24} /><stop offset="100%" stopColor="var(--color-count)" stopOpacity={0.01} /></linearGradient></defs>
+          <CartesianGrid vertical={false} stroke="var(--dash-line)" strokeDasharray="3 3" />
+          <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={12} minTickGap={30} tick={{ fill: "var(--dash-secondary)", fontSize: 12 }} />
+          <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: "var(--dash-secondary)", fontSize: 12 }} />
+          <Tooltip cursor={false} content={<PaymentTooltip />} />
+          <Area type="monotone" dataKey="count" stroke="var(--color-count)" strokeWidth={2} fill={`url(#${gradientId})`} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} isAnimationActive={false} />
+        </AreaChart>
+      </ChartContainer>
+    </div>}
+    <div className="dash-chart-footer"><span>{total.toLocaleString("en-US")} successful {total === 1 ? "payment" : "payments"}</span><span>{visible[0]?.label} – {visible[visible.length-1]?.label}</span></div>
+  </div>;
 }
